@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from hcp_cms.data.database import DatabaseManager
-from hcp_cms.data.merge import ConflictStrategy, MergeManager, MergePreview
+from hcp_cms.data.merge import ConflictStrategy, MergeManager
 
 
 @pytest.fixture

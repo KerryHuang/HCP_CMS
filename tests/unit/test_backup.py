@@ -1,7 +1,6 @@
 """Tests for BackupManager."""
 
 import sqlite3
-import zipfile
 from pathlib import Path
 
 import pytest

@@ -3,8 +3,6 @@
 import sqlite3
 from pathlib import Path
 
-import pytest
-
 from hcp_cms.data.database import DatabaseManager
 
 

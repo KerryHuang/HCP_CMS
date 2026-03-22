@@ -66,7 +66,6 @@ class TestSchemaDetection:
 
     def test_detect_new_schema(self, new_conn: sqlite3.Connection, tmp_path: Path):
         """New DB with 'company_id' FK column → is_legacy_schema returns False."""
-        new_db_path = tmp_path / "new_cs_tracker.db"
         # Write new schema to a file so we can test detection
         new_db_path2 = tmp_path / "new2.db"
         mgr2 = DatabaseManager(new_db_path2)

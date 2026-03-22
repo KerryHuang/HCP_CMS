@@ -116,7 +116,7 @@ class MigrationManager:
         for row in old.execute("SELECT * FROM cs_cases"):
             row_dict = dict(row)
             company_text = (row_dict.pop("company", None) or "").strip()
-            company_id = domain_to_id.get(company_text)
+            case_company_id: str | None = domain_to_id.get(company_text)
 
             self._new.execute(
                 """INSERT OR IGNORE INTO cs_cases (
@@ -137,7 +137,7 @@ class MigrationManager:
                     "priority": row_dict.get("priority"),
                     "replied": row_dict.get("replied"),
                     "sent_time": row_dict.get("sent_time"),
-                    "company_id": company_id,
+                    "company_id": case_company_id,
                     "contact_person": row_dict.get("contact_person"),
                     "subject": row_dict.get("subject"),
                     "system_product": row_dict.get("system_product"),
@@ -158,7 +158,7 @@ class MigrationManager:
         for row in old.execute("SELECT * FROM qa_knowledge"):
             row_dict = dict(row)
             company_text = (row_dict.pop("company", None) or "").strip()
-            company_id = domain_to_id.get(company_text)
+            qa_company_id: str | None = domain_to_id.get(company_text)
 
             # created_date → created_at mapping
             created_at = row_dict.pop("created_date", None)
@@ -181,7 +181,7 @@ class MigrationManager:
                     "question": row_dict.get("question"),
                     "answer": row_dict.get("answer"),
                     "has_image": row_dict.get("has_image"),
-                    "company_id": company_id,
+                    "company_id": qa_company_id,
                     "created_by": row_dict.get("created_by"),
                     "created_at": created_at,
                     "notes": row_dict.get("notes"),
@@ -198,7 +198,7 @@ class MigrationManager:
             issue_summary = row_dict.pop("issue_summary", None)
 
             # Map customer domain to company_id
-            company_id = domain_to_id.get((customer or "").strip())
+            mantis_company_id: str | None = domain_to_id.get((customer or "").strip())
 
             self._new.execute(
                 """INSERT OR IGNORE INTO mantis_tickets (
@@ -211,7 +211,7 @@ class MigrationManager:
                 {
                     "ticket_id": row_dict.get("ticket_id"),
                     "created_time": row_dict.get("created_time"),
-                    "company_id": company_id,
+                    "company_id": mantis_company_id,
                     "summary": issue_summary,
                     "priority": row_dict.get("priority"),
                     "status": row_dict.get("status"),

@@ -1,6 +1,5 @@
 """Shared pytest fixtures for HCP CMS tests."""
 
-import sqlite3
 from pathlib import Path
 
 import pytest
