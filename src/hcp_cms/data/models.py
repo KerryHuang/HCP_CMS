@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from datetime import datetime
+from dataclasses import dataclass
 
 SLA_HOURS_NORMAL = 24
 SLA_HOURS_HIGH = 4
