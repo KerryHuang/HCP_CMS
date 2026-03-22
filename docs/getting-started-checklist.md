@@ -9,7 +9,7 @@
 ### A1. 啟動系統
 ```bash
 cd D:\CMS
-py -m hcp_cms.app
+python -m hcp_cms
 ```
 - [ ] 視窗出現，標題為「HCP CMS v2.0」
 - [ ] 左側有 8 個導覽項目
@@ -405,7 +405,7 @@ exit()
 ```
 
 ```bash
-py -m hcp_cms.app
+python -m hcp_cms
 ```
 
 ### G2. 儀表板

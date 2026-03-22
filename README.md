@@ -38,7 +38,7 @@ pip install -e ".[dev]"
 ### 2. 啟動應用程式
 
 ```bash
-py -m hcp_cms.app
+python -m hcp_cms
 ```
 
 ### 3. 執行測試
@@ -70,14 +70,10 @@ py -m mypy src/hcp_cms/ --ignore-missing-imports
 ## 打包為執行檔
 
 ```bash
-# Windows → HCP_CMS.exe
-pyinstaller build/hcp_cms.spec
-
-# macOS → HCP_CMS.app
-pyinstaller build/hcp_cms.spec
+python scripts/build.py
 ```
 
-產出位於 `dist/` 目錄。
+產出位於 `dist/HCP_CMS/` 目錄，主程式為 `HCP_CMS.exe`。
 
 ## 專案架構
 
@@ -157,6 +153,27 @@ SQLite WAL 模式，支援 3 人透過網路磁碟共用。
 | 測試 | pytest, pytest-qt, pytest-cov, pytest-mock |
 | 品質 | ruff, mypy |
 | 打包 | PyInstaller |
+
+## Claude Code 代理系統
+
+本專案內建 Claude Code 代理系統（`.claude/`），提供：
+
+- **Rules** — 各層程式碼慣例自動注入（data / core / ui / services / tests）
+- **Hooks** — Write/Edit 後自動執行 ruff format + lint 檢查
+- **Skills** — 9 個開發技能，輸入 `/指令` 即可使用：
+
+| 指令 | 用途 |
+|------|------|
+| `/commit` | 提交變更（繁體中文訊息） |
+| `/push` `/pull` | 推送 / 拉取 |
+| `/test` | 執行測試 |
+| `/run` | 啟動應用程式 |
+| `/build` | 打包執行檔 |
+| `/release` | 發行新版本 |
+| `/publish` | 本地發行驗證 |
+| `/update-docs` | 更新專案文件 |
+
+詳見 `.claude/skills/README.md`。
 
 ## 授權
 

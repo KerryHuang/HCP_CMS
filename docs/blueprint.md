@@ -2,7 +2,7 @@
 
 ## 技術棧
 
-- **語言**：Python 3.12+
+- **語言**：Python >= 3.10（目前使用 3.14.3）
 - **GUI 框架**：PySide6 6.10.2
 - **資料庫**：SQLite3（內建）+ FTS5
 - **中文斷詞**：jieba 0.42.1
@@ -12,24 +12,26 @@
 ## 核心依賴
 
 ```
-PySide6 >= 6.10.0
-openpyxl >= 3.1.0
-extract-msg >= 0.50.0
-exchangelib >= 5.0.0
-requests >= 2.31.0
-keyring >= 25.0.0
-jieba >= 0.42.1
+PySide6 >= 6.6
+openpyxl >= 3.1
+extract-msg >= 0.48
+exchangelib >= 5.1
+requests >= 2.31
+keyring >= 25.0
+jieba >= 0.42
 ```
 
 ## 開發依賴
 
 ```
-pytest >= 8.0.0
-pytest-qt >= 4.4.0
-ruff >= 0.9.0
-mypy >= 1.13.0
-PyInstaller >= 6.0.0
-pre-commit >= 4.0.0
+pytest >= 8.0
+pytest-qt >= 4.3
+pytest-cov >= 4.1
+pytest-mock >= 3.12
+ruff >= 0.3
+mypy >= 1.8
+PyInstaller >= 6.3
+pre-commit >= 3.6
 ```
 
 ## 專案結構
@@ -37,110 +39,75 @@ pre-commit >= 4.0.0
 ```
 D:\cms\
 ├── pyproject.toml              # 專案配置（含 ruff/mypy/pytest）
-├── CLAUDE.md                   # Claude Code 規則
+├── CLAUDE.md                   # Claude Code 開發法則
 ├── README.md
 ├── docs/
-│   └── blueprint.md
+│   ├── blueprint.md            # 本文件
+│   ├── operation-manual.md     # 操作手冊
+│   └── getting-started-checklist.md  # 新手教學
+├── .claude/
+│   ├── settings.json           # Hook 設定
+│   ├── rules/                  # 各層程式碼慣例
+│   ├── hooks/                  # ruff 自動檢查
+│   └── skills/                 # 9 個開發技能
 ├── src/
 │   └── hcp_cms/
 │       ├── __init__.py
-│       ├── __main__.py         # 進入點
-│       ├── app.py              # QApplication 初始化
+│       ├── app.py              # QApplication 進入點
 │       │
 │       ├── ui/                 # UI 層 — PySide6 介面
-│       │   ├── __init__.py
-│       │   ├── main_window.py  # 主視窗（左側導覽 + 右側內容區）
-│       │   ├── pages/          # 7 個主頁面
-│       │   │   ├── __init__.py
-│       │   │   ├── dashboard.py
-│       │   │   ├── cases.py
-│       │   │   ├── kms.py
-│       │   │   ├── mail.py
-│       │   │   ├── mantis.py
-│       │   │   ├── reports.py
-│       │   │   └── settings.py
-│       │   ├── widgets/        # 共用元件
-│       │   │   ├── __init__.py
-│       │   │   ├── global_search.py   # Ctrl+K 全域搜尋
-│       │   │   ├── notification.py    # 通知中心
-│       │   │   └── kpi_card.py
-│       │   └── resources/      # 圖示、樣式
+│       │   ├── main_window.py  #   主視窗（左側導覽 + 深色主題）
+│       │   ├── dashboard_view.py
+│       │   ├── case_view.py
+│       │   ├── kms_view.py
+│       │   ├── email_view.py
+│       │   ├── mantis_view.py
+│       │   ├── report_view.py
+│       │   ├── rules_view.py
+│       │   ├── settings_view.py
+│       │   └── widgets/        #   共用元件（status_bar）
 │       │
 │       ├── core/               # Core 層 — 業務邏輯
-│       │   ├── __init__.py
-│       │   ├── case_manager.py
-│       │   ├── kms_manager.py
-│       │   ├── mail_processor.py      # 7 步處理管線
-│       │   ├── report_generator.py
-│       │   ├── backup_manager.py
-│       │   ├── reply_detector.py      # 回覆偵測
-│       │   └── search_engine.py       # jieba + 同義詞 + FTS5
+│       │   ├── case_manager.py #   案件管理 + 狀態流轉
+│       │   ├── kms_engine.py   #   KMS 搜尋 + CRUD + Excel
+│       │   ├── classifier.py   #   多維分類引擎
+│       │   ├── anonymizer.py   #   PII 匿名化
+│       │   ├── thread_tracker.py #  對話串追蹤
+│       │   └── report_engine.py #  Excel 報表產生
 │       │
 │       ├── services/           # Services 層 — 外部服務介面
-│       │   ├── __init__.py
-│       │   ├── mail_provider.py       # MailProvider ABC
-│       │   ├── imap_provider.py
-│       │   ├── exchange_provider.py
-│       │   ├── msg_provider.py
-│       │   ├── mantis_client.py       # MantisClient ABC
-│       │   └── mantis_rest.py
+│       │   ├── credential.py   #   密鑰管理（keyring）
+│       │   ├── mail/           #   MailProvider ABC + IMAP/Exchange/MSG
+│       │   └── mantis/         #   MantisClient ABC + REST/SOAP
 │       │
 │       ├── scheduler/          # Scheduler 層 — 排程
-│       │   ├── __init__.py
-│       │   ├── scheduler.py           # QTimer + QThread 排程引擎
-│       │   ├── tasks/
-│       │   │   ├── __init__.py
-│       │   │   ├── mail_task.py
-│       │   │   ├── mantis_task.py
-│       │   │   ├── report_task.py
-│       │   │   └── backup_task.py
-│       │   └── workers.py             # QThread workers
+│       │   ├── scheduler.py    #   排程管理員
+│       │   ├── email_job.py    #   信件定時處理
+│       │   ├── sync_job.py     #   Mantis 定時同步
+│       │   ├── backup_job.py   #   DB 定時備份
+│       │   └── report_job.py   #   報表定時產生
 │       │
 │       ├── data/               # Data 層 — 資料存取
-│       │   ├── __init__.py
-│       │   ├── database.py            # 連線管理 + 遷移
-│       │   ├── repositories/
-│       │   │   ├── __init__.py
-│       │   │   ├── case_repo.py
-│       │   │   ├── kms_repo.py
-│       │   │   ├── mantis_repo.py
-│       │   │   ├── company_repo.py
-│       │   │   ├── rule_repo.py
-│       │   │   └── file_repo.py
-│       │   ├── fts/                   # FTS5 全文搜尋
-│       │   │   ├── __init__.py
-│       │   │   ├── fts_manager.py
-│       │   │   └── synonym_manager.py
-│       │   └── migration.py           # 舊 DB 遷移
+│       │   ├── database.py     #   SQLite 連線管理（WAL 模式）
+│       │   ├── models.py       #   資料模型（dataclass）
+│       │   ├── repositories.py #   Repository CRUD
+│       │   ├── fts.py          #   FTS5 全文搜尋 + jieba
+│       │   ├── backup.py       #   備份/還原
+│       │   ├── merge.py        #   多人 DB 合併匯入
+│       │   └── migration.py    #   舊 DB 遷移工具
 │       │
 │       └── i18n/               # 國際化
-│           ├── __init__.py
+│           ├── translator.py
 │           ├── zh_TW.json
-│           └── en_US.json
+│           └── en.json
 │
 ├── tests/
-│   ├── __init__.py
 │   ├── conftest.py             # 共用 fixtures
-│   ├── unit/
-│   │   ├── __init__.py
-│   │   ├── data/               # Repository 單元測試
-│   │   └── core/               # 業務邏輯單元測試
-│   ├── integration/
-│   │   ├── __init__.py
-│   │   ├── test_mail_pipeline.py
-│   │   ├── test_kms_search.py
-│   │   ├── test_report_gen.py
-│   │   └── test_backup.py
-│   └── e2e/
-│       ├── __init__.py
-│       └── test_scenarios.py   # pytest-qt E2E
+│   ├── unit/                   # 20 個單元測試
+│   └── integration/            # 2 個整合測試
 │
-├── scripts/
-│   └── build.py                # PyInstaller 打包腳本
-│
-└── resources/
-    ├── synonyms_default.json   # HCP 領域預設同義詞庫
-    └── jieba_userdict.txt      # jieba 自訂詞庫（HCP 專有名詞）
+└── scripts/
+    └── build.py                # PyInstaller 打包腳本
 ```
 
 ## 架構（6 層分離）
