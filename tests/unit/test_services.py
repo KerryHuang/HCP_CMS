@@ -2,18 +2,16 @@
 
 import hashlib
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-import pytest
-
-from hcp_cms.services.mail.base import MailProvider, RawEmail
-from hcp_cms.services.mail.msg_reader import MSGReader
-from hcp_cms.services.mail.imap import IMAPProvider
+from hcp_cms.services.credential import CredentialManager
+from hcp_cms.services.mail.base import RawEmail
 from hcp_cms.services.mail.exchange import ExchangeProvider
-from hcp_cms.services.mantis.base import MantisClient, MantisIssue
+from hcp_cms.services.mail.imap import IMAPProvider
+from hcp_cms.services.mail.msg_reader import MSGReader
+from hcp_cms.services.mantis.base import MantisIssue
 from hcp_cms.services.mantis.rest import MantisRESTClient
 from hcp_cms.services.mantis.soap import MantisSoapClient
-from hcp_cms.services.credential import CredentialManager
 
 
 class TestRawEmail:

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import sqlite3
-from pathlib import Path
 
 from hcp_cms.core.case_manager import CaseManager
 from hcp_cms.data.models import ProcessedFile

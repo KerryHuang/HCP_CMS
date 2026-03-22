@@ -5,8 +5,17 @@ from __future__ import annotations
 import sqlite3
 
 from PySide6.QtWidgets import (
-    QFormLayout, QGroupBox, QLabel, QLineEdit, QPushButton,
-    QSpinBox, QVBoxLayout, QWidget, QFileDialog, QComboBox, QHBoxLayout,
+    QComboBox,
+    QFileDialog,
+    QFormLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QSpinBox,
+    QVBoxLayout,
+    QWidget,
 )
 
 

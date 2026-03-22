@@ -7,13 +7,13 @@ from unittest.mock import MagicMock
 import pytest
 
 from hcp_cms.data.database import DatabaseManager
-from hcp_cms.data.models import Case, Company, ClassificationRule, MantisTicket
-from hcp_cms.data.repositories import CaseRepository, CompanyRepository, RuleRepository, MantisRepository
-from hcp_cms.scheduler.scheduler import Scheduler, JobConfig
-from hcp_cms.scheduler.email_job import EmailJob
-from hcp_cms.scheduler.sync_job import SyncJob
+from hcp_cms.data.models import Case, Company, MantisTicket
+from hcp_cms.data.repositories import CaseRepository, CompanyRepository, MantisRepository
 from hcp_cms.scheduler.backup_job import BackupJob
+from hcp_cms.scheduler.email_job import EmailJob
 from hcp_cms.scheduler.report_job import ReportJob
+from hcp_cms.scheduler.scheduler import JobConfig, Scheduler
+from hcp_cms.scheduler.sync_job import SyncJob
 from hcp_cms.services.mail.base import RawEmail
 
 
@@ -54,7 +54,6 @@ class TestScheduler:
 
     def test_start_stop_all(self):
         scheduler = Scheduler()
-        call_count = {"n": 0}
         scheduler.add_job(JobConfig(name="fast", interval_seconds=1, callback=lambda: None))
         scheduler.start_all()
         assert scheduler._running is True

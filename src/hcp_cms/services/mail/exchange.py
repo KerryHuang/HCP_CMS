@@ -23,7 +23,7 @@ class ExchangeProvider(MailProvider):
 
     def connect(self) -> bool:
         try:
-            from exchangelib import Account, Configuration, Credentials, DELEGATE
+            from exchangelib import DELEGATE, Account, Configuration, Credentials
             creds = Credentials(self._username, self._password)
             config = Configuration(server=self._server, credentials=creds) if self._server else None
             self._account = Account(
@@ -93,7 +93,7 @@ class ExchangeProvider(MailProvider):
         if not self._account:
             return False
         try:
-            from exchangelib import Message, Mailbox
+            from exchangelib import Mailbox, Message
             draft = Message(
                 account=self._account,
                 subject=subject,

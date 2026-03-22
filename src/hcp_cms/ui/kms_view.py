@@ -4,12 +4,20 @@ from __future__ import annotations
 
 import sqlite3
 
-from PySide6.QtWidgets import (
-    QHBoxLayout, QLabel, QLineEdit, QPushButton, QTableWidget,
-    QTableWidgetItem, QTextEdit, QVBoxLayout, QWidget, QFormLayout,
-    QComboBox, QSplitter,
-)
 from PySide6.QtCore import Qt
+from PySide6.QtWidgets import (
+    QFormLayout,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QSplitter,
+    QTableWidget,
+    QTableWidgetItem,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+)
 
 from hcp_cms.core.kms_engine import KMSEngine
 

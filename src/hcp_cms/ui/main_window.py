@@ -3,27 +3,25 @@
 from __future__ import annotations
 
 import sqlite3
-from pathlib import Path
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (
     QHBoxLayout,
+    QLabel,
     QListWidget,
     QListWidgetItem,
     QMainWindow,
     QStackedWidget,
+    QStatusBar,
     QVBoxLayout,
     QWidget,
-    QLabel,
-    QLineEdit,
-    QStatusBar,
 )
 
-from hcp_cms.ui.dashboard_view import DashboardView
 from hcp_cms.ui.case_view import CaseView
-from hcp_cms.ui.kms_view import KMSView
+from hcp_cms.ui.dashboard_view import DashboardView
 from hcp_cms.ui.email_view import EmailView
+from hcp_cms.ui.kms_view import KMSView
 from hcp_cms.ui.mantis_view import MantisView
 from hcp_cms.ui.report_view import ReportView
 from hcp_cms.ui.rules_view import RulesView

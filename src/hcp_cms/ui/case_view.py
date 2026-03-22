@@ -6,13 +6,22 @@ import sqlite3
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QComboBox, QFormLayout, QHBoxLayout, QLabel, QLineEdit,
-    QPushButton, QSplitter, QTableWidget, QTableWidgetItem,
-    QTextEdit, QVBoxLayout, QWidget, QMessageBox,
+    QComboBox,
+    QFormLayout,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QSplitter,
+    QTableWidget,
+    QTableWidgetItem,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
 )
 
-from hcp_cms.data.repositories import CaseRepository
 from hcp_cms.core.case_manager import CaseManager
+from hcp_cms.data.repositories import CaseRepository
 
 
 class CaseView(QWidget):

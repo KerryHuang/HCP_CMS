@@ -4,12 +4,22 @@ from __future__ import annotations
 
 import sqlite3
 
-from PySide6.QtWidgets import (
-    QComboBox, QDateEdit, QGroupBox, QHBoxLayout, QLabel, QLineEdit,
-    QPushButton, QTableWidget, QTableWidgetItem, QTextEdit,
-    QVBoxLayout, QWidget, QProgressBar, QFileDialog, QSpinBox,
-)
 from PySide6.QtCore import QDate
+from PySide6.QtWidgets import (
+    QComboBox,
+    QDateEdit,
+    QFileDialog,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QProgressBar,
+    QPushButton,
+    QSpinBox,
+    QTableWidget,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+)
 
 
 class EmailView(QWidget):

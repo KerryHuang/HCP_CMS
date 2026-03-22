@@ -6,8 +6,15 @@ import sqlite3
 from pathlib import Path
 
 from PySide6.QtWidgets import (
-    QComboBox, QGroupBox, QHBoxLayout, QLabel, QPushButton, QSpinBox,
-    QTableWidget, QVBoxLayout, QWidget, QFileDialog,
+    QComboBox,
+    QFileDialog,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QSpinBox,
+    QTableWidget,
+    QVBoxLayout,
+    QWidget,
 )
 
 from hcp_cms.core.report_engine import ReportEngine

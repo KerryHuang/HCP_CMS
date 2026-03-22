@@ -1,7 +1,8 @@
 """Custom status bar widget."""
 
 from __future__ import annotations
-from PySide6.QtWidgets import QLabel, QHBoxLayout, QWidget
+
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QWidget
 
 
 class StatusWidget(QWidget):

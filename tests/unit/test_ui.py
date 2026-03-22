@@ -1,6 +1,5 @@
 """Tests for UI layer — basic instantiation without display."""
 
-import sqlite3
 from pathlib import Path
 
 import pytest

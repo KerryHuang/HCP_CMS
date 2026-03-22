@@ -5,9 +5,17 @@ from __future__ import annotations
 import sqlite3
 
 from PySide6.QtWidgets import (
-    QComboBox, QFormLayout, QHBoxLayout, QLabel, QLineEdit,
-    QPushButton, QSpinBox, QTableWidget, QTableWidgetItem,
-    QVBoxLayout, QWidget,
+    QComboBox,
+    QFormLayout,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QSpinBox,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
 )
 
 from hcp_cms.data.models import ClassificationRule

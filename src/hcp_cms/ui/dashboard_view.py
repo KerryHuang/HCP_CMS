@@ -5,10 +5,14 @@ from __future__ import annotations
 import sqlite3
 from datetime import datetime
 
-from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QFrame, QGridLayout, QHBoxLayout, QLabel, QTableWidget, QTableWidgetItem,
-    QVBoxLayout, QWidget,
+    QFrame,
+    QGridLayout,
+    QLabel,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
 )
 
 from hcp_cms.core.case_manager import CaseManager

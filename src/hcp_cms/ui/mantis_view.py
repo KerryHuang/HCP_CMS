@@ -5,11 +5,17 @@ from __future__ import annotations
 import sqlite3
 
 from PySide6.QtWidgets import (
-    QGroupBox, QHBoxLayout, QLabel, QPushButton, QTableWidget,
-    QTableWidgetItem, QTextEdit, QVBoxLayout, QWidget, QComboBox, QLineEdit,
+    QComboBox,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QTableWidget,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
 )
-
-from hcp_cms.data.repositories import MantisRepository
 
 
 class MantisView(QWidget):

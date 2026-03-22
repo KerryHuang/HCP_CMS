@@ -1,7 +1,9 @@
 """Mantis REST API client."""
 
 from __future__ import annotations
+
 import requests
+
 from hcp_cms.services.mantis.base import MantisClient, MantisIssue
 
 
