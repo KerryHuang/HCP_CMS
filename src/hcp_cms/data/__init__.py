@@ -1,1 +1,1 @@
-"""Data 層 — Repository 模式封裝 SQLite 存取"""
+"""Data access layer — database, models, repositories, FTS, backup."""
