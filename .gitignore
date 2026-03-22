@@ -13,4 +13,7 @@ build/
 .superpowers/
 .claude/
 .env
+.venv/
 user_config.json
+*.spec
+*.log
