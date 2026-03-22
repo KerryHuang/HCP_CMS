@@ -1,17 +1,19 @@
 """Excel report generation — tracking table and monthly report."""
 
 import sqlite3
-from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import openpyxl
-from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 
-from hcp_cms.data.models import Case, QAKnowledge
+from hcp_cms.data.models import Case
 from hcp_cms.data.repositories import (
-    CaseRepository, QARepository, MantisRepository, CompanyRepository,
+    CaseRepository,
+    CompanyRepository,
+    MantisRepository,
+    QARepository,
 )
-
 
 # Style constants
 FONT_HEADER = Font(name="微軟正黑體", size=11, bold=True, color="FFFFFF")
@@ -130,10 +132,10 @@ class ReportEngine:
         ws = wb.active
         ws.title = "月報摘要"
 
-        _CLOSED_STATUSES = {"已完成", "Closed", "已回覆"}
+        closed_statuses = {"已完成", "Closed", "已回覆"}
         total = len(cases)
         replied = sum(1 for c in cases if c.replied == "是")
-        pending = sum(1 for c in cases if c.status not in _CLOSED_STATUSES)
+        pending = sum(1 for c in cases if c.status not in closed_statuses)
         reply_rate = (replied / total * 100) if total > 0 else 0.0
 
         # KPI rows
@@ -172,8 +174,7 @@ class ReportEngine:
 
         # Sheet 3: 未結案清單
         ws3 = wb.create_sheet("未結案清單")
-        _CLOSED_STATUSES = {"已完成", "Closed", "已回覆"}
-        open_cases = [c for c in cases if c.status not in _CLOSED_STATUSES]
+        open_cases = [c for c in cases if c.status not in closed_statuses]
         self._write_header(ws3, headers)
         for i, case in enumerate(open_cases, 1):
             ws3.append([
@@ -193,7 +194,7 @@ class ReportEngine:
         company = self._company_repo.get_by_id(company_id)
         return company.name if company else company_id
 
-    def _write_header(self, ws, headers: list[str], row_num: int = 1) -> None:
+    def _write_header(self, ws: Any, headers: list[str], row_num: int = 1) -> None:
         """Write styled header row."""
         for col, header in enumerate(headers, 1):
             cell = ws.cell(row=row_num, column=col, value=header)
@@ -202,7 +203,7 @@ class ReportEngine:
             cell.alignment = Alignment(horizontal="center")
             cell.border = BORDER_THIN
 
-    def _style_data_row(self, ws, row_num: int) -> None:
+    def _style_data_row(self, ws: Any, row_num: int) -> None:
         """Apply alternating row style and borders."""
         for col in range(1, ws.max_column + 1):
             cell = ws.cell(row=row_num, column=col)

@@ -1,12 +1,13 @@
 """Tests for Classifier."""
 
 from pathlib import Path
+
 import pytest
 
+from hcp_cms.core.classifier import Classifier
 from hcp_cms.data.database import DatabaseManager
 from hcp_cms.data.models import ClassificationRule, Company
 from hcp_cms.data.repositories import CompanyRepository, RuleRepository
-from hcp_cms.core.classifier import Classifier
 
 
 @pytest.fixture
@@ -29,8 +30,12 @@ def seeded_db(db: DatabaseManager) -> DatabaseManager:
     # HCP is the default, no rule needed
 
     # Issue type rules
-    rule_repo.insert(ClassificationRule(rule_type="issue", pattern=r"客制|客製|customize", value="客制需求", priority=0))
-    rule_repo.insert(ClassificationRule(rule_type="issue", pattern=r"bug|錯誤|異常|Exception", value="BUG", priority=1))
+    rule_repo.insert(ClassificationRule(
+        rule_type="issue", pattern=r"客制|客製|customize", value="客制需求", priority=0,
+    ))
+    rule_repo.insert(ClassificationRule(
+        rule_type="issue", pattern=r"bug|錯誤|異常|Exception", value="BUG", priority=1,
+    ))
     rule_repo.insert(ClassificationRule(rule_type="issue", pattern=r"新功能|新增|Add feature", value="NEW", priority=2))
     rule_repo.insert(ClassificationRule(rule_type="issue", pattern=r"請問|如何|怎麼", value="邏輯咨詢", priority=5))
 
@@ -39,10 +44,14 @@ def seeded_db(db: DatabaseManager) -> DatabaseManager:
     rule_repo.insert(ClassificationRule(rule_type="error", pattern=r"請假|休假|假單", value="差勤請假管理", priority=2))
 
     # Priority rules
-    rule_repo.insert(ClassificationRule(rule_type="priority", pattern=r"緊急|urgent|asap|\(急\)", value="高", priority=1))
+    rule_repo.insert(ClassificationRule(
+        rule_type="priority", pattern=r"緊急|urgent|asap|\(急\)", value="高", priority=1,
+    ))
 
     # Broadcast rules
-    rule_repo.insert(ClassificationRule(rule_type="broadcast", pattern=r"維護客戶|更新公告|大PATCH", value="broadcast", priority=1))
+    rule_repo.insert(ClassificationRule(
+        rule_type="broadcast", pattern=r"維護客戶|更新公告|大PATCH", value="broadcast", priority=1,
+    ))
 
     # Companies
     comp_repo.insert(Company(company_id="C-ASE", name="日月光集團", domain="aseglobal.com"))

@@ -1,9 +1,11 @@
 from pathlib import Path
+
 import pytest
-from hcp_cms.data.database import DatabaseManager
-from hcp_cms.data.models import Case, ClassificationRule, Company
-from hcp_cms.data.repositories import CaseRepository, CompanyRepository, RuleRepository
+
 from hcp_cms.core.case_manager import CaseManager
+from hcp_cms.data.database import DatabaseManager
+from hcp_cms.data.models import ClassificationRule, Company
+from hcp_cms.data.repositories import CaseRepository, CompanyRepository, RuleRepository
 
 
 @pytest.fixture
@@ -77,7 +79,7 @@ class TestCaseManager:
         # Create cases
         c1 = mgr.create_case(subject="A", body="", sent_time="2026/03/10 09:00")
         c2 = mgr.create_case(subject="B", body="", sent_time="2026/03/15 10:00")
-        c3 = mgr.create_case(subject="C", body="", sent_time="2026/03/20 14:00")
+        mgr.create_case(subject="C", body="", sent_time="2026/03/20 14:00")
 
         mgr.mark_replied(c1.case_id, "2026/03/10 11:00")
         mgr.mark_replied(c2.case_id, "2026/03/16 10:00")

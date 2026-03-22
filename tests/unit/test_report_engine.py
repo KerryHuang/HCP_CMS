@@ -1,13 +1,14 @@
 """Tests for ReportEngine."""
 
 from pathlib import Path
-import pytest
-import openpyxl
 
+import openpyxl
+import pytest
+
+from hcp_cms.core.report_engine import ReportEngine
 from hcp_cms.data.database import DatabaseManager
 from hcp_cms.data.models import Case, Company, QAKnowledge
 from hcp_cms.data.repositories import CaseRepository, CompanyRepository, QARepository
-from hcp_cms.core.report_engine import ReportEngine
 
 
 @pytest.fixture

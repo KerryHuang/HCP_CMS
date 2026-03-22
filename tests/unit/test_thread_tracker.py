@@ -1,9 +1,11 @@
 from pathlib import Path
+
 import pytest
+
+from hcp_cms.core.thread_tracker import ThreadTracker
 from hcp_cms.data.database import DatabaseManager
 from hcp_cms.data.models import Case, Company
 from hcp_cms.data.repositories import CaseRepository, CompanyRepository
-from hcp_cms.core.thread_tracker import ThreadTracker
 
 
 @pytest.fixture

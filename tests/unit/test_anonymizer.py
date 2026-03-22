@@ -1,6 +1,7 @@
 """Tests for Anonymizer."""
 
 import pytest
+
 from hcp_cms.core.anonymizer import Anonymizer
 
 
@@ -94,7 +95,10 @@ class TestAnonymizer:
 
     def test_anonymize_multiple_rules_combined(self, anon):
         # Note: domain also appears standalone so Rule 7 can match it after Rule 1 handles the email
-        text = "您好 王大明\n請聯絡 test@aseglobal.com\n網域 aseglobal.com 的系統\n伺服器 192.168.1.1 異常\n工程師 陳小華已處理"
+        text = (
+            "您好 王大明\n請聯絡 test@aseglobal.com\n"
+            "網域 aseglobal.com 的系統\n伺服器 192.168.1.1 異常\n工程師 陳小華已處理"
+        )
         result = anon.anonymize(text, company_domain="aseglobal.com")
         assert "王大明" not in result
         assert "[email]" in result

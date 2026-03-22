@@ -3,11 +3,11 @@
 import sqlite3
 from datetime import datetime
 
-from hcp_cms.data.models import Case
-from hcp_cms.data.repositories import CaseRepository
-from hcp_cms.data.fts import FTSManager
 from hcp_cms.core.classifier import Classifier
 from hcp_cms.core.thread_tracker import ThreadTracker
+from hcp_cms.data.fts import FTSManager
+from hcp_cms.data.models import Case
+from hcp_cms.data.repositories import CaseRepository
 
 
 class CaseManager:

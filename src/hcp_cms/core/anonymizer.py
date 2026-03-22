@@ -20,7 +20,7 @@ class Anonymizer:
             return text
 
         aliases = company_aliases or []
-        names = person_names or []
+        _ = person_names  # reserved for future use
 
         # Rule 1: email → [email]
         text = re.sub(r'[\w.+-]+@[\w-]+\.[\w.-]+', '[email]', text)
@@ -55,13 +55,15 @@ class Anonymizer:
         text = re.sub(r'^(敬啟者|致\s+\S+).*$', '', text, flags=re.MULTILINE)
 
         # Rule 11: Best regards/Thanks + 姓名 → remove
-        text = re.sub(r'(Best\s+regards|Thanks|Thank\s+you|此致|敬上)[,，\s]*[\w\u4e00-\u9fff]*', '', text, flags=re.IGNORECASE)
+        _rule11 = r'(Best\s+regards|Thanks|Thank\s+you|此致|敬上)[,，\s]*[\w\u4e00-\u9fff]*'
+        text = re.sub(_rule11, '', text, flags=re.IGNORECASE)
 
         # Rule 12: 職稱+中文姓名（工程師 XXX、承辦人 XXX）→ 相關人員
         text = re.sub(r'(工程師|承辦人|負責人|專員|主管|經理|組長|課長|處長)\s*[\u4e00-\u9fff]{2,4}', '相關人員', text)
 
         # Rule 13: 姓名|職稱格式（簽名欄）→ （簽名已略）
-        text = re.sub(r'^[\u4e00-\u9fff]{2,4}\s*[|｜]\s*(工程師|專員|主管|經理).*$', '（簽名已略）', text, flags=re.MULTILINE)
+        _rule13 = r'^[\u4e00-\u9fff]{2,4}\s*[|｜]\s*(工程師|專員|主管|經理).*$'
+        text = re.sub(_rule13, '（簽名已略）', text, flags=re.MULTILINE)
 
         # Rule 14: 獨立英文人名（單行, capitalized）→ 相關人員
         text = re.sub(r'^[A-Z][a-z]+\s+[A-Z][a-z]+\s*$', '相關人員', text, flags=re.MULTILINE)

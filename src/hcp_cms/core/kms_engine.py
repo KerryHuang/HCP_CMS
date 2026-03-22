@@ -5,11 +5,10 @@ from pathlib import Path
 
 import openpyxl
 
+from hcp_cms.core.anonymizer import Anonymizer
+from hcp_cms.data.fts import FTSManager
 from hcp_cms.data.models import Case, QAKnowledge
 from hcp_cms.data.repositories import QARepository
-from hcp_cms.data.fts import FTSManager
-from hcp_cms.core.anonymizer import Anonymizer
-
 
 # Question detection patterns
 _QUESTION_PATTERNS = ["請問", "如何", "是否", "怎麼", "可否", "能否", "為什麼", "為何"]
