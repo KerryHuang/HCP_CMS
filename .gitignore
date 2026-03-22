@@ -11,7 +11,7 @@ build/
 *.db-journal
 *.db-wal
 .superpowers/
-.claude/
+.claude/settings.local.json
 .env
 .venv/
 user_config.json
