@@ -1,0 +1,132 @@
+"""Data models for HCP CMS — all entities as dataclasses."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from datetime import datetime
+
+SLA_HOURS_NORMAL = 24
+SLA_HOURS_HIGH = 4
+SLA_HOURS_CUSTOM = 48
+
+
+@dataclass
+class Case:
+    """客服案件 — cs_cases table."""
+    case_id: str
+    subject: str
+    contact_method: str = "Email"
+    status: str = "處理中"
+    priority: str = "中"
+    replied: str = "否"
+    sent_time: str | None = None
+    company_id: str | None = None
+    contact_person: str | None = None
+    system_product: str | None = None
+    issue_type: str | None = None
+    error_type: str | None = None
+    impact_period: str | None = None
+    progress: str | None = None
+    actual_reply: str | None = None
+    notes: str | None = None
+    rd_assignee: str | None = None
+    handler: str | None = None
+    reply_count: int = 0
+    linked_case_id: str | None = None
+    source: str = "email"
+    created_at: str | None = None
+    updated_at: str | None = None
+
+    @property
+    def is_open(self) -> bool:
+        return self.status not in ("已完成", "Closed")
+
+    @property
+    def sla_hours(self) -> int:
+        if self.issue_type == "客制需求":
+            return SLA_HOURS_CUSTOM
+        if self.priority == "高":
+            return SLA_HOURS_HIGH
+        return SLA_HOURS_NORMAL
+
+
+@dataclass
+class Company:
+    company_id: str
+    name: str
+    domain: str
+    alias: str | None = None
+    contact_info: str | None = None
+    created_at: str | None = None
+
+
+@dataclass
+class QAKnowledge:
+    qa_id: str
+    question: str
+    answer: str
+    system_product: str | None = None
+    issue_type: str | None = None
+    error_type: str | None = None
+    solution: str | None = None
+    keywords: str | None = None
+    has_image: str = "否"
+    doc_name: str | None = None
+    company_id: str | None = None
+    source_case_id: str | None = None
+    source: str = "manual"
+    created_by: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+    notes: str | None = None
+
+
+@dataclass
+class MantisTicket:
+    ticket_id: str
+    summary: str
+    created_time: str | None = None
+    company_id: str | None = None
+    priority: str | None = None
+    status: str | None = None
+    issue_type: str | None = None
+    module: str | None = None
+    handler: str | None = None
+    planned_fix: str | None = None
+    actual_fix: str | None = None
+    progress: str | None = None
+    notes: str | None = None
+    synced_at: str | None = None
+
+
+@dataclass
+class ClassificationRule:
+    rule_type: str
+    pattern: str
+    value: str
+    priority: int
+    rule_id: int | None = None
+    enabled: bool = True
+    created_at: str | None = None
+
+
+@dataclass
+class ProcessedFile:
+    file_hash: str
+    filename: str
+    message_id: str | None = None
+    processed_at: str | None = None
+
+
+@dataclass
+class Synonym:
+    word: str
+    synonym: str
+    group_name: str
+    id: int | None = None
+
+
+@dataclass
+class CaseMantisLink:
+    case_id: str
+    ticket_id: str
