@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (
     QHBoxLayout,
@@ -68,20 +68,22 @@ class MainWindow(QMainWindow):
         self._nav_list.setObjectName("navList")
 
         nav_items = [
-            ("📊 儀表板", "dashboard"),
-            ("📋 案件管理", "cases"),
-            ("📚 KMS 知識庫", "kms"),
-            ("📧 信件處理", "email"),
-            ("🔧 Mantis 同步", "mantis"),
-            ("📊 報表中心", "reports"),
-            ("📏 規則設定", "rules"),
-            ("⚙️ 系統設定", "settings"),
+            ("📊 儀表板", "dashboard", "⇧H"),
+            ("📋 案件管理", "cases", "⇧C"),
+            ("📚 KMS 知識庫", "kms", "⇧K"),
+            ("📧 信件處理", "email", "⇧E"),
+            ("🔧 Mantis 同步", "mantis", "⇧M"),
+            ("📊 報表中心", "reports", "⇧R"),
+            ("📏 規則設定", "rules", "⇧L"),
+            ("⚙️ 系統設定", "settings", "⇧S"),
         ]
 
-        for text, key in nav_items:
-            item = QListWidgetItem(text)
+        for text, key, shortcut in nav_items:
+            item = QListWidgetItem()
             item.setData(Qt.ItemDataRole.UserRole, key)
+            item.setSizeHint(QSize(0, 40))
             self._nav_list.addItem(item)
+            self._nav_list.setItemWidget(item, self._make_nav_widget(text, shortcut))
 
         self._nav_list.currentRowChanged.connect(self._on_nav_changed)
         sidebar_layout.addWidget(self._nav_list)
@@ -115,21 +117,55 @@ class MainWindow(QMainWindow):
         # Select first nav item
         self._nav_list.setCurrentRow(0)
 
+    def _make_nav_widget(self, text: str, shortcut: str | None) -> QWidget:
+        """Build a nav item widget with optional right-aligned shortcut hint."""
+        widget = QWidget()
+        widget.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        layout = QHBoxLayout(widget)
+        layout.setContentsMargins(16, 0, 12, 0)
+        layout.setSpacing(4)
+
+        label = QLabel(text)
+        label.setObjectName("navItemLabel")
+        layout.addWidget(label)
+
+        if shortcut:
+            layout.addStretch()
+            hint = QLabel(shortcut)
+            hint.setObjectName("navShortcutHint")
+            layout.addWidget(hint)
+
+        return widget
+
     def _on_nav_changed(self, index: int) -> None:
         """Switch content view when navigation changes."""
         if 0 <= index < self._stack.count():
             self._stack.setCurrentIndex(index)
+        # Update nav label colours to reflect selection
+        for i in range(self._nav_list.count()):
+            widget = self._nav_list.itemWidget(self._nav_list.item(i))
+            if widget:
+                label = widget.findChild(QLabel, "navItemLabel")
+                if label:
+                    label.setStyleSheet("color: #60a5fa;" if i == index else "color: #94a3b8;")
 
     def _setup_shortcuts(self) -> None:
-        """Set up global keyboard shortcuts."""
-        search_action = QAction("Global Search", self)
-        search_action.setShortcut(QKeySequence("Ctrl+K"))
-        search_action.triggered.connect(self._on_global_search)
-        self.addAction(search_action)
-
-    def _on_global_search(self) -> None:
-        """Focus global search (switch to KMS view)."""
-        self._nav_list.setCurrentRow(2)  # KMS view
+        """Set up global keyboard shortcuts for page navigation."""
+        shortcuts = [
+            ("Ctrl+Shift+H", 0),  # 儀表板
+            ("Ctrl+Shift+C", 1),  # 案件管理
+            ("Ctrl+Shift+K", 2),  # KMS 知識庫
+            ("Ctrl+Shift+E", 3),  # 信件處理
+            ("Ctrl+Shift+M", 4),  # Mantis 同步
+            ("Ctrl+Shift+R", 5),  # 報表中心
+            ("Ctrl+Shift+L", 6),  # 規則設定
+            ("Ctrl+Shift+S", 7),  # 系統設定
+        ]
+        for key, index in shortcuts:
+            action = QAction(key, self)
+            action.setShortcut(QKeySequence(key))
+            action.triggered.connect(lambda checked=False, i=index: self._nav_list.setCurrentRow(i))
+            self.addAction(action)
 
     def _apply_dark_theme(self) -> None:
         """Apply dark theme stylesheet."""
@@ -163,4 +199,6 @@ class MainWindow(QMainWindow):
             QGroupBox { color: #94a3b8; border: 1px solid #334155; border-radius: 6px;
                        margin-top: 8px; padding-top: 16px; }
             QGroupBox::title { subcontrol-origin: margin; left: 12px; padding: 0 4px; }
+            #navItemLabel { color: #94a3b8; font-size: 13px; background: transparent; }
+            #navShortcutHint { color: #475569; font-size: 10px; background: transparent; }
         """)

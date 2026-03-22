@@ -490,6 +490,19 @@ class RuleRepository:
             result.append(ClassificationRule(**d))
         return result
 
+    def update(self, rule: ClassificationRule) -> None:
+        if rule.rule_id is None:
+            return
+        self._conn.execute(
+            """
+            UPDATE classification_rules
+            SET pattern = :pattern, value = :value, priority = :priority
+            WHERE rule_id = :rule_id
+            """,
+            {"pattern": rule.pattern, "value": rule.value, "priority": rule.priority, "rule_id": rule.rule_id},
+        )
+        self._conn.commit()
+
     def delete(self, rule_id: int | None) -> None:
         if rule_id is None:
             return
