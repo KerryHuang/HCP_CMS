@@ -1,0 +1,56 @@
+[build-system]
+requires = ["setuptools >= 75.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hcp-cms"
+version = "0.1.0"
+description = "HCP 客服自動化系統"
+requires-python = ">= 3.14"
+dependencies = [
+    "PySide6 >= 6.10.0",
+    "openpyxl >= 3.1.0",
+    "extract-msg >= 0.50.0",
+    "exchangelib >= 5.0.0",
+    "requests >= 2.31.0",
+    "keyring >= 25.0.0",
+    "jieba >= 0.42.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest >= 8.0.0",
+    "pytest-qt >= 4.4.0",
+    "ruff >= 0.9.0",
+    "mypy >= 1.13.0",
+    "PyInstaller >= 6.0.0",
+    "pre-commit >= 4.0.0",
+]
+
+[project.gui-scripts]
+hcp-cms = "hcp_cms.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
+ignore = ["RUF001", "RUF002", "RUF003"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.mypy]
+python_version = "3.14"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+qt_api = "pyside6"
+addopts = "-v --tb=short"
