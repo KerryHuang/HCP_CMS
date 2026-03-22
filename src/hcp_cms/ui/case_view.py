@@ -1,0 +1,151 @@
+"""Case management view — list, detail, CRUD."""
+
+from __future__ import annotations
+
+import sqlite3
+
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import (
+    QComboBox, QFormLayout, QHBoxLayout, QLabel, QLineEdit,
+    QPushButton, QSplitter, QTableWidget, QTableWidgetItem,
+    QTextEdit, QVBoxLayout, QWidget, QMessageBox,
+)
+
+from hcp_cms.data.repositories import CaseRepository
+from hcp_cms.core.case_manager import CaseManager
+
+
+class CaseView(QWidget):
+    """Case management page."""
+
+    def __init__(self, conn: sqlite3.Connection | None = None) -> None:
+        super().__init__()
+        self._conn = conn
+        self._setup_ui()
+
+    def _setup_ui(self) -> None:
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+
+        # Header
+        header = QHBoxLayout()
+        title = QLabel("📋 案件管理")
+        title.setStyleSheet("font-size: 18px; font-weight: bold; color: #f1f5f9;")
+        header.addWidget(title)
+
+        self._search_input = QLineEdit()
+        self._search_input.setPlaceholderText("搜尋案件...")
+        self._search_input.setFixedWidth(300)
+        header.addWidget(self._search_input)
+
+        self._filter_combo = QComboBox()
+        self._filter_combo.addItems(["全部", "處理中", "已回覆", "已完成", "Closed"])
+        header.addWidget(self._filter_combo)
+
+        refresh_btn = QPushButton("🔄 重新整理")
+        refresh_btn.clicked.connect(self.refresh)
+        header.addWidget(refresh_btn)
+
+        new_btn = QPushButton("➕ 手動建案")
+        new_btn.clicked.connect(self._on_new_case)
+        header.addWidget(new_btn)
+
+        layout.addLayout(header)
+
+        # Splitter: table + detail
+        splitter = QSplitter(Qt.Orientation.Vertical)
+
+        # Case table
+        self._table = QTableWidget(0, 8)
+        self._table.setHorizontalHeaderLabels([
+            "案件編號", "狀態", "優先", "公司", "主旨", "問題類型", "回覆", "時間"
+        ])
+        self._table.horizontalHeader().setStretchLastSection(True)
+        self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self._table.itemSelectionChanged.connect(self._on_selection_changed)
+        splitter.addWidget(self._table)
+
+        # Detail panel
+        detail = QWidget()
+        detail_layout = QFormLayout(detail)
+        self._detail_id = QLabel()
+        self._detail_subject = QLabel()
+        self._detail_status = QLabel()
+        self._detail_progress = QTextEdit()
+        self._detail_progress.setMaximumHeight(100)
+
+        detail_layout.addRow("案件編號:", self._detail_id)
+        detail_layout.addRow("主旨:", self._detail_subject)
+        detail_layout.addRow("狀態:", self._detail_status)
+        detail_layout.addRow("處理進度:", self._detail_progress)
+
+        # Action buttons
+        btn_layout = QHBoxLayout()
+        self._btn_reply = QPushButton("✅ 標記已回覆")
+        self._btn_reply.clicked.connect(self._on_mark_replied)
+        btn_layout.addWidget(self._btn_reply)
+
+        self._btn_close = QPushButton("🔒 結案")
+        self._btn_close.clicked.connect(self._on_close_case)
+        btn_layout.addWidget(self._btn_close)
+
+        detail_layout.addRow(btn_layout)
+        splitter.addWidget(detail)
+
+        layout.addWidget(splitter)
+
+    def refresh(self) -> None:
+        if not self._conn:
+            return
+        try:
+            repo = CaseRepository(self._conn)
+            status_filter = self._filter_combo.currentText()
+            if status_filter == "全部":
+                cases = []
+                for s in ["處理中", "已回覆", "已完成", "Closed"]:
+                    cases.extend(repo.list_by_status(s))
+            else:
+                cases = repo.list_by_status(status_filter)
+
+            self._cases = cases
+            self._table.setRowCount(len(cases))
+            for i, case in enumerate(cases):
+                self._table.setItem(i, 0, QTableWidgetItem(case.case_id))
+                self._table.setItem(i, 1, QTableWidgetItem(case.status))
+                self._table.setItem(i, 2, QTableWidgetItem(case.priority))
+                self._table.setItem(i, 3, QTableWidgetItem(case.company_id or ""))
+                self._table.setItem(i, 4, QTableWidgetItem(case.subject or ""))
+                self._table.setItem(i, 5, QTableWidgetItem(case.issue_type or ""))
+                self._table.setItem(i, 6, QTableWidgetItem(case.replied))
+                self._table.setItem(i, 7, QTableWidgetItem(case.sent_time or ""))
+        except Exception:
+            pass
+
+    def _on_selection_changed(self) -> None:
+        rows = self._table.selectionModel().selectedRows()
+        if not rows or not hasattr(self, '_cases'):
+            return
+        row = rows[0].row()
+        if row < 0 or row >= len(self._cases):
+            return
+        case = self._cases[row]
+        self._detail_id.setText(case.case_id)
+        self._detail_subject.setText(case.subject or "")
+        self._detail_status.setText(case.status)
+        self._detail_progress.setPlainText(case.progress or "")
+
+    def _on_new_case(self) -> None:
+        pass  # Will be implemented with dialog
+
+    def _on_mark_replied(self) -> None:
+        if not self._conn or not self._detail_id.text():
+            return
+        CaseManager(self._conn).mark_replied(self._detail_id.text())
+        self.refresh()
+
+    def _on_close_case(self) -> None:
+        if not self._conn or not self._detail_id.text():
+            return
+        CaseManager(self._conn).close_case(self._detail_id.text())
+        self.refresh()
