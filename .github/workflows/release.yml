@@ -1,0 +1,161 @@
+name: Build & Release
+
+on:
+  push:
+    branches: [master]
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  # ──────────────────────────────────────────────
+  # 1. Run tests before building
+  # ──────────────────────────────────────────────
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Run linter
+        run: ruff check src/ tests/
+
+      - name: Run tests
+        run: |
+          # UI tests need display
+          sudo apt-get update && sudo apt-get install -y xvfb libegl1
+          xvfb-run pytest --tb=short -q
+
+  # ──────────────────────────────────────────────
+  # 2. Build installers for Windows & macOS
+  # ──────────────────────────────────────────────
+  build:
+    needs: test
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            artifact: HCP_CMS-windows
+            ext: .exe
+          - os: macos-latest
+            artifact: HCP_CMS-macos
+            ext: .app
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Extract version
+        id: version
+        shell: bash
+        run: |
+          VERSION=$(python -c "from hcp_cms import __version__; print(__version__)")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Build with PyInstaller (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          pyinstaller \
+            --name HCP_CMS \
+            --onefile \
+            --windowed \
+            --add-data "src/hcp_cms/i18n/zh_TW.json;hcp_cms/i18n" \
+            --add-data "src/hcp_cms/i18n/en.json;hcp_cms/i18n" \
+            --hidden-import PySide6.QtCore \
+            --hidden-import PySide6.QtGui \
+            --hidden-import PySide6.QtWidgets \
+            --hidden-import jieba \
+            --hidden-import openpyxl \
+            --hidden-import extract_msg \
+            --hidden-import exchangelib \
+            --hidden-import keyring \
+            --hidden-import keyring.backends \
+            --collect-data jieba \
+            src/hcp_cms/app.py
+
+      - name: Build with PyInstaller (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          pyinstaller \
+            --name HCP_CMS \
+            --onefile \
+            --windowed \
+            --add-data "src/hcp_cms/i18n/zh_TW.json:hcp_cms/i18n" \
+            --add-data "src/hcp_cms/i18n/en.json:hcp_cms/i18n" \
+            --hidden-import PySide6.QtCore \
+            --hidden-import PySide6.QtGui \
+            --hidden-import PySide6.QtWidgets \
+            --hidden-import jieba \
+            --hidden-import openpyxl \
+            --hidden-import extract_msg \
+            --hidden-import exchangelib \
+            --hidden-import keyring \
+            --hidden-import keyring.backends \
+            --collect-data jieba \
+            src/hcp_cms/app.py
+
+      - name: Prepare artifact (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          mkdir -p release
+          cp dist/HCP_CMS.exe "release/HCP_CMS-${{ steps.version.outputs.version }}-windows.exe"
+
+      - name: Prepare artifact (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p release
+          cd dist
+          zip -r "../release/HCP_CMS-${{ steps.version.outputs.version }}-macos.zip" HCP_CMS.app 2>/dev/null || \
+          zip -r "../release/HCP_CMS-${{ steps.version.outputs.version }}-macos.zip" HCP_CMS
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: release/*
+          retention-days: 30
+
+  # ──────────────────────────────────────────────
+  # 3. Create GitHub Release (on tag push)
+  # ──────────────────────────────────────────────
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: List artifacts
+        run: find artifacts -type f
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: false
+          generate_release_notes: true
+          files: |
+            artifacts/HCP_CMS-windows/*
+            artifacts/HCP_CMS-macos/*
