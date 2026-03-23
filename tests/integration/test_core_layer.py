@@ -153,7 +153,7 @@ class TestReportGenerationWithRealData:
         # Verify report content
         import openpyxl
         wb = openpyxl.load_workbook(str(report))
-        ws = wb["月報摘要"]
-        total = ws.cell(row=2, column=2).value
+        ws = wb["📊 月報摘要"]
+        total = ws.cell(row=4, column=2).value
         assert total >= 2
         wb.close()
