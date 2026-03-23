@@ -27,6 +27,8 @@ class Classifier:
         """
         text = f"{subject} {body[:300]}"  # subject + first 300 chars of body
 
+        tags = self._parse_subject_tags(subject)
+
         result = {
             "system_product": self._match_rules("product", text, "HCP"),
             "issue_type": self._match_rules("issue", text, "OTH"),
@@ -34,11 +36,41 @@ class Classifier:
             "priority": self._match_rules("priority", text, "中"),
             "company_id": self._resolve_company(sender_email),
             "is_broadcast": self._check_broadcast(text),
-            "handler": self._match_rules("handler", text, "") or None,
-            "progress": self._match_rules("progress", text, "") or None,
+            # 主旨標記優先，其次才是 DB 規則
+            "handler": tags.get("handler") or self._match_rules("handler", text, "") or None,
+            "progress": tags.get("progress") or self._match_rules("progress", text, "") or None,
+            "issue_number": tags.get("issue_number"),
         }
 
-        # Override: if issue_type contains 客制 keywords, set priority custom
+        return result
+
+    def _parse_subject_tags(self, subject: str) -> dict:
+        """
+        解析主旨中的固定標記格式，回傳可識別的欄位值。
+
+        支援格式：
+          ISSUE_YYYYMMDD_NNNNNNN_  → issue_number
+          (RD_XXXX)                → handler（取第一個，去除 RD_ 前綴）
+          (非 RD 開頭的括號)        → progress（取最後一個）
+        """
+        result: dict = {}
+
+        # ISSUE 編號：ISSUE_20260319_0017445_
+        m = re.search(r"ISSUE_\d{8}_(\d+)_", subject, re.IGNORECASE)
+        if m:
+            result["issue_number"] = m.group(1)
+
+        # (RD_XXXX) → handler，取第一個符合
+        rd_match = re.search(r"\(RD_([A-Za-z0-9_]+)\)", subject)
+        if rd_match:
+            result["handler"] = rd_match.group(1)
+
+        # 非 RD 括號 → progress，取最後一個（全形或半形括號）
+        all_brackets = re.findall(r"[（(]([^）)]+)[）)]", subject)
+        non_rd = [b for b in all_brackets if not b.upper().startswith("RD_")]
+        if non_rd:
+            result["progress"] = non_rd[-1]
+
         return result
 
     def _match_rules(self, rule_type: str, text: str, default: str) -> str:

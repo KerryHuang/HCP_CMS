@@ -141,3 +141,50 @@ class TestClassifier:
         c = Classifier(seeded_db.connection)
         result = c.classify("客製化功能異常", "customize this bug")
         assert result["issue_type"] == "客制需求"  # priority 0 wins
+
+
+class TestSubjectTagParser:
+    """測試主旨標記自動解析。"""
+
+    SUBJECT = (
+        "ISSUE_20260319_0017445_ 【欣興】表單開假問題~請協助確認回傳 0005 "
+        "員工編號特別假類別不允許重复(RD_JACKY)(待請JACKY安排修正)"
+    )
+
+    def test_parse_issue_number(self, seeded_db):
+        c = Classifier(seeded_db.connection)
+        result = c.classify(self.SUBJECT, "")
+        assert result.get("issue_number") == "0017445"
+
+    def test_parse_rd_handler(self, seeded_db):
+        c = Classifier(seeded_db.connection)
+        result = c.classify(self.SUBJECT, "")
+        assert result.get("handler") == "JACKY"
+
+    def test_parse_progress_from_last_bracket(self, seeded_db):
+        c = Classifier(seeded_db.connection)
+        result = c.classify(self.SUBJECT, "")
+        assert result.get("progress") == "待請JACKY安排修正"
+
+    def test_no_issue_number_when_absent(self, seeded_db):
+        c = Classifier(seeded_db.connection)
+        result = c.classify("一般主旨 問題描述", "")
+        assert result.get("issue_number") is None
+
+    def test_no_rd_tag_when_absent(self, seeded_db):
+        c = Classifier(seeded_db.connection)
+        result = c.classify("一般主旨 無標記", "")
+        # handler 應來自 DB 規則或為 None
+        assert result.get("handler") is None
+
+    def test_multiple_rd_takes_first(self, seeded_db):
+        """多個 RD 標記時取第一個。"""
+        c = Classifier(seeded_db.connection)
+        result = c.classify("問題(RD_JACKY)(RD_PENGYI)(待確認)", "")
+        assert result.get("handler") == "JACKY"
+
+    def test_progress_only_last_non_rd_bracket(self, seeded_db):
+        """只取最後一個非 RD 括號內容。"""
+        c = Classifier(seeded_db.connection)
+        result = c.classify("問題(RD_JACKY)(第一段說明)(最終說明)", "")
+        assert result.get("progress") == "最終說明"

@@ -36,6 +36,9 @@ class CaseManager:
 
         now = datetime.now().strftime("%Y/%m/%d %H:%M")
 
+        issue_number = classification.get("issue_number")
+        notes = f"ISSUE#{issue_number}" if issue_number else None
+
         case = Case(
             case_id=case_id,
             subject=subject,
@@ -48,6 +51,7 @@ class CaseManager:
             priority=classification["priority"],
             handler=handler or classification.get("handler"),
             progress=classification.get("progress"),
+            notes=notes,
             source="email",
         )
 
