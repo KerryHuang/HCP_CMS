@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
 )
 
 from hcp_cms.core.case_manager import CaseManager
-from hcp_cms.data.repositories import CaseRepository
+from hcp_cms.data.repositories import CaseRepository, CompanyRepository
 
 
 class CaseView(QWidget):
@@ -65,9 +65,9 @@ class CaseView(QWidget):
         splitter = QSplitter(Qt.Orientation.Vertical)
 
         # Case table
-        self._table = QTableWidget(0, 8)
+        self._table = QTableWidget(0, 9)
         self._table.setHorizontalHeaderLabels([
-            "案件編號", "狀態", "優先", "公司", "主旨", "問題類型", "回覆", "時間"
+            "案件編號", "狀態", "優先", "公司", "主旨", "問題類型", "回覆", "來回次數", "時間"
         ])
         self._table.horizontalHeader().setStretchLastSection(True)
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -84,6 +84,8 @@ class CaseView(QWidget):
         self._detail_system_product = QLabel()
         self._detail_error_type = QLabel()
         self._detail_handler = QLabel()
+        self._detail_reply_count = QLabel()
+        self._detail_linked_case = QLabel()
         self._detail_progress = QTextEdit()
         self._detail_progress.setMaximumHeight(80)
 
@@ -93,6 +95,8 @@ class CaseView(QWidget):
         detail_layout.addRow("系統產品:", self._detail_system_product)
         detail_layout.addRow("功能模組:", self._detail_error_type)
         detail_layout.addRow("技術人員:", self._detail_handler)
+        detail_layout.addRow("來回次數:", self._detail_reply_count)
+        detail_layout.addRow("關聯案件:", self._detail_linked_case)
         detail_layout.addRow("處理進度:", self._detail_progress)
 
         # Action buttons
@@ -124,16 +128,27 @@ class CaseView(QWidget):
                 cases = repo.list_by_status(status_filter)
 
             self._cases = cases
+            # 預先建立 company_id → 公司名稱的對照表
+            company_repo = CompanyRepository(self._conn)
+            company_map: dict[str, str] = {
+                c.company_id: c.name for c in company_repo.list_all()
+            }
+
             self._table.setRowCount(len(cases))
             for i, case in enumerate(cases):
                 self._table.setItem(i, 0, QTableWidgetItem(case.case_id))
                 self._table.setItem(i, 1, QTableWidgetItem(case.status))
                 self._table.setItem(i, 2, QTableWidgetItem(case.priority))
-                self._table.setItem(i, 3, QTableWidgetItem(case.company_id or ""))
+                # 公司欄：優先顯示公司中文名稱，其次顯示 company_id
+                company_display = company_map.get(case.company_id or "", case.company_id or "")
+                self._table.setItem(i, 3, QTableWidgetItem(company_display))
                 self._table.setItem(i, 4, QTableWidgetItem(case.subject or ""))
                 self._table.setItem(i, 5, QTableWidgetItem(case.issue_type or ""))
                 self._table.setItem(i, 6, QTableWidgetItem(case.replied))
-                self._table.setItem(i, 7, QTableWidgetItem(case.sent_time or ""))
+                reply_item = QTableWidgetItem(str(case.reply_count) if case.reply_count else "")
+                reply_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                self._table.setItem(i, 7, reply_item)
+                self._table.setItem(i, 8, QTableWidgetItem(case.sent_time or ""))
         except Exception:
             pass
 
@@ -151,6 +166,9 @@ class CaseView(QWidget):
         self._detail_system_product.setText(case.system_product or "")
         self._detail_error_type.setText(case.error_type or "")
         self._detail_handler.setText(case.handler or "")
+        reply_display = str(case.reply_count) if case.reply_count else "0"
+        self._detail_reply_count.setText(reply_display)
+        self._detail_linked_case.setText(case.linked_case_id or "")
         self._detail_progress.setPlainText(case.progress or "")
 
     def _on_new_case(self) -> None:

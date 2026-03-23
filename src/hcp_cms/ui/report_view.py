@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sqlite3
 from pathlib import Path
 
@@ -10,6 +11,7 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
     QLabel,
+    QMessageBox,
     QPushButton,
     QSpinBox,
     QTableWidget,
@@ -73,14 +75,50 @@ class ReportView(QWidget):
     def _on_generate(self) -> None:
         if not self._conn:
             return
-        path, _ = QFileDialog.getSaveFileName(self, "儲存報表", "", "Excel (*.xlsx)")
-        if not path:
-            return
-        engine = ReportEngine(self._conn)
+
         year = self._year_spin.value()
         month = self._month_spin.value()
-        if self._type_combo.currentText() == "追蹤表":
-            engine.generate_tracking_table(year, month, Path(path))
-        else:
-            engine.generate_monthly_report(year, month, Path(path))
-        self._status.setText(f"報表已儲存至 {path}")
+        report_type = self._type_combo.currentText()
+
+        # 預設檔名：報表類型_年份_月份.xlsx
+        type_prefix = "追蹤表" if report_type == "追蹤表" else "月報"
+        default_name = f"HCP_{type_prefix}_{year}_{month:02d}.xlsx"
+
+        # 預設儲存位置：使用者桌面
+        desktop = Path.home() / "Desktop"
+        if not desktop.exists():
+            desktop = Path.home()
+        default_path = str(desktop / default_name)
+
+        path, _ = QFileDialog.getSaveFileName(
+            self, "儲存報表", default_path, "Excel 檔案 (*.xlsx)"
+        )
+        if not path:
+            return
+
+        self._status.setText("⏳ 正在產生報表，請稍候...")
+        self._status.repaint()
+
+        try:
+            engine = ReportEngine(self._conn)
+            if report_type == "追蹤表":
+                engine.generate_tracking_table(year, month, Path(path))
+            else:
+                engine.generate_monthly_report(year, month, Path(path))
+
+            self._status.setText(f"✅ 報表已儲存：{path}")
+
+            # 產生後自動開啟檔案
+            reply = QMessageBox.question(
+                self,
+                "報表產生完成",
+                f"報表已儲存至：\n{path}\n\n是否立即開啟？",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.Yes,
+            )
+            if reply == QMessageBox.StandardButton.Yes:
+                os.startfile(path)  # type: ignore[attr-defined]
+
+        except Exception as e:
+            self._status.setText(f"❌ 產生失敗：{e}")
+            QMessageBox.critical(self, "產生失敗", str(e))

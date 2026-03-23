@@ -205,6 +205,7 @@ class EmailView(QWidget):
                         body=email.body,
                         sender_email=email.sender,
                         sent_time=str(email.date) if email.date else None,
+                        source_filename=email.source_file,
                     )
                     self._table.setItem(row, 4, QTableWidgetItem("已匯入"))
                     success += 1

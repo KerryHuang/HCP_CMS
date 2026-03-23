@@ -16,7 +16,6 @@ from hcp_cms.data.database import DatabaseManager
 from hcp_cms.data.models import ClassificationRule, Company
 from hcp_cms.data.repositories import CompanyRepository, RuleRepository
 
-
 # ──────────────────────────────────────────────────────────────
 #  公司 Domain 對照表（來自 rules_config.py COMPANY_ALIAS）
 # ──────────────────────────────────────────────────────────────

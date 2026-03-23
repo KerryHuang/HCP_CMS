@@ -2,6 +2,7 @@
 
 import sqlite3
 from datetime import datetime
+from pathlib import Path
 
 from hcp_cms.core.classifier import Classifier
 from hcp_cms.core.thread_tracker import ThreadTracker
@@ -26,10 +27,23 @@ class CaseManager:
         sent_time: str | None = None,
         contact_person: str | None = None,
         handler: str | None = None,
+        source_filename: str | None = None,
     ) -> Case:
         """Create a new case from email data, with auto-classification and thread detection."""
         # Classify
         classification = self._classifier.classify(subject, body, sender_email)
+
+        # 解析檔名標記（ISSUE#/RD handler/進度）優先於 email 主旨標記
+        # 舊系統會將 ISSUE 前綴和 (RD_XXX)(進度) 加在 .msg 檔名中
+        if source_filename:
+            stem = Path(source_filename).stem
+            fn_tags = self._classifier._parse_subject_tags(stem)
+            if fn_tags.get("issue_number") and not classification.get("issue_number"):
+                classification["issue_number"] = fn_tags["issue_number"]
+            if fn_tags.get("handler") and not classification.get("handler"):
+                classification["handler"] = fn_tags["handler"]
+            if fn_tags.get("progress") and not classification.get("progress"):
+                classification["progress"] = fn_tags["progress"]
 
         # Generate case ID
         case_id = self._case_repo.next_case_id()
@@ -55,37 +69,48 @@ class CaseManager:
             source="email",
         )
 
-        # Thread detection
+        # Thread detection（先偵測，設定 linked_case_id，再 insert）
         parent = self._tracker.find_thread_parent(
             classification["company_id"], subject
         )
         if parent:
-            self._tracker.link_to_parent(case_id, parent.case_id)
             case.linked_case_id = parent.case_id
-            # Reopen parent if it was replied
-            if parent.status == "已回覆":
-                self.reopen_case(parent.case_id, f"後續來信: {subject}")
 
         self._case_repo.insert(case)
         self._fts.index_case(case_id, subject, None, None)
 
+        # link_to_parent 需要子案件已在 DB 中才能更新，故在 insert 後執行
+        if parent:
+            self._tracker.link_to_parent(case_id, parent.case_id)
+            # Reopen parent if it was replied
+            if parent.status == "已回覆":
+                self.reopen_case(parent.case_id, f"後續來信: {subject}")
+
         return case
 
     def mark_replied(self, case_id: str, reply_time: str | None = None) -> None:
-        """Mark case as replied."""
+        """Mark case as replied.
+
+        每次 CS 完成回覆，reply_count +1（參考舊版 _link_and_update_case 邏輯）。
+        """
         case = self._case_repo.get_by_id(case_id)
         if case:
             case.status = "已回覆"
             case.replied = "是"
             case.actual_reply = reply_time or datetime.now().strftime("%Y/%m/%d %H:%M")
+            case.reply_count += 1
             self._case_repo.update(case)
 
     def reopen_case(self, case_id: str, reason: str = "") -> None:
-        """Reopen a replied case back to processing."""
+        """Reopen a replied case back to processing.
+
+        重開案件本身不額外增加 reply_count（舊版 _reopen_existing_case 不修改此欄位）。
+        reply_count 的遞增由 link_to_parent()（新來信關聯）及 mark_replied()（CS回覆）負責。
+        """
         case = self._case_repo.get_by_id(case_id)
         if case:
             case.status = "處理中"
-            case.reply_count += 1
+            # 注意：不在此處 +1，避免與 link_to_parent 雙重計算
             if reason:
                 existing = case.notes or ""
                 case.notes = f"{existing}\n[重開] {reason}".strip()

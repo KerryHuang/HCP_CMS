@@ -55,16 +55,49 @@ class TestCaseManager:
         assert updated.replied == "是"
         assert updated.actual_reply == "2026/03/20 12:00"
 
+    def test_mark_replied_increments_reply_count(self, seeded_db):
+        """CS 標記已回覆時，reply_count 應 +1（參考舊版 _link_and_update_case）。"""
+        mgr = CaseManager(seeded_db.connection)
+        case = mgr.create_case(subject="Test", body="body")
+        assert case.reply_count == 0
+        mgr.mark_replied(case.case_id)
+
+        updated = CaseRepository(seeded_db.connection).get_by_id(case.case_id)
+        assert updated.reply_count == 1
+
     def test_reopen_case(self, seeded_db):
         mgr = CaseManager(seeded_db.connection)
         case = mgr.create_case(subject="Test", body="body")
-        mgr.mark_replied(case.case_id)
+        mgr.mark_replied(case.case_id)   # reply_count → 1
         mgr.reopen_case(case.case_id, "客戶再次來信")
 
         updated = CaseRepository(seeded_db.connection).get_by_id(case.case_id)
         assert updated.status == "處理中"
+        # reopen 本身不應再 +1（舊版 _reopen_existing_case 不修改 reply_count）
         assert updated.reply_count == 1
         assert "重開" in updated.notes
+
+    def test_reply_count_no_double_count_on_reopen(self, seeded_db):
+        """客戶回覆已回覆案件時：link_to_parent +1 即可，reopen 不應再 +1。"""
+        mgr = CaseManager(seeded_db.connection)
+        repo = CaseRepository(seeded_db.connection)
+
+        # 建立根案件並回覆
+        root = mgr.create_case(
+            subject="薪資問題", body="原始來信",
+            sender_email="user@aseglobal.com",
+        )
+        mgr.mark_replied(root.case_id)  # reply_count → 1
+
+        # 客戶再次來信（觸發 thread detection → link + reopen）
+        child = mgr.create_case(
+            subject="RE: 薪資問題", body="再次詢問",
+            sender_email="user@aseglobal.com",
+        )
+        root_updated = repo.get_by_id(root.case_id)
+        # link_to_parent 再 +1 → 共 2；不應因 reopen 又變 3
+        assert root_updated.reply_count == 2
+        assert child.linked_case_id == root.case_id
 
     def test_close_case(self, seeded_db):
         mgr = CaseManager(seeded_db.connection)
@@ -108,6 +141,33 @@ class TestCaseManager:
 
         stats = mgr.get_dashboard_stats(2026, 3)
         assert stats["avg_frt"] == 3.0  # Only c1 counted
+
+    def test_create_case_parses_filename_tags(self, seeded_db):
+        """匯入 .msg 時，ISSUE#/handler/progress 應從檔名中解析。"""
+        mgr = CaseManager(seeded_db.connection)
+        filename = (
+            "ISSUE_20260319_0017445_ 【欣興】表單開假問題"
+            "(RD_JACKY)(待請JACKY安排修正).msg"
+        )
+        case = mgr.create_case(
+            subject="RE: RE: 【欣興】表單開假問題",
+            body="問題說明",
+            sender_email="user@aseglobal.com",
+            source_filename=filename,
+        )
+        assert case.notes and "ISSUE#0017445" in case.notes
+        assert case.handler == "JACKY"
+        assert case.progress == "待請JACKY安排修正"
+
+    def test_create_case_email_subject_tags_when_no_filename(self, seeded_db):
+        """無檔名時，仍能從 email 主旨本身解析 RD/進度標記。"""
+        mgr = CaseManager(seeded_db.connection)
+        case = mgr.create_case(
+            subject="【問題】(RD_JACKY)(待確認)",
+            body="",
+        )
+        assert case.handler == "JACKY"
+        assert case.progress == "待確認"
 
     def test_thread_detection_links_cases(self, seeded_db):
         mgr = CaseManager(seeded_db.connection)

@@ -44,9 +44,7 @@ class MSGReader(MailProvider):
         """Not applicable for file-based reader."""
         return []
 
-    def create_draft(
-        self, to: list[str], subject: str, body: str, attachments: list[str] | None = None
-    ) -> bool:
+    def create_draft(self, to: list[str], subject: str, body: str, attachments: list[str] | None = None) -> bool:
         """Not applicable for file-based reader."""
         return False
 
@@ -67,7 +65,9 @@ class MSGReader(MailProvider):
         """Parse a .msg file using extract-msg."""
         try:
             import extract_msg
-            msg = extract_msg.Message(str(file_path))
+
+            # 直接傳 Path 物件，避免 str() 轉換在 Windows 中文路徑的編碼問題
+            msg = extract_msg.Message(file_path)
             email = RawEmail(
                 sender=msg.sender or "",
                 subject=msg.subject or "",

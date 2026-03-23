@@ -121,15 +121,37 @@ class TestClassifier:
         result = c.classify("Test", "Body", "user@aseglobal.com")
         assert result["company_id"] == "C-ASE"
 
+    def test_classify_company_display_name_format(self, seeded_db):
+        """寄件人為 'Display Name <email@domain>' 格式時也能正確解析公司。"""
+        c = Classifier(seeded_db.connection)
+        result = c.classify("Test", "Body", "Cindy Yang (楊豔文) <user@aseglobal.com>")
+        assert result["company_id"] == "C-ASE"
+
     def test_classify_company_subdomain_fallback(self, seeded_db):
         c = Classifier(seeded_db.connection)
         result = c.classify("Test", "Body", "user@mail.aseglobal.com")
         assert result["company_id"] == "C-ASE"
 
-    def test_classify_company_unknown(self, seeded_db):
+    def test_classify_company_unknown_id_is_none(self, seeded_db):
+        """查無公司時 company_id 應為 None（FK 安全），company_display 為 domain。"""
         c = Classifier(seeded_db.connection)
         result = c.classify("Test", "Body", "user@unknown.com")
         assert result["company_id"] is None
+        assert result["company_display"] == "unknown.com"
+
+    def test_classify_company_unknown_subdomain_display_fallback(self, seeded_db):
+        """子網域查不到公司時，company_display 為去子網域後的 domain。"""
+        c = Classifier(seeded_db.connection)
+        result = c.classify("Test", "Body", "user@mail.unknown.com")
+        assert result["company_id"] is None
+        assert result["company_display"] == "unknown.com"
+
+    def test_classify_company_known_has_display_name(self, seeded_db):
+        """已知公司應同時有 company_id 和 company_display（公司中文名）。"""
+        c = Classifier(seeded_db.connection)
+        result = c.classify("Test", "Body", "user@aseglobal.com")
+        assert result["company_id"] == "C-ASE"
+        assert result["company_display"] == "日月光集團"
 
     def test_classify_company_no_email(self, seeded_db):
         c = Classifier(seeded_db.connection)

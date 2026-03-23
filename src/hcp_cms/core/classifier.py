@@ -2,6 +2,7 @@
 
 import re
 import sqlite3
+from email.utils import parseaddr
 
 from hcp_cms.data.repositories import CompanyRepository, RuleRepository
 
@@ -29,12 +30,15 @@ class Classifier:
 
         tags = self._parse_subject_tags(subject)
 
+        company_id, company_display = self._resolve_company(sender_email)
+
         result = {
             "system_product": self._match_rules("product", text, "HCP"),
             "issue_type": self._match_rules("issue", text, "OTH"),
             "error_type": self._match_rules("error", text, "人事資料管理"),
             "priority": self._match_rules("priority", text, "中"),
-            "company_id": self._resolve_company(sender_email),
+            "company_id": company_id,          # FK 安全值（已知公司 ID 或 None）
+            "company_display": company_display,  # 顯示用（公司中文名或 domain fallback）
             "is_broadcast": self._check_broadcast(text),
             # 主旨標記優先，其次才是 DB 規則
             "handler": tags.get("handler") or self._match_rules("handler", text, "") or None,
@@ -81,23 +85,40 @@ class Classifier:
                 return rule.value
         return default
 
-    def _resolve_company(self, sender_email: str) -> str | None:
-        """Resolve company_id from sender email domain."""
+    def _resolve_company(self, sender_email: str) -> tuple[str | None, str | None]:
+        """Resolve company_id and display name from sender email domain.
+
+        查詢順序（參考 MSG 文件 4.2 節）：
+        1. 完整 domain 精確比對
+        2. 逐層去子網域回落（mail.abc.com → abc.com）
+        3. 查無對應公司 → company_id=None，display=domain 原文
+        4. email 為空或無 @ → (None, None)
+
+        Returns:
+            (company_id, display): company_id 是 FK 安全值（或 None），
+                                    display 是顯示用名稱（公司中文名或 domain）
+        """
         if not sender_email or "@" not in sender_email:
-            return None
-        domain = sender_email.split("@")[1].lower()
+            return None, None
+        # 支援 "Display Name <email@domain>" 格式，先用 email.utils 解析地址
+        _, addr = parseaddr(sender_email)
+        if not addr or "@" not in addr:
+            addr = sender_email  # fallback：直接用原始字串
+        domain = addr.split("@")[1].lower().rstrip(">").strip()
         # Try exact match
         company = self._company_repo.get_by_domain(domain)
         if company:
-            return company.company_id
+            return company.company_id, company.name
         # Try subdomain fallback: mail.abc.com → abc.com
         parts = domain.split(".")
+        fallback_domain = domain
         if len(parts) > 2:
-            fallback = ".".join(parts[1:])
-            company = self._company_repo.get_by_domain(fallback)
+            fallback_domain = ".".join(parts[1:])
+            company = self._company_repo.get_by_domain(fallback_domain)
             if company:
-                return company.company_id
-        return None
+                return company.company_id, company.name
+        # 查無對應公司：company_id 保持 None（FK 安全），display 回傳 domain
+        return None, fallback_domain
 
     def _check_broadcast(self, text: str) -> bool:
         """Check if email is a broadcast/announcement."""
