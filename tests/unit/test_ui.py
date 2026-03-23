@@ -62,6 +62,24 @@ class TestCaseView:
         view = CaseView()
         assert view is not None
 
+    def test_detail_shows_handler(self, qapp):
+        from hcp_cms.ui.case_view import CaseView
+
+        view = CaseView()
+        assert hasattr(view, "_detail_handler")
+
+    def test_detail_shows_error_type(self, qapp):
+        from hcp_cms.ui.case_view import CaseView
+
+        view = CaseView()
+        assert hasattr(view, "_detail_error_type")
+
+    def test_detail_shows_system_product(self, qapp):
+        from hcp_cms.ui.case_view import CaseView
+
+        view = CaseView()
+        assert hasattr(view, "_detail_system_product")
+
 
 class TestKMSView:
     def test_create(self, qapp):

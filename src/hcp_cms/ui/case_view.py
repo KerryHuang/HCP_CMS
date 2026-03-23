@@ -81,12 +81,18 @@ class CaseView(QWidget):
         self._detail_id = QLabel()
         self._detail_subject = QLabel()
         self._detail_status = QLabel()
+        self._detail_system_product = QLabel()
+        self._detail_error_type = QLabel()
+        self._detail_handler = QLabel()
         self._detail_progress = QTextEdit()
-        self._detail_progress.setMaximumHeight(100)
+        self._detail_progress.setMaximumHeight(80)
 
         detail_layout.addRow("案件編號:", self._detail_id)
         detail_layout.addRow("主旨:", self._detail_subject)
         detail_layout.addRow("狀態:", self._detail_status)
+        detail_layout.addRow("系統產品:", self._detail_system_product)
+        detail_layout.addRow("功能模組:", self._detail_error_type)
+        detail_layout.addRow("技術人員:", self._detail_handler)
         detail_layout.addRow("處理進度:", self._detail_progress)
 
         # Action buttons
@@ -142,6 +148,9 @@ class CaseView(QWidget):
         self._detail_id.setText(case.case_id)
         self._detail_subject.setText(case.subject or "")
         self._detail_status.setText(case.status)
+        self._detail_system_product.setText(case.system_product or "")
+        self._detail_error_type.setText(case.error_type or "")
+        self._detail_handler.setText(case.handler or "")
         self._detail_progress.setPlainText(case.progress or "")
 
     def _on_new_case(self) -> None:
