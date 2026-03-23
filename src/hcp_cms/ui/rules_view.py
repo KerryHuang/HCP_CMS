@@ -6,10 +6,12 @@ import sqlite3
 
 from PySide6.QtWidgets import (
     QComboBox,
+    QFileDialog,
     QFormLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QPushButton,
     QSpinBox,
     QTableWidget,
@@ -43,13 +45,22 @@ class RulesView(QWidget):
         filter_layout = QHBoxLayout()
         filter_layout.addWidget(QLabel("規則類型:"))
         self._type_combo = QComboBox()
-        self._type_combo.addItems(["product", "issue", "error", "priority", "broadcast"])
+        self._type_combo.addItems(["product", "issue", "error", "priority", "broadcast", "handler", "progress"])
         self._type_combo.currentTextChanged.connect(self._on_type_changed)
         filter_layout.addWidget(self._type_combo)
 
         refresh_btn = QPushButton("🔄 重新整理")
         refresh_btn.clicked.connect(self.refresh)
         filter_layout.addWidget(refresh_btn)
+
+        import_btn = QPushButton("📥 匯入 CSV")
+        import_btn.clicked.connect(self._on_import_csv)
+        filter_layout.addWidget(import_btn)
+
+        export_btn = QPushButton("📤 匯出 CSV")
+        export_btn.clicked.connect(self._on_export_csv)
+        filter_layout.addWidget(export_btn)
+
         layout.addLayout(filter_layout)
 
         # Rules table
@@ -174,3 +185,26 @@ class RulesView(QWidget):
             return
         RuleRepository(self._conn).delete(self._editing_id)
         self.refresh()
+
+    def _on_import_csv(self) -> None:
+        if not self._conn:
+            return
+        path, _ = QFileDialog.getOpenFileName(self, "匯入規則 CSV", "", "CSV 檔案 (*.csv)")
+        if not path:
+            return
+        imported, skipped = RuleRepository(self._conn).import_csv(path)
+        self.refresh()
+        QMessageBox.information(
+            self,
+            "匯入完成",
+            f"成功匯入 {imported} 筆規則，跳過 {skipped} 筆無效資料。",
+        )
+
+    def _on_export_csv(self) -> None:
+        if not self._conn:
+            return
+        path, _ = QFileDialog.getSaveFileName(self, "匯出規則 CSV", "rules.csv", "CSV 檔案 (*.csv)")
+        if not path:
+            return
+        RuleRepository(self._conn).export_csv(path)
+        QMessageBox.information(self, "匯出完成", f"規則已匯出至：\n{path}")

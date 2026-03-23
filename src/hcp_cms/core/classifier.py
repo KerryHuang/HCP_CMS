@@ -34,6 +34,8 @@ class Classifier:
             "priority": self._match_rules("priority", text, "中"),
             "company_id": self._resolve_company(sender_email),
             "is_broadcast": self._check_broadcast(text),
+            "handler": self._match_rules("handler", text, "") or None,
+            "progress": self._match_rules("progress", text, "") or None,
         }
 
         # Override: if issue_type contains 客制 keywords, set priority custom

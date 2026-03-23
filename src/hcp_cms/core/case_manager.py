@@ -46,7 +46,8 @@ class CaseManager:
             issue_type=classification["issue_type"],
             error_type=classification["error_type"],
             priority=classification["priority"],
-            handler=handler,
+            handler=handler or classification.get("handler"),
+            progress=classification.get("progress"),
             source="email",
         )
 

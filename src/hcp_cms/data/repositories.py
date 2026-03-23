@@ -49,17 +49,13 @@ class CompanyRepository:
         self._conn.commit()
 
     def get_by_id(self, company_id: str) -> Company | None:
-        row = self._conn.execute(
-            "SELECT * FROM companies WHERE company_id = ?", (company_id,)
-        ).fetchone()
+        row = self._conn.execute("SELECT * FROM companies WHERE company_id = ?", (company_id,)).fetchone()
         if row is None:
             return None
         return Company(**dict(row))
 
     def get_by_domain(self, domain: str) -> Company | None:
-        row = self._conn.execute(
-            "SELECT * FROM companies WHERE domain = ?", (domain,)
-        ).fetchone()
+        row = self._conn.execute("SELECT * FROM companies WHERE domain = ?", (domain,)).fetchone()
         if row is None:
             return None
         return Company(**dict(row))
@@ -149,9 +145,7 @@ class CaseRepository:
         self._conn.commit()
 
     def get_by_id(self, case_id: str) -> Case | None:
-        row = self._conn.execute(
-            "SELECT * FROM cs_cases WHERE case_id = ?", (case_id,)
-        ).fetchone()
+        row = self._conn.execute("SELECT * FROM cs_cases WHERE case_id = ?", (case_id,)).fetchone()
         if row is None:
             return None
         return Case(**dict(row))
@@ -168,21 +162,17 @@ class CaseRepository:
             next_num = 1
         else:
             # Extract the numeric suffix
-            suffix = max_id[len(prefix):]
+            suffix = max_id[len(prefix) :]
             next_num = int(suffix) + 1
         return f"{prefix}{next_num:03d}"
 
     def list_by_status(self, status: str) -> list[Case]:
-        rows = self._conn.execute(
-            "SELECT * FROM cs_cases WHERE status = ?", (status,)
-        ).fetchall()
+        rows = self._conn.execute("SELECT * FROM cs_cases WHERE status = ?", (status,)).fetchall()
         return [Case(**dict(row)) for row in rows]
 
     def list_by_month(self, year: int, month: int) -> list[Case]:
         prefix = f"{year}/{month:02d}%"
-        rows = self._conn.execute(
-            "SELECT * FROM cs_cases WHERE sent_time LIKE ?", (prefix,)
-        ).fetchall()
+        rows = self._conn.execute("SELECT * FROM cs_cases WHERE sent_time LIKE ?", (prefix,)).fetchall()
         return [Case(**dict(row)) for row in rows]
 
     def update_status(self, case_id: str, status: str) -> None:
@@ -249,9 +239,7 @@ class CaseRepository:
 
     def count_by_month(self, year: int, month: int) -> int:
         prefix = f"{year}/{month:02d}%"
-        row = self._conn.execute(
-            "SELECT COUNT(*) FROM cs_cases WHERE sent_time LIKE ?", (prefix,)
-        ).fetchone()
+        row = self._conn.execute("SELECT COUNT(*) FROM cs_cases WHERE sent_time LIKE ?", (prefix,)).fetchone()
         return row[0] if row else 0
 
 
@@ -303,9 +291,7 @@ class QARepository:
         self._conn.commit()
 
     def get_by_id(self, qa_id: str) -> QAKnowledge | None:
-        row = self._conn.execute(
-            "SELECT * FROM qa_knowledge WHERE qa_id = ?", (qa_id,)
-        ).fetchone()
+        row = self._conn.execute("SELECT * FROM qa_knowledge WHERE qa_id = ?", (qa_id,)).fetchone()
         if row is None:
             return None
         return QAKnowledge(**dict(row))
@@ -321,7 +307,7 @@ class QARepository:
         if max_id is None:
             next_num = 1
         else:
-            suffix = max_id[len(prefix):]
+            suffix = max_id[len(prefix) :]
             next_num = int(suffix) + 1
         return f"{prefix}{next_num:03d}"
 
@@ -434,9 +420,7 @@ class MantisRepository:
         self._conn.commit()
 
     def get_by_id(self, ticket_id: str) -> MantisTicket | None:
-        row = self._conn.execute(
-            "SELECT * FROM mantis_tickets WHERE ticket_id = ?", (ticket_id,)
-        ).fetchone()
+        row = self._conn.execute("SELECT * FROM mantis_tickets WHERE ticket_id = ?", (ticket_id,)).fetchone()
         if row is None:
             return None
         return MantisTicket(**dict(row))
@@ -506,10 +490,56 @@ class RuleRepository:
     def delete(self, rule_id: int | None) -> None:
         if rule_id is None:
             return
-        self._conn.execute(
-            "DELETE FROM classification_rules WHERE rule_id = ?", (rule_id,)
-        )
+        self._conn.execute("DELETE FROM classification_rules WHERE rule_id = ?", (rule_id,))
         self._conn.commit()
+
+    def export_csv(self, path) -> None:
+        """將所有啟用中的規則匯出至 CSV 檔案。"""
+        import csv
+        from pathlib import Path
+
+        sql = (
+            "SELECT rule_type, pattern, value, priority"
+            " FROM classification_rules"
+            " WHERE enabled = 1 ORDER BY rule_type, priority ASC"
+        )
+        rows = self._conn.execute(sql).fetchall()
+        with Path(path).open("w", newline="", encoding="utf-8-sig") as f:
+            writer = csv.DictWriter(f, fieldnames=["rule_type", "pattern", "value", "priority"])
+            writer.writeheader()
+            for row in rows:
+                writer.writerow(dict(row))
+
+    def import_csv(self, path) -> tuple[int, int]:
+        """從 CSV 檔案批次匯入規則。返回 (imported, skipped) 計數。"""
+        import csv
+        from pathlib import Path
+
+        imported = 0
+        skipped = 0
+        with Path(path).open(newline="", encoding="utf-8-sig") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                rule_type = row.get("rule_type", "").strip()
+                pattern = row.get("pattern", "").strip()
+                value = row.get("value", "").strip()
+                if not rule_type or not pattern or not value:
+                    skipped += 1
+                    continue
+                try:
+                    priority = int(row.get("priority", 0) or 0)
+                except ValueError:
+                    priority = 0
+                self.insert(
+                    ClassificationRule(
+                        rule_type=rule_type,
+                        pattern=pattern,
+                        value=value,
+                        priority=priority,
+                    )
+                )
+                imported += 1
+        return imported, skipped
 
 
 # ---------------------------------------------------------------------------
@@ -538,9 +568,7 @@ class ProcessedFileRepository:
         self._conn.commit()
 
     def exists(self, file_hash: str) -> bool:
-        row = self._conn.execute(
-            "SELECT 1 FROM processed_files WHERE file_hash = ?", (file_hash,)
-        ).fetchone()
+        row = self._conn.execute("SELECT 1 FROM processed_files WHERE file_hash = ?", (file_hash,)).fetchone()
         return row is not None
 
 
@@ -562,9 +590,7 @@ class SynonymRepository:
         self._conn.commit()
 
     def get_synonyms(self, word: str) -> list[str]:
-        rows = self._conn.execute(
-            "SELECT synonym FROM synonyms WHERE word = ?", (word,)
-        ).fetchall()
+        rows = self._conn.execute("SELECT synonym FROM synonyms WHERE word = ?", (word,)).fetchall()
         return [row[0] for row in rows]
 
     def get_group_words(self, group_name: str) -> list[str]:
@@ -579,15 +605,11 @@ class SynonymRepository:
         return [row[0] for row in rows]
 
     def list_groups(self) -> list[str]:
-        rows = self._conn.execute(
-            "SELECT DISTINCT group_name FROM synonyms"
-        ).fetchall()
+        rows = self._conn.execute("SELECT DISTINCT group_name FROM synonyms").fetchall()
         return [row[0] for row in rows]
 
     def delete_group(self, group_name: str) -> None:
-        self._conn.execute(
-            "DELETE FROM synonyms WHERE group_name = ?", (group_name,)
-        )
+        self._conn.execute("DELETE FROM synonyms WHERE group_name = ?", (group_name,))
         self._conn.commit()
 
 
@@ -608,13 +630,9 @@ class CaseMantisRepository:
         self._conn.commit()
 
     def get_tickets_for_case(self, case_id: str) -> list[str]:
-        rows = self._conn.execute(
-            "SELECT ticket_id FROM case_mantis WHERE case_id = ?", (case_id,)
-        ).fetchall()
+        rows = self._conn.execute("SELECT ticket_id FROM case_mantis WHERE case_id = ?", (case_id,)).fetchall()
         return [row[0] for row in rows]
 
     def get_cases_for_ticket(self, ticket_id: str) -> list[str]:
-        rows = self._conn.execute(
-            "SELECT case_id FROM case_mantis WHERE ticket_id = ?", (ticket_id,)
-        ).fetchall()
+        rows = self._conn.execute("SELECT case_id FROM case_mantis WHERE ticket_id = ?", (ticket_id,)).fetchall()
         return [row[0] for row in rows]
