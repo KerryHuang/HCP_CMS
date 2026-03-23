@@ -103,8 +103,8 @@ D:\cms\
 │
 ├── tests/
 │   ├── conftest.py             # 共用 fixtures
-│   ├── unit/                   # 20 個單元測試
-│   └── integration/            # 2 個整合測試
+│   ├── unit/                   # 單元測試（test_rules_csv 等）
+│   └── integration/            # 整合測試
 │
 └── scripts/
     └── build.py                # PyInstaller 打包腳本
@@ -135,7 +135,7 @@ SQLite
 | companies | 公司（正規化） |
 | case_mantis | 案件-Mantis 多對多關聯 |
 | processed_files | 已處理檔案（SHA256 去重） |
-| rules | 分類規則 |
+| classification_rules | 分類規則（DB 驅動，支援 handler/progress） |
 
 ### 虛擬表（2 張 FTS5 + 1 張同義詞）
 | 表名 | 用途 |
