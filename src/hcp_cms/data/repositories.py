@@ -175,6 +175,15 @@ class CaseRepository:
         rows = self._conn.execute("SELECT * FROM cs_cases WHERE sent_time LIKE ?", (prefix,)).fetchall()
         return [Case(**dict(row)) for row in rows]
 
+    def list_by_date_range(self, start: str, end: str) -> list[Case]:
+        """查詢 sent_time 在 [start, end] 區間的案件（格式 YYYY/MM/DD）。"""
+        end_inclusive = end + " 23:59:59"
+        rows = self._conn.execute(
+            "SELECT * FROM cs_cases WHERE sent_time >= ? AND sent_time <= ?",
+            (start, end_inclusive),
+        ).fetchall()
+        return [Case(**dict(row)) for row in rows]
+
     def update_status(self, case_id: str, status: str) -> None:
         self._conn.execute(
             "UPDATE cs_cases SET status = ?, updated_at = ? WHERE case_id = ?",

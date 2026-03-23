@@ -69,11 +69,14 @@ class Classifier:
         if rd_match:
             result["handler"] = rd_match.group(1)
 
-        # 非 RD 括號 → progress，取最後一個（全形或半形括號）
-        all_brackets = re.findall(r"[（(]([^）)]+)[）)]", subject)
-        non_rd = [b for b in all_brackets if not b.upper().startswith("RD_")]
-        if non_rd:
-            result["progress"] = non_rd[-1]
+        # 處理進度 → 取 RD 標記之後緊接的第一個括號（全形或半形）
+        # 客戶主旨中的括號（如 (** Security C**)）不視為進度
+        rd_pos = re.search(r"\(RD_[A-Za-z0-9_]+\)", subject)
+        if rd_pos:
+            after_rd = subject[rd_pos.end():]
+            prog_match = re.search(r"[（(]([^）)]+)[）)]", after_rd)
+            if prog_match:
+                result["progress"] = prog_match.group(1)
 
         return result
 

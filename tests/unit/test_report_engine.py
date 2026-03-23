@@ -46,13 +46,13 @@ def seeded_db(db: DatabaseManager) -> DatabaseManager:
 class TestReportEngine:
     def test_generate_tracking_table(self, seeded_db, tmp_path):
         engine = ReportEngine(seeded_db.connection)
-        path = engine.generate_tracking_table(2026, 3, tmp_path / "tracking.xlsx")
+        path = engine.generate_tracking_table("2026/03/01", "2026/03/31", tmp_path / "tracking.xlsx")
         assert path.exists()
         assert path.suffix == ".xlsx"
 
     def test_tracking_table_sheets(self, seeded_db, tmp_path):
         engine = ReportEngine(seeded_db.connection)
-        path = engine.generate_tracking_table(2026, 3, tmp_path / "tracking.xlsx")
+        path = engine.generate_tracking_table("2026/03/01", "2026/03/31", tmp_path / "tracking.xlsx")
         wb = openpyxl.load_workbook(str(path))
         sheet_names = wb.sheetnames
         assert "📋 客戶索引" in sheet_names
@@ -63,7 +63,7 @@ class TestReportEngine:
 
     def test_tracking_table_case_data(self, seeded_db, tmp_path):
         engine = ReportEngine(seeded_db.connection)
-        path = engine.generate_tracking_table(2026, 3, tmp_path / "tracking.xlsx")
+        path = engine.generate_tracking_table("2026/03/01", "2026/03/31", tmp_path / "tracking.xlsx")
         wb = openpyxl.load_workbook(str(path))
         ws = wb["問題追蹤總表"]
         # Header + 3 data rows
@@ -72,7 +72,7 @@ class TestReportEngine:
 
     def test_tracking_table_custom_sheet(self, seeded_db, tmp_path):
         engine = ReportEngine(seeded_db.connection)
-        path = engine.generate_tracking_table(2026, 3, tmp_path / "tracking.xlsx")
+        path = engine.generate_tracking_table("2026/03/01", "2026/03/31", tmp_path / "tracking.xlsx")
         wb = openpyxl.load_workbook(str(path))
         assert "客制需求" in wb.sheetnames
         ws = wb["客制需求"]
@@ -81,12 +81,12 @@ class TestReportEngine:
 
     def test_generate_monthly_report(self, seeded_db, tmp_path):
         engine = ReportEngine(seeded_db.connection)
-        path = engine.generate_monthly_report(2026, 3, tmp_path / "report.xlsx")
+        path = engine.generate_monthly_report("2026/03/01", "2026/03/31", tmp_path / "report.xlsx")
         assert path.exists()
 
     def test_monthly_report_kpi(self, seeded_db, tmp_path):
         engine = ReportEngine(seeded_db.connection)
-        path = engine.generate_monthly_report(2026, 3, tmp_path / "report.xlsx")
+        path = engine.generate_monthly_report("2026/03/01", "2026/03/31", tmp_path / "report.xlsx")
         wb = openpyxl.load_workbook(str(path))
         ws = wb["📊 月報摘要"]
         # Row 4: 案件總數 = 3（row 1 標題、row 2 空、row 3 欄位標題）
@@ -97,7 +97,7 @@ class TestReportEngine:
 
     def test_monthly_report_customer_analysis_sheet(self, seeded_db, tmp_path):
         engine = ReportEngine(seeded_db.connection)
-        path = engine.generate_monthly_report(2026, 3, tmp_path / "report.xlsx")
+        path = engine.generate_monthly_report("2026/03/01", "2026/03/31", tmp_path / "report.xlsx")
         wb = openpyxl.load_workbook(str(path))
         assert "🏢 客戶分析" in wb.sheetnames
         ws = wb["🏢 客戶分析"]
@@ -107,7 +107,7 @@ class TestReportEngine:
 
     def test_report_with_no_data(self, db, tmp_path):
         engine = ReportEngine(db.connection)
-        path = engine.generate_monthly_report(2026, 1, tmp_path / "empty.xlsx")
+        path = engine.generate_monthly_report("2026/01/01", "2026/01/31", tmp_path / "empty.xlsx")
         assert path.exists()
         wb = openpyxl.load_workbook(str(path))
         ws = wb["📊 月報摘要"]
@@ -116,7 +116,7 @@ class TestReportEngine:
 
     def test_report_header_style(self, seeded_db, tmp_path):
         engine = ReportEngine(seeded_db.connection)
-        path = engine.generate_tracking_table(2026, 3, tmp_path / "styled.xlsx")
+        path = engine.generate_tracking_table("2026/03/01", "2026/03/31", tmp_path / "styled.xlsx")
         wb = openpyxl.load_workbook(str(path))
         ws = wb["問題追蹤總表"]
         cell = ws.cell(row=1, column=1)

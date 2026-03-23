@@ -143,11 +143,11 @@ class TestReportGenerationWithRealData:
         engine = ReportEngine(db.connection)
 
         # Generate tracking table
-        tracking = engine.generate_tracking_table(2026, 3, tmp_path / "tracking.xlsx")
+        tracking = engine.generate_tracking_table("2026/03/01", "2026/03/31", tmp_path / "tracking.xlsx")
         assert tracking.exists()
 
         # Generate monthly report
-        report = engine.generate_monthly_report(2026, 3, tmp_path / "report.xlsx")
+        report = engine.generate_monthly_report("2026/03/01", "2026/03/31", tmp_path / "report.xlsx")
         assert report.exists()
 
         # Verify report content

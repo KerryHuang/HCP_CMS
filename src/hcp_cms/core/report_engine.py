@@ -51,9 +51,14 @@ class ReportEngine:
         self._company_repo = CompanyRepository(conn)
         self._case_mantis_repo = CaseMantisRepository(conn)
 
-    def generate_tracking_table(self, year: int, month: int, output_path: Path) -> Path:
-        """Generate tracking table Excel with multiple sheets."""
-        cases = self._case_repo.list_by_month(year, month)
+    def generate_tracking_table(self, start_date: str, end_date: str, output_path: Path) -> Path:
+        """Generate tracking table Excel with multiple sheets.
+
+        Args:
+            start_date: 起始日期，格式 YYYY/MM/DD
+            end_date:   結束日期，格式 YYYY/MM/DD（含當天）
+        """
+        cases = self._case_repo.list_by_date_range(start_date, end_date)
         qas = self._qa_repo.list_all()
         companies = self._company_repo.list_all()
         mantis_tickets = self._mantis_repo.list_all()
@@ -186,9 +191,14 @@ class ReportEngine:
         wb.save(str(output_path))
         return output_path
 
-    def generate_monthly_report(self, year: int, month: int, output_path: Path) -> Path:
-        """Generate monthly report Excel with KPI summary."""
-        cases = self._case_repo.list_by_month(year, month)
+    def generate_monthly_report(self, start_date: str, end_date: str, output_path: Path) -> Path:
+        """Generate monthly report Excel with KPI summary.
+
+        Args:
+            start_date: 起始日期，格式 YYYY/MM/DD
+            end_date:   結束日期，格式 YYYY/MM/DD（含當天）
+        """
+        cases = self._case_repo.list_by_date_range(start_date, end_date)
         companies = self._company_repo.list_all()
         company_map = {c.company_id: c for c in companies}
 
@@ -205,13 +215,13 @@ class ReportEngine:
         ws.title = "📊 月報摘要"
 
         # 標題列
-        title_cell = ws.cell(row=1, column=1, value=f"📊 客服月報摘要 — {year} 年 {month:02d} 月")
+        title_cell = ws.cell(row=1, column=1, value=f"📊 客服報表摘要 — {start_date} ～ {end_date}")
         title_cell.font = Font(name="微軟正黑體", size=14, bold=True, color="1E3A5F")
         ws.cell(row=1, column=2, value=f"產生日期：{datetime.now().strftime('%Y/%m/%d %H:%M')}")
 
         # KPI rows
         self._write_header(ws, ["指標", "數值", "說明"], row_num=3)
-        ws.append(["案件總數", total, f"{year}/{month:02d} 所有案件"])
+        ws.append(["案件總數", total, f"{start_date} ～ {end_date}"])
         ws.append(["已回覆", replied, "replied = 是"])
         ws.append(["待處理", pending, "狀態非已完成/Closed"])
         ws.append(["回覆率", f"{reply_rate:.1f}%", "已回覆 ÷ 總數 × 100%"])

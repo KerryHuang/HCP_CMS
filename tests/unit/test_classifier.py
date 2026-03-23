@@ -205,8 +205,21 @@ class TestSubjectTagParser:
         result = c.classify("問題(RD_JACKY)(RD_PENGYI)(待確認)", "")
         assert result.get("handler") == "JACKY"
 
-    def test_progress_only_last_non_rd_bracket(self, seeded_db):
-        """只取最後一個非 RD 括號內容。"""
+    def test_progress_is_first_bracket_after_rd(self, seeded_db):
+        """進度取 RD 標記之後的第一個括號，而非最後一個。"""
         c = Classifier(seeded_db.connection)
         result = c.classify("問題(RD_JACKY)(第一段說明)(最終說明)", "")
-        assert result.get("progress") == "最終說明"
+        assert result.get("progress") == "第一段說明"
+
+    def test_customer_subject_bracket_not_progress(self, seeded_db):
+        """客戶主旨中的括號（RD 標記之前）不視為進度。"""
+        c = Classifier(seeded_db.connection)
+        result = c.classify("問題(** Security C**)(RD_JACKY)(處理中)", "")
+        assert result.get("progress") == "處理中"
+        assert result.get("handler") == "JACKY"
+
+    def test_no_progress_without_rd_tag(self, seeded_db):
+        """無 RD 標記時，括號內容不解析為進度。"""
+        c = Classifier(seeded_db.connection)
+        result = c.classify("問題(待確認)(處理中)", "")
+        assert result.get("progress") is None
