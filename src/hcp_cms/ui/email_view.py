@@ -87,21 +87,21 @@ class EmailView(QWidget):
         self._table.horizontalHeader().setStretchLastSection(True)
         self._table.setColumnWidth(0, 30)
 
-        splitter = QSplitter(Qt.Orientation.Vertical)
+        self._splitter = QSplitter(Qt.Orientation.Vertical)
 
         # 上半：信件列表
         self._table.itemSelectionChanged.connect(self._on_row_selected)
-        splitter.addWidget(self._table)
+        self._splitter.addWidget(self._table)
 
         # 下半：信件內容預覽
         self._preview = QTextEdit()
         self._preview.setReadOnly(True)
         self._preview.setPlaceholderText("點選信件以預覽內容...")
         self._preview.setStyleSheet("background-color: #1e293b; color: #e2e8f0;")
-        splitter.addWidget(self._preview)
+        self._splitter.addWidget(self._preview)
 
-        splitter.setSizes([300, 200])
-        layout.addWidget(splitter)
+        self._splitter.setSizes([300, 200])
+        layout.addWidget(self._splitter)
 
         # Actions
         action_layout = QHBoxLayout()
@@ -222,7 +222,8 @@ class EmailView(QWidget):
 
         for i, row in enumerate(rows):
             status_item = self._table.item(row, 4)
-            if status_item and status_item.text() == "已匯入":
+            done_statuses = {"已匯入", "已回覆標記", "略過（找不到父案件）"}
+            if status_item and status_item.text() in done_statuses:
                 self._progress.setValue(i + 1)
                 continue
 
@@ -244,7 +245,8 @@ class EmailView(QWidget):
                         sent_time=str(email.date) if email.date else None,
                         source_filename=email.source_file,
                     )
-                    label = {"created": "已匯入", "replied": "已回覆標記", "skipped": "略過（找不到父案件）"}.get(action, "已匯入")
+                    label_map = {"created": "已匯入", "replied": "已回覆標記", "skipped": "略過（找不到父案件）"}
+                    label = label_map.get(action, "已匯入")
                     self._table.setItem(row, 4, QTableWidgetItem(label))
                     success += 1
                 except Exception as e:
