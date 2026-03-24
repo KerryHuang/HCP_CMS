@@ -30,7 +30,7 @@ class Classifier:
         """
         text = f"{subject} {body[:300]}"  # subject + first 300 chars of body
 
-        tags = self._parse_subject_tags(subject)
+        tags = self.parse_tags(subject)
 
         company_id, company_display = self._resolve_company(sender_email, to_recipients or [])
 
@@ -49,6 +49,10 @@ class Classifier:
         }
 
         return result
+
+    def parse_tags(self, text: str) -> dict:
+        """解析主旨或檔名中的標記（公開介面，供同層 Core 類別呼叫）。"""
+        return self._parse_subject_tags(text)
 
     def _parse_subject_tags(self, subject: str) -> dict:
         """

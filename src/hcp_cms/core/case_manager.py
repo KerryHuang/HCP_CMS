@@ -83,7 +83,7 @@ class CaseManager:
         # 舊系統會將 ISSUE 前綴和 (RD_XXX)(進度) 加在 .msg 檔名中
         if source_filename:
             stem = Path(source_filename).stem
-            fn_tags = self._classifier._parse_subject_tags(stem)
+            fn_tags = self._classifier.parse_tags(stem)
             if fn_tags.get("issue_number") and not classification.get("issue_number"):
                 classification["issue_number"] = fn_tags["issue_number"]
             if fn_tags.get("handler") and not classification.get("handler"):
