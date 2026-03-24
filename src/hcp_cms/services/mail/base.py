@@ -10,6 +10,7 @@ from datetime import datetime
 @dataclass
 class RawEmail:
     """Parsed email data from any source."""
+
     sender: str = ""
     subject: str = ""
     body: str = ""
@@ -19,6 +20,8 @@ class RawEmail:
     references: str | None = None
     attachments: list[str] = field(default_factory=list)
     source_file: str | None = None  # .msg filename if from file
+    to_recipients: list[str] = field(default_factory=list)
+    html_body: str | None = None
 
 
 class MailProvider(ABC):
@@ -47,8 +50,6 @@ class MailProvider(ABC):
         ...
 
     @abstractmethod
-    def create_draft(
-        self, to: list[str], subject: str, body: str, attachments: list[str] | None = None
-    ) -> bool:
+    def create_draft(self, to: list[str], subject: str, body: str, attachments: list[str] | None = None) -> bool:
         """Create email draft. Returns True on success."""
         ...

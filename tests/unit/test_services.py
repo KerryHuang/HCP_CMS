@@ -25,6 +25,22 @@ class TestRawEmail:
         assert email.sender == ""
         assert email.subject == ""
 
+    def test_raw_email_has_to_recipients(self):
+        email = RawEmail(to_recipients=["a@foo.com", "b@bar.com"])
+        assert email.to_recipients == ["a@foo.com", "b@bar.com"]
+
+    def test_raw_email_to_recipients_default_empty(self):
+        email = RawEmail()
+        assert email.to_recipients == []
+
+    def test_raw_email_has_html_body(self):
+        email = RawEmail(html_body="<p>Hello</p>")
+        assert email.html_body == "<p>Hello</p>"
+
+    def test_raw_email_html_body_default_none(self):
+        email = RawEmail()
+        assert email.html_body is None
+
 
 class TestMSGReader:
     def test_connect_nonexistent_dir(self):
@@ -61,6 +77,86 @@ class TestMSGReader:
         reader.connect()
         reader.disconnect()
         assert reader._files == []
+
+    def test_read_msg_file_parses_to_recipients(self, tmp_path, monkeypatch):
+        """_read_msg_file 應解析 msg.to 為 to_recipients list。"""
+        import types
+
+        fake_msg = types.SimpleNamespace(
+            sender="hcpservice@ares.com.tw",
+            subject="回覆：薪資問題",
+            body="已處理",
+            htmlBody=b"<p>\xe5\xb7\xb2\xe8\x99\x95\xe7\x90\x86</p>",
+            date="2026/03/20 10:00",
+            attachments=[],
+            to="客戶 <user@customer.com>; other@customer.com",
+        )
+
+        def fake_message(path):
+            fake_msg.close = lambda: None
+            return fake_msg
+
+        import extract_msg
+
+        monkeypatch.setattr(extract_msg, "Message", fake_message)
+
+        result = MSGReader._read_msg_file(tmp_path / "test.msg")
+        assert result is not None
+        assert "user@customer.com" in result.to_recipients
+        assert "other@customer.com" in result.to_recipients
+
+    def test_read_msg_file_parses_html_body(self, tmp_path, monkeypatch):
+        """_read_msg_file 應將 msg.htmlBody bytes 解碼為 html_body str。"""
+        import types
+
+        fake_msg = types.SimpleNamespace(
+            sender="user@customer.com",
+            subject="薪資問題",
+            body="純文字",
+            htmlBody=b"<p>HTML\xe5\x85\xa7\xe5\xae\xb9</p>",
+            date=None,
+            attachments=[],
+            to="",
+        )
+
+        def fake_message(path):
+            fake_msg.close = lambda: None
+            return fake_msg
+
+        import extract_msg
+
+        monkeypatch.setattr(extract_msg, "Message", fake_message)
+
+        result = MSGReader._read_msg_file(tmp_path / "test.msg")
+        assert result is not None
+        assert result.html_body is not None
+        assert "<p>" in result.html_body
+
+    def test_read_msg_file_html_body_none_when_missing(self, tmp_path, monkeypatch):
+        """msg.htmlBody 為 None 時，html_body 應為 None。"""
+        import types
+
+        fake_msg = types.SimpleNamespace(
+            sender="user@customer.com",
+            subject="Test",
+            body="plain",
+            htmlBody=None,
+            date=None,
+            attachments=[],
+            to="",
+        )
+
+        def fake_message(path):
+            fake_msg.close = lambda: None
+            return fake_msg
+
+        import extract_msg
+
+        monkeypatch.setattr(extract_msg, "Message", fake_message)
+
+        result = MSGReader._read_msg_file(tmp_path / "test.msg")
+        assert result is not None
+        assert result.html_body is None
 
 
 class TestIMAPProvider:
@@ -136,8 +232,10 @@ class TestCredentialManager:
     def test_store_and_retrieve(self):
         cm = CredentialManager()
         # Mock keyring to avoid OS dependency in tests
-        with patch("keyring.set_password") as mock_set, \
-             patch("keyring.get_password", return_value="secret") as mock_get:
+        with (
+            patch("keyring.set_password") as mock_set,
+            patch("keyring.get_password", return_value="secret") as mock_get,
+        ):
             assert cm.store("test_key", "secret") is True
             mock_set.assert_called_once_with("HCP_CMS", "test_key", "secret")
 

@@ -64,10 +64,30 @@ class MSGReader(MailProvider):
     def _read_msg_file(file_path: Path) -> RawEmail | None:
         """Parse a .msg file using extract-msg."""
         try:
+            from email.utils import getaddresses
+
             import extract_msg
 
-            # 直接傳 Path 物件，避免 str() 轉換在 Windows 中文路徑的編碼問題
             msg = extract_msg.Message(file_path)
+
+            # 解析收件人列表：msg.to 可能是 "Name <email>; email2" 格式
+            raw_to = msg.to or ""
+            # getaddresses 接受 list[str]，以 "," 或 ";" 分隔均可
+            normalized = raw_to.replace(";", ",")
+            to_recipients = [addr for _, addr in getaddresses([normalized]) if addr]
+
+            # 解析 HTML body（bytes → str，嘗試 UTF-8 後 fallback cp950）
+            html_body: str | None = None
+            raw_html = getattr(msg, "htmlBody", None)
+            if raw_html:
+                if isinstance(raw_html, bytes):
+                    try:
+                        html_body = raw_html.decode("utf-8")
+                    except UnicodeDecodeError:
+                        html_body = raw_html.decode("cp950", errors="replace")
+                else:
+                    html_body = str(raw_html)
+
             email = RawEmail(
                 sender=msg.sender or "",
                 subject=msg.subject or "",
@@ -75,6 +95,8 @@ class MSGReader(MailProvider):
                 date=msg.date or None,
                 attachments=[att.longFilename or "" for att in msg.attachments] if msg.attachments else [],
                 source_file=file_path.name,
+                to_recipients=to_recipients,
+                html_body=html_body,
             )
             msg.close()
             return email
