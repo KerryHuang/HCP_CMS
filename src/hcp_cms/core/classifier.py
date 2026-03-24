@@ -90,7 +90,9 @@ class Classifier:
                 return rule.value
         return default
 
-    def _resolve_company(self, sender_email: str, to_recipients: list[str] | None = None) -> tuple[str | None, str | None]:
+    def _resolve_company(
+        self, sender_email: str, to_recipients: list[str] | None = None
+    ) -> tuple[str | None, str | None]:
         """Resolve company from sender, or recipients if sender is our side."""
         # 判斷是否為我方寄件
         if sender_email and "@" in sender_email:
