@@ -99,7 +99,7 @@ class MainWindow(QMainWindow):
         self._views: dict[str, QWidget] = {
             "dashboard": DashboardView(self._conn),
             "cases": CaseView(self._conn),
-            "kms": KMSView(self._conn),  # kms 將在 Task 6 注入
+            "kms": KMSView(self._conn, kms=kms),
             "email": EmailView(self._conn, kms=kms),
             "mantis": MantisView(self._conn),
             "reports": ReportView(self._conn),
