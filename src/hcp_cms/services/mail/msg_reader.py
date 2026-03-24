@@ -13,6 +13,14 @@ from hcp_cms.services.mail.base import MailProvider, RawEmail
 _PROGRESS_RE = re.compile(r"==進度[:：]\s*(.*?)==", re.DOTALL)
 _FROM_ANGLE_RE = re.compile(r"^From:\s*[^<\n]*<([^>]+)>", re.MULTILINE)
 _FROM_PLAIN_RE = re.compile(r"^From:\s*(\S+@\S+)", re.MULTILINE)
+_THREAD_FROM_RE = re.compile(
+    r"^(?:From|寄件者)\s*:\s*.*?([A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,})",
+    re.MULTILINE | re.IGNORECASE,
+)
+_HEADER_LINE_RE = re.compile(
+    r"^(?:From|To|Sent|Subject|寄件者|收件者|傳送時間|主旨)\s*:.*$",
+    re.MULTILINE | re.IGNORECASE,
+)
 
 
 class MSGReader(MailProvider):
@@ -39,9 +47,7 @@ class MSGReader(MailProvider):
         results = []
         for msg_path in self._files:
             try:
-                email = self._read_msg_file(msg_path)
-                if email:
-                    results.append(email)
+                results.append(self._read_msg_file(msg_path))
             except Exception:
                 continue  # Skip unreadable files
         return results
@@ -55,8 +61,21 @@ class MSGReader(MailProvider):
         return False
 
     def read_single_file(self, file_path: Path) -> RawEmail | None:
-        """Read a single .msg file."""
-        return self._read_msg_file(file_path)
+        """Read a single .msg file. Returns None on any parse error."""
+        try:
+            return self._read_msg_file(file_path)
+        except Exception:
+            return None
+
+    def read_single_file_verbose(self, file_path: Path) -> tuple[RawEmail | None, str | None]:
+        """Read a single .msg file, returning (email, error_message).
+
+        error_message is None on success, or a string describing the failure.
+        """
+        try:
+            return self._read_msg_file(file_path), None
+        except Exception as exc:
+            return None, str(exc)
 
     def compute_file_hash(self, file_path: Path) -> str:
         """Compute SHA256 hash of a file."""
@@ -67,22 +86,60 @@ class MSGReader(MailProvider):
         return sha256.hexdigest()
 
     @staticmethod
-    def _read_msg_file(file_path: Path) -> RawEmail | None:
-        """Parse a .msg file using extract-msg."""
+    def _split_thread(body: str, own_domain: str = "@ares.com.tw") -> tuple[str | None, str | None]:
+        """回傳 (thread_answer, thread_question)。
+        找到第一個非我方 From 行：上方為 answer，下方清除 header 行後為 question。
+        strip 後為空字串一律轉 None。own_domain 比對大小寫不敏感。
+        """
+        own = own_domain.lower()
+        for match in _THREAD_FROM_RE.finditer(body):
+            addr = match.group(1).lower()
+            if own not in addr:
+                split_pos = match.start()
+                answer = body[:split_pos].strip() or None
+                question_raw = body[split_pos:]
+                question = _HEADER_LINE_RE.sub("", question_raw).strip() or None
+                return answer, question
+        return None, None
+
+    @staticmethod
+    def _safe_str(msg: object, attr: str, default: str = "") -> str:
+        """安全存取 extract_msg 的字串屬性，cp950 解碼失敗時回傳 default。"""
         try:
-            # 延遲 import：extract_msg 為選用重型套件，避免未安裝時阻擋應用啟動
-            import extract_msg
+            val = getattr(msg, attr, None)
+            return (val or default) if isinstance(val, str) else default
+        except (UnicodeDecodeError, UnicodeEncodeError, AttributeError):
+            return default
 
-            msg = extract_msg.Message(file_path)
+    @staticmethod
+    def _read_msg_file(file_path: Path) -> RawEmail:
+        """Parse a .msg file using extract-msg. Raises on any parse error."""
+        # 延遲 import：extract_msg 為選用重型套件，避免未安裝時阻擋應用啟動
+        import extract_msg
 
-            # 解析收件人列表：msg.to 可能是 "Name <email>; email2" 格式
-            raw_to = msg.to or ""
-            # getaddresses 接受 list[str]，以 "," 或 ";" 分隔均可
-            normalized = raw_to.replace(";", ",")
-            to_recipients = [addr for _, addr in getaddresses([normalized]) if addr]
+        msg = extract_msg.Message(file_path)
 
-            # 解析 HTML body（bytes → str，嘗試 UTF-8 後 fallback cp950）
-            html_body: str | None = None
+        # ── 收件人列表：msg.to 可能以非 cp950 編碼造成 UnicodeDecodeError ──
+        raw_to = MSGReader._safe_str(msg, "to")
+        normalized = raw_to.replace(";", ",")
+        to_recipients = [addr for _, addr in getaddresses([normalized]) if addr]
+
+        # msg.to 解碼失敗時（cp950），嘗試從 msg.recipients 個別取 email
+        if not to_recipients:
+            try:
+                for r in msg.recipients or []:
+                    try:
+                        addr = getattr(r, "email", None) or ""
+                        if addr and "@" in addr:
+                            to_recipients.append(addr)
+                    except (UnicodeDecodeError, UnicodeEncodeError, AttributeError):
+                        continue
+            except (UnicodeDecodeError, UnicodeEncodeError, AttributeError):
+                pass
+
+        # ── HTML body（bytes → str，UTF-8 → cp950 fallback）───────────────
+        html_body: str | None = None
+        try:
             raw_html = getattr(msg, "htmlBody", None)
             if raw_html:
                 if isinstance(raw_html, bytes):
@@ -92,37 +149,55 @@ class MSGReader(MailProvider):
                         html_body = raw_html.decode("cp950", errors="replace")
                 else:
                     html_body = str(raw_html)
+        except (UnicodeDecodeError, UnicodeEncodeError):
+            html_body = None
 
-            # ── 提取 body 文字（供後續解析使用）────────────────────────────
-            body_text = msg.body or ""
+        # ── 純文字 body（供後續 regex 搜尋）──────────────────────────────
+        body_text = MSGReader._safe_str(msg, "body")
+        if not body_text and html_body:
+            # msg.body 解碼失敗時，從 HTML 移除標籤作為 fallback
+            body_text = re.sub(r"<[^>]+>", " ", html_body)
 
-            # ── 進度標記擷取（==進度:…== 或 ==進度：…==，可跨行）──────────
-            _prog_match = _PROGRESS_RE.search(body_text)
-            progress_note: str | None = _prog_match.group(1).strip() if _prog_match else None
+        # ── 進度標記擷取（==進度:…== 或 ==進度：…==，可跨行）──────────
+        _prog_match = _PROGRESS_RE.search(body_text)
+        progress_note: str | None = _prog_match.group(1).strip() if _prog_match else None
 
-            # ── 草稿寄件人補修（msg.sender 空白時從 body 搜尋 From: 行）───
-            sender = msg.sender or ""
-            if not sender:
-                _from_match = _FROM_ANGLE_RE.search(body_text)
-                if _from_match:
-                    sender = _from_match.group(1).strip()
-                else:
-                    _plain_match = _FROM_PLAIN_RE.search(body_text)
-                    if _plain_match:
-                        sender = _plain_match.group(1).strip()
+        # ── 對話串切割（客戶問題段 / 我方回覆段）────────────────────
+        thread_answer, thread_question = MSGReader._split_thread(body_text)
 
-            email = RawEmail(
-                sender=sender,
-                subject=msg.subject or "",
-                body=body_text,
-                date=msg.date or None,
-                attachments=[att.longFilename or "" for att in msg.attachments] if msg.attachments else [],
-                source_file=file_path.name,
-                to_recipients=to_recipients,
-                html_body=html_body,
-                progress_note=progress_note,
-            )
-            msg.close()
-            return email
-        except Exception:
-            return None
+        # ── 草稿寄件人補修（msg.sender 空白時從 body 搜尋 From: 行）───
+        sender = MSGReader._safe_str(msg, "sender")
+        if not sender:
+            _from_match = _FROM_ANGLE_RE.search(body_text)
+            if _from_match:
+                sender = _from_match.group(1).strip()
+            else:
+                _plain_match = _FROM_PLAIN_RE.search(body_text)
+                if _plain_match:
+                    sender = _plain_match.group(1).strip()
+
+        subject = MSGReader._safe_str(msg, "subject")
+        try:
+            date = msg.date or None
+        except (UnicodeDecodeError, UnicodeEncodeError, AttributeError):
+            date = None
+        try:
+            attachments = [att.longFilename or "" for att in msg.attachments] if msg.attachments else []
+        except (UnicodeDecodeError, UnicodeEncodeError, AttributeError):
+            attachments = []
+
+        email = RawEmail(
+            sender=sender,
+            subject=subject,
+            body=body_text,
+            date=date,
+            attachments=attachments,
+            source_file=file_path.name,
+            to_recipients=to_recipients,
+            html_body=html_body,
+            thread_question=thread_question,
+            thread_answer=thread_answer,
+            progress_note=progress_note,
+        )
+        msg.close()
+        return email

@@ -49,6 +49,19 @@ class TestRawEmail:
         email = RawEmail()
         assert email.progress_note is None
 
+    def test_raw_email_thread_question_default_none(self):
+        email = RawEmail()
+        assert email.thread_question is None
+
+    def test_raw_email_thread_answer_default_none(self):
+        email = RawEmail()
+        assert email.thread_answer is None
+
+    def test_raw_email_thread_fields_settable(self):
+        email = RawEmail(thread_question="客戶問題", thread_answer="我方回覆")
+        assert email.thread_question == "客戶問題"
+        assert email.thread_answer == "我方回覆"
+
 
 class TestMSGReader:
     def test_connect_nonexistent_dir(self):
@@ -436,3 +449,79 @@ class TestCredentialManager:
         with patch("keyring.delete_password") as mock_del:
             assert cm.delete("test_key") is True
             mock_del.assert_called_once()
+
+
+class TestMSGReaderSplitThread:
+    def test_英文_from_切割(self):
+        body = (
+            "HCPSERVICE 的回覆內容在這裡。\n\n"
+            "From: customer@client.com\n"
+            "Sent: 2026-01-01\n"
+            "To: hcpservice@ares.com.tw\n"
+            "Subject: 詢問\n\n"
+            "客戶問題內容。"
+        )
+        ta, tq = MSGReader._split_thread(body)
+        assert ta is not None and "HCPSERVICE" in ta
+        assert tq is not None and "客戶問題" in tq
+        assert "From:" not in tq
+        assert "Sent:" not in tq
+
+    def test_中文_寄件者_切割(self):
+        body = (
+            "我方回覆。\n\n"
+            "寄件者: user@client.com.tw\n"
+            "傳送時間: 2026-01-01\n"
+            "收件者: hcpservice@ares.com.tw\n"
+            "主旨: 問題\n\n"
+            "客戶的問題。"
+        )
+        ta, tq = MSGReader._split_thread(body)
+        assert ta is not None
+        assert tq is not None and "客戶的問題" in tq
+
+    def test_無客戶_From_行回傳_None_None(self):
+        ta, tq = MSGReader._split_thread("這封信沒有嵌入的原始訊息。")
+        assert ta is None and tq is None
+
+    def test_全部_From_均為_ares_回傳_None_None(self):
+        body = (
+            "第一封回覆\n\n"
+            "From: hcpservice@ares.com.tw\n"
+            "Subject: Re: 問題\n\n"
+            "原始我方訊息"
+        )
+        ta, tq = MSGReader._split_thread(body)
+        assert ta is None and tq is None
+
+    def test_own_domain_大小寫混用仍識別為我方(self):
+        body = (
+            "回覆\n\n"
+            "From: User@ARES.COM.TW\n"
+            "Subject: test\n\n"
+            "另一封我方訊息"
+        )
+        ta, tq = MSGReader._split_thread(body)
+        assert ta is None and tq is None
+
+    def test_客戶段清除_header_後為空_回傳_None(self):
+        body = (
+            "我方回覆。\n\n"
+            "From: customer@client.com\n"
+            "Sent: 2026-01-01\n"
+        )
+        ta, tq = MSGReader._split_thread(body)
+        assert tq is None
+
+    def test_多層巢狀只取最外層客戶(self):
+        body = (
+            "最新回覆\n\n"
+            "From: customer@abc.com\n"
+            "Subject: 第一次詢問\n\n"
+            "第一次問題\n\n"
+            "From: another@xyz.com\n"
+            "Subject: 更早的問題\n\n"
+            "更早的問題"
+        )
+        ta, tq = MSGReader._split_thread(body)
+        assert tq is not None and "第一次問題" in tq
