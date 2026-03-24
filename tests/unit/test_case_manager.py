@@ -197,7 +197,7 @@ class TestCaseManager:
         assert case.progress == "待與jacky確認組織代號"
 
     def test_create_case_progress_note_overrides_subject_tag(self, seeded_db):
-        """body 進度標記應優先於主旨解析出的進度。"""
+        """傳入 progress_note 時，應優先於主旨解析出的進度標記。"""
         mgr = CaseManager(seeded_db.connection)
         case = mgr.create_case(
             subject="問題(RD_JACKY)(待確認主旨進度)",

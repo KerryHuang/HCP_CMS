@@ -34,6 +34,10 @@ class CaseManager:
 
         Returns:
             (case, action) — action 為 'created' / 'replied' / 'skipped'
+
+        Note:
+            progress_note 僅在 action 為 'created'（客戶來信建案）時有效；
+            我方回覆（'replied'）及略過（'skipped'）路徑不適用。
         """
         recipients = to_recipients or []
 
