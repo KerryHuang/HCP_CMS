@@ -129,8 +129,7 @@ class TestMSGReader:
 
         result = MSGReader._read_msg_file(tmp_path / "test.msg")
         assert result is not None
-        assert result.html_body is not None
-        assert "<p>" in result.html_body
+        assert result.html_body == "<p>HTML內容</p>"
 
     def test_read_msg_file_html_body_none_when_missing(self, tmp_path, monkeypatch):
         """msg.htmlBody 為 None 時，html_body 應為 None。"""

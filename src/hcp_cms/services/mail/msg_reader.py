@@ -65,6 +65,7 @@ class MSGReader(MailProvider):
     def _read_msg_file(file_path: Path) -> RawEmail | None:
         """Parse a .msg file using extract-msg."""
         try:
+            # 延遲 import：extract_msg 為選用重型套件，避免未安裝時阻擋應用啟動
             import extract_msg
 
             msg = extract_msg.Message(file_path)
