@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QSpinBox,
+    QSplitter,
     QTableWidget,
     QTableWidgetItem,
     QTextEdit,
@@ -24,6 +25,7 @@ from PySide6.QtWidgets import (
 )
 
 from hcp_cms.core.case_manager import CaseManager
+from hcp_cms.services.mail.base import RawEmail
 from hcp_cms.services.mail.msg_reader import MSGReader
 
 
@@ -34,6 +36,7 @@ class EmailView(QWidget):
         super().__init__()
         self._conn = conn
         self._pending_files: list[Path] = []
+        self._emails: list[RawEmail | None] = []   # 與 _pending_files 平行
         self._setup_ui()
 
     def _setup_ui(self) -> None:
@@ -83,7 +86,22 @@ class EmailView(QWidget):
         self._table.setHorizontalHeaderLabels(["✓", "寄件人", "主旨", "日期", "狀態"])
         self._table.horizontalHeader().setStretchLastSection(True)
         self._table.setColumnWidth(0, 30)
-        layout.addWidget(self._table)
+
+        splitter = QSplitter(Qt.Orientation.Vertical)
+
+        # 上半：信件列表
+        self._table.itemSelectionChanged.connect(self._on_row_selected)
+        splitter.addWidget(self._table)
+
+        # 下半：信件內容預覽
+        self._preview = QTextEdit()
+        self._preview.setReadOnly(True)
+        self._preview.setPlaceholderText("點選信件以預覽內容...")
+        self._preview.setStyleSheet("background-color: #1e293b; color: #e2e8f0;")
+        splitter.addWidget(self._preview)
+
+        splitter.setSizes([300, 200])
+        layout.addWidget(splitter)
 
         # Actions
         action_layout = QHBoxLayout()
@@ -128,6 +146,7 @@ class EmailView(QWidget):
             return
 
         self._pending_files = [Path(f) for f in files]
+        self._emails = []
         self._log.append(f"已選擇 {len(files)} 個檔案，解析中...")
 
         reader = MSGReader()
@@ -135,6 +154,7 @@ class EmailView(QWidget):
 
         for file_path in self._pending_files:
             email = reader.read_single_file(file_path)
+            self._emails.append(email)
             row = self._table.rowCount()
             self._table.insertRow(row)
 
@@ -156,6 +176,23 @@ class EmailView(QWidget):
 
         self._log.append(f"解析完成，共 {self._table.rowCount()} 封信件")
 
+    def _on_row_selected(self) -> None:
+        """顯示選中行的信件內容（HTML 優先，fallback 純文字）。"""
+        selected = self._table.selectedItems()
+        if not selected:
+            return
+        row = self._table.row(selected[0])
+        if row >= len(self._emails):
+            return
+        email = self._emails[row]
+        if email is None:
+            self._preview.setPlainText("（無法讀取信件內容）")
+            return
+        if email.html_body:
+            self._preview.setHtml(email.html_body)
+        else:
+            self._preview.setPlainText(email.body)
+
     def _on_import_selected(self) -> None:
         rows = [
             r for r in range(self._table.rowCount())
@@ -176,7 +213,6 @@ class EmailView(QWidget):
             return
 
         manager = CaseManager(self._conn)
-        reader = MSGReader()
         success = 0
         fail = 0
 
@@ -190,24 +226,26 @@ class EmailView(QWidget):
                 self._progress.setValue(i + 1)
                 continue
 
-            if row >= len(self._pending_files):
+            if row >= len(self._emails):
                 fail += 1
                 self._progress.setValue(i + 1)
                 continue
 
-            file_path = self._pending_files[row]
-            email = reader.read_single_file(file_path)
+            file_path = self._pending_files[row] if row < len(self._pending_files) else Path("")
+            email = self._emails[row]
 
             if email:
                 try:
-                    manager.create_case(
+                    case, action = manager.import_email(
                         subject=email.subject,
                         body=email.body,
                         sender_email=email.sender,
+                        to_recipients=email.to_recipients,
                         sent_time=str(email.date) if email.date else None,
                         source_filename=email.source_file,
                     )
-                    self._table.setItem(row, 4, QTableWidgetItem("已匯入"))
+                    label = {"created": "已匯入", "replied": "已回覆標記", "skipped": "略過（找不到父案件）"}.get(action, "已匯入")
+                    self._table.setItem(row, 4, QTableWidgetItem(label))
                     success += 1
                 except Exception as e:
                     self._table.setItem(row, 4, QTableWidgetItem("匯入失敗"))
