@@ -239,9 +239,8 @@ class TestImportEmail:
         assert case is not None
         assert case.case_id.startswith("CS-")
 
-    def test_our_reply_marks_parent_replied(self, mgr, seeded_db):
-        """我方回覆 → 找到父案件並標記已回覆，action 為 'replied'。"""
-        # 先建立父案件（客戶來信）
+    def test_our_reply_creates_case_and_links_parent(self, mgr, seeded_db):
+        """我方回覆 → 仍建案（action='created'），並透過 thread 偵測連結父案件。"""
         parent, _ = mgr.import_email(
             subject="薪資計算問題",
             body="有異常",
@@ -251,26 +250,24 @@ class TestImportEmail:
         )
         assert parent is not None
 
-        # 我方回覆
-        result_case, action = mgr.import_email(
+        # 我方回覆 → 建新案件，linked_case_id 指向父案件
+        reply_case, action = mgr.import_email(
             subject="RE: 薪資計算問題",
             body="已處理",
             sender_email="hcpservice@ares.com.tw",
             to_recipients=["user@aseglobal.com"],
             sent_time="2026/03/20 10:00",
         )
-        assert action == "replied"
-        assert result_case is not None
-        assert result_case.case_id == parent.case_id
+        assert action == "created"
+        assert reply_case is not None
+        assert reply_case.case_id != parent.case_id
 
-        # 確認父案件狀態更新
         from hcp_cms.data.repositories import CaseRepository
-        updated = CaseRepository(seeded_db.connection).get_by_id(parent.case_id)
-        assert updated.status == "已回覆"
-        assert updated.reply_count == 1
+        child = CaseRepository(seeded_db.connection).get_by_id(reply_case.case_id)
+        assert child.linked_case_id == parent.case_id
 
     def test_our_reply_increments_reply_count(self, mgr, seeded_db):
-        """我方每次回覆都應讓 reply_count +1。"""
+        """我方每次回覆建案都應讓父案件 reply_count +1（由 link_to_parent 計算）。"""
         parent, _ = mgr.import_email(
             subject="問題追蹤",
             body="內容",
@@ -298,8 +295,8 @@ class TestImportEmail:
         updated = CaseRepository(seeded_db.connection).get_by_id(parent.case_id)
         assert updated.reply_count == 2
 
-    def test_our_reply_no_parent_skipped(self, mgr):
-        """我方回覆但找不到父案件 → action 為 'skipped'，case 為 None。"""
+    def test_our_reply_no_parent_still_creates_case(self, mgr):
+        """我方回覆找不到父案件 → 仍建案（action='created'），不略過。"""
         case, action = mgr.import_email(
             subject="RE: 完全不存在的案件",
             body="回覆",
@@ -307,8 +304,8 @@ class TestImportEmail:
             to_recipients=["user@aseglobal.com"],
             sent_time="2026/03/20 10:00",
         )
-        assert action == "skipped"
-        assert case is None
+        assert action == "created"
+        assert case is not None
 
     def test_import_email_passes_progress_note_to_case(self, mgr, seeded_db):
         """import_email(progress_note=…) → 建案後 case.progress 正確。"""

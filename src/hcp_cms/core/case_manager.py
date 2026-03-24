@@ -2,10 +2,9 @@
 
 import sqlite3
 from datetime import datetime
-from email.utils import parseaddr
 from pathlib import Path
 
-from hcp_cms.core.classifier import OUR_DOMAIN, Classifier
+from hcp_cms.core.classifier import Classifier
 from hcp_cms.core.thread_tracker import ThreadTracker
 from hcp_cms.data.fts import FTSManager
 from hcp_cms.data.models import Case
@@ -30,35 +29,15 @@ class CaseManager:
         source_filename: str | None = None,
         progress_note: str | None = None,
     ) -> tuple[Case | None, str]:
-        """智慧匯入：自動判斷客戶來信或我方回覆。
+        """匯入信件並建案。每封信均建立一筆案件，我方回覆時同步更新父案件狀態。
 
         Returns:
-            (case, action) — action 為 'created' / 'replied' / 'skipped'
-
-        Note:
-            progress_note 僅在 action 為 'created'（客戶來信建案）時有效；
-            我方回覆（'replied'）及略過（'skipped'）路徑不適用。
+            (case, action) — action 為 'created'（含我方回覆已建案）或 'replied'（父案件已標記回覆）
         """
         recipients = to_recipients or []
 
-        # 判斷是否為我方寄件
-        _, addr = parseaddr(sender_email)
-        if not addr:
-            addr = sender_email
-        sender_domain = addr.split("@")[1].lower() if "@" in addr else ""
-        is_our_side = sender_domain == OUR_DOMAIN or sender_domain.endswith(f".{OUR_DOMAIN}")
-
-        if is_our_side:
-            # 我方回覆：呼叫 Classifier 公開方法取得客戶公司，再比對父案件
-            company_id, _ = self._classifier.resolve_external_company(recipients)
-            parent = self._tracker.find_thread_parent(company_id, subject)
-            if not parent:
-                return None, "skipped"
-            self.mark_replied(parent.case_id, sent_time)
-            updated = self._case_repo.get_by_id(parent.case_id)
-            return updated, "replied"
-
-        # 客戶來信：走正常建案流程（帶 to_recipients 給 Classifier）
+        # 所有信件（含我方回覆）均走建案流程
+        # create_case() 內的 thread detection 會自動找父案件並更新 reply_count
         case = self.create_case(
             subject=subject,
             body=body,
