@@ -41,6 +41,14 @@ class TestRawEmail:
         email = RawEmail()
         assert email.html_body is None
 
+    def test_raw_email_has_progress_note(self):
+        email = RawEmail(progress_note="待確認需求")
+        assert email.progress_note == "待確認需求"
+
+    def test_raw_email_progress_note_default_none(self):
+        email = RawEmail()
+        assert email.progress_note is None
+
 
 class TestMSGReader:
     def test_connect_nonexistent_dir(self):
@@ -156,6 +164,182 @@ class TestMSGReader:
         result = MSGReader._read_msg_file(tmp_path / "test.msg")
         assert result is not None
         assert result.html_body is None
+
+    def test_read_msg_file_extracts_progress_note(self, tmp_path, monkeypatch):
+        """body 含 ==進度:…== 時，progress_note 應正確擷取。"""
+        import types
+
+        fake_msg = types.SimpleNamespace(
+            sender="user@customer.com",
+            subject="薪資問題",
+            body="說明內容\n==進度: 待與jacky確認事項==\n後續文字",
+            htmlBody=None,
+            date=None,
+            attachments=[],
+            to="",
+        )
+
+        def fake_message(path):
+            fake_msg.close = lambda: None
+            return fake_msg
+
+        import extract_msg
+
+        monkeypatch.setattr(extract_msg, "Message", fake_message)
+        result = MSGReader._read_msg_file(tmp_path / "test.msg")
+        assert result is not None
+        assert result.progress_note == "待與jacky確認事項"
+
+    def test_read_msg_file_extracts_multiline_progress(self, tmp_path, monkeypatch):
+        """==進度== 跨多行時應完整擷取（含換行）。"""
+        import types
+
+        fake_msg = types.SimpleNamespace(
+            sender="user@customer.com",
+            subject="問題",
+            body="前文\n==進度: 第一行\n第二行\n第三行==\n後文",
+            htmlBody=None,
+            date=None,
+            attachments=[],
+            to="",
+        )
+
+        def fake_message(path):
+            fake_msg.close = lambda: None
+            return fake_msg
+
+        import extract_msg
+
+        monkeypatch.setattr(extract_msg, "Message", fake_message)
+        result = MSGReader._read_msg_file(tmp_path / "test.msg")
+        assert result is not None
+        assert "第一行" in result.progress_note
+        assert "第三行" in result.progress_note
+
+    def test_read_msg_file_extracts_progress_fullwidth_colon(self, tmp_path, monkeypatch):
+        """全形冒號 ==進度：…== 也應正確擷取。"""
+        import types
+
+        fake_msg = types.SimpleNamespace(
+            sender="user@customer.com",
+            subject="問題",
+            body="==進度：全形冒號測試==",
+            htmlBody=None,
+            date=None,
+            attachments=[],
+            to="",
+        )
+
+        def fake_message(path):
+            fake_msg.close = lambda: None
+            return fake_msg
+
+        import extract_msg
+
+        monkeypatch.setattr(extract_msg, "Message", fake_message)
+        result = MSGReader._read_msg_file(tmp_path / "test.msg")
+        assert result is not None
+        assert result.progress_note == "全形冒號測試"
+
+    def test_read_msg_file_no_progress_marker_is_none(self, tmp_path, monkeypatch):
+        """body 無 ==進度== 標記時，progress_note 應為 None。"""
+        import types
+
+        fake_msg = types.SimpleNamespace(
+            sender="user@customer.com",
+            subject="問題",
+            body="正常信件內容，無任何進度標記",
+            htmlBody=None,
+            date=None,
+            attachments=[],
+            to="",
+        )
+
+        def fake_message(path):
+            fake_msg.close = lambda: None
+            return fake_msg
+
+        import extract_msg
+
+        monkeypatch.setattr(extract_msg, "Message", fake_message)
+        result = MSGReader._read_msg_file(tmp_path / "test.msg")
+        assert result is not None
+        assert result.progress_note is None
+
+    def test_read_msg_file_draft_sender_from_body_angle_bracket(self, tmp_path, monkeypatch):
+        """msg.sender 空白，body 含 'From: Name <email>' → sender 補回。"""
+        import types
+
+        fake_msg = types.SimpleNamespace(
+            sender="",
+            subject="RE: 問題",
+            body="From: Nicole_Chang(GLTTCL-張淑雅) <nicole_chang@glthome.com.tw>\n\n信件內容",
+            htmlBody=None,
+            date=None,
+            attachments=[],
+            to="",
+        )
+
+        def fake_message(path):
+            fake_msg.close = lambda: None
+            return fake_msg
+
+        import extract_msg
+
+        monkeypatch.setattr(extract_msg, "Message", fake_message)
+        result = MSGReader._read_msg_file(tmp_path / "draft.msg")
+        assert result is not None
+        assert result.sender == "nicole_chang@glthome.com.tw"
+
+    def test_read_msg_file_draft_sender_from_body_plain_email(self, tmp_path, monkeypatch):
+        """msg.sender 空白，body 含純 email 格式 'From: user@domain.com' → fallback regex 補回。"""
+        import types
+
+        fake_msg = types.SimpleNamespace(
+            sender="",
+            subject="RE: 問題",
+            body="From: user@glthome.com.tw\n\n信件內容",
+            htmlBody=None,
+            date=None,
+            attachments=[],
+            to="",
+        )
+
+        def fake_message(path):
+            fake_msg.close = lambda: None
+            return fake_msg
+
+        import extract_msg
+
+        monkeypatch.setattr(extract_msg, "Message", fake_message)
+        result = MSGReader._read_msg_file(tmp_path / "draft.msg")
+        assert result is not None
+        assert result.sender == "user@glthome.com.tw"
+
+    def test_read_msg_file_existing_sender_not_overridden(self, tmp_path, monkeypatch):
+        """msg.sender 已有值時，body 的 From: 行不應覆蓋 sender。"""
+        import types
+
+        fake_msg = types.SimpleNamespace(
+            sender="real@customer.com",
+            subject="問題",
+            body="From: other@example.com\n\n內容",
+            htmlBody=None,
+            date=None,
+            attachments=[],
+            to="",
+        )
+
+        def fake_message(path):
+            fake_msg.close = lambda: None
+            return fake_msg
+
+        import extract_msg
+
+        monkeypatch.setattr(extract_msg, "Message", fake_message)
+        result = MSGReader._read_msg_file(tmp_path / "test.msg")
+        assert result is not None
+        assert result.sender == "real@customer.com"
 
 
 class TestIMAPProvider:

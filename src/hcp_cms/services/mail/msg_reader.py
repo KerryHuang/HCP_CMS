@@ -3,11 +3,16 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from datetime import datetime
 from email.utils import getaddresses
 from pathlib import Path
 
 from hcp_cms.services.mail.base import MailProvider, RawEmail
+
+_PROGRESS_RE = re.compile(r"==進度[:：]\s*(.*?)==", re.DOTALL | re.IGNORECASE)
+_FROM_ANGLE_RE = re.compile(r"^From:\s*[^<\n]*<([^>]+)>", re.MULTILINE)
+_FROM_PLAIN_RE = re.compile(r"^From:\s*(\S+@\S+)", re.MULTILINE)
 
 
 class MSGReader(MailProvider):
@@ -88,15 +93,34 @@ class MSGReader(MailProvider):
                 else:
                     html_body = str(raw_html)
 
+            # ── 提取 body 文字（供後續解析使用）────────────────────────────
+            body_text = msg.body or ""
+
+            # ── 進度標記擷取（==進度:…== 或 ==進度：…==，可跨行）──────────
+            _prog_match = _PROGRESS_RE.search(body_text)
+            progress_note: str | None = _prog_match.group(1).strip() if _prog_match else None
+
+            # ── 草稿寄件人補修（msg.sender 空白時從 body 搜尋 From: 行）───
+            sender = msg.sender or ""
+            if not sender:
+                _from_match = _FROM_ANGLE_RE.search(body_text)
+                if _from_match:
+                    sender = _from_match.group(1).strip()
+                else:
+                    _plain_match = _FROM_PLAIN_RE.search(body_text)
+                    if _plain_match:
+                        sender = _plain_match.group(1).strip()
+
             email = RawEmail(
-                sender=msg.sender or "",
+                sender=sender,
                 subject=msg.subject or "",
-                body=msg.body or "",
+                body=body_text,
                 date=msg.date or None,
                 attachments=[att.longFilename or "" for att in msg.attachments] if msg.attachments else [],
                 source_file=file_path.name,
                 to_recipients=to_recipients,
                 html_body=html_body,
+                progress_note=progress_note,
             )
             msg.close()
             return email

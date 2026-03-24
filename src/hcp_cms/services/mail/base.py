@@ -22,6 +22,7 @@ class RawEmail:
     source_file: str | None = None  # .msg filename if from file
     to_recipients: list[str] = field(default_factory=list)
     html_body: str | None = None
+    progress_note: str | None = None
 
 
 class MailProvider(ABC):
