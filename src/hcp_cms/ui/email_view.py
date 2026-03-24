@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+from html import escape
 from pathlib import Path
 
 from PySide6.QtCore import QDate, Qt
@@ -191,8 +192,6 @@ class EmailView(QWidget):
         )
 
     def _wrap_plain(self, text: str) -> str:
-        from html import escape
-
         return (
             f"<html><head><style>{self._BASE_STYLE}</style></head>"
             f"<body><pre>{escape(text)}</pre></body></html>"
@@ -243,6 +242,9 @@ class EmailView(QWidget):
             self._log.append("❌ 資料庫未連線")
             return
 
+        label_map = {"created": "已匯入", "replied": "已回覆標記", "skipped": "略過（找不到父案件）"}
+        done_statuses = set(label_map.values())
+
         manager = CaseManager(self._conn)
         success = 0
         fail = 0
@@ -253,7 +255,6 @@ class EmailView(QWidget):
 
         for i, row in enumerate(rows):
             status_item = self._table.item(row, 4)
-            done_statuses = {"已匯入", "已回覆標記", "略過（找不到父案件）"}
             if status_item and status_item.text() in done_statuses:
                 self._progress.setValue(i + 1)
                 continue
@@ -276,7 +277,6 @@ class EmailView(QWidget):
                         sent_time=str(email.date) if email.date else None,
                         source_filename=email.source_file,
                     )
-                    label_map = {"created": "已匯入", "replied": "已回覆標記", "skipped": "略過（找不到父案件）"}
                     label = label_map.get(action, "已匯入")
                     self._table.setItem(row, 4, QTableWidgetItem(label))
                     success += 1
