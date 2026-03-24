@@ -6,6 +6,8 @@ from email.utils import parseaddr
 
 from hcp_cms.data.repositories import CompanyRepository, RuleRepository
 
+OUR_DOMAIN = "ares.com.tw"
+
 
 class Classifier:
     """Classifies emails by product, issue type, error type, priority, and company."""
@@ -14,7 +16,7 @@ class Classifier:
         self._rule_repo = RuleRepository(conn)
         self._company_repo = CompanyRepository(conn)
 
-    def classify(self, subject: str, body: str, sender_email: str = "") -> dict:
+    def classify(self, subject: str, body: str, sender_email: str = "", to_recipients: list[str] | None = None) -> dict:
         """
         Classify an email based on subject, body, and sender.
 
@@ -30,7 +32,7 @@ class Classifier:
 
         tags = self._parse_subject_tags(subject)
 
-        company_id, company_display = self._resolve_company(sender_email)
+        company_id, company_display = self._resolve_company(sender_email, to_recipients or [])
 
         result = {
             "system_product": self._match_rules("product", text, "HCP"),
@@ -88,31 +90,43 @@ class Classifier:
                 return rule.value
         return default
 
-    def _resolve_company(self, sender_email: str) -> tuple[str | None, str | None]:
-        """Resolve company_id and display name from sender email domain.
+    def _resolve_company(self, sender_email: str, to_recipients: list[str] | None = None) -> tuple[str | None, str | None]:
+        """Resolve company from sender, or recipients if sender is our side."""
+        # 判斷是否為我方寄件
+        if sender_email and "@" in sender_email:
+            _, addr = parseaddr(sender_email)
+            sender_domain = addr.split("@")[1].lower() if "@" in addr else ""
+            if sender_domain == OUR_DOMAIN or sender_domain.endswith(f".{OUR_DOMAIN}"):
+                # 我方寄件：委託公開方法從收件人解析公司
+                return self.resolve_external_company(to_recipients or [])
 
-        查詢順序（參考 MSG 文件 4.2 節）：
-        1. 完整 domain 精確比對
-        2. 逐層去子網域回落（mail.abc.com → abc.com）
-        3. 查無對應公司 → company_id=None，display=domain 原文
-        4. email 為空或無 @ → (None, None)
+        return self._lookup_by_email(sender_email)
 
-        Returns:
-            (company_id, display): company_id 是 FK 安全值（或 None），
-                                    display 是顯示用名稱（公司中文名或 domain）
+    def resolve_external_company(self, recipients: list[str]) -> tuple[str | None, str | None]:
+        """從收件人列表中找第一個非我方地址，回傳其公司 (company_id, display)。
+        供 CaseManager 等同層 Core 類別呼叫。
         """
-        if not sender_email or "@" not in sender_email:
+        for r in recipients:
+            _, addr = parseaddr(r)
+            if not addr:
+                addr = r
+            if "@" in addr:
+                domain = addr.split("@")[1].lower()
+                if domain != OUR_DOMAIN and not domain.endswith(f".{OUR_DOMAIN}"):
+                    return self._lookup_by_email(addr)
+        return None, None
+
+    def _lookup_by_email(self, email_str: str) -> tuple[str | None, str | None]:
+        """Look up company_id and display name from an email address string."""
+        if not email_str or "@" not in email_str:
             return None, None
-        # 支援 "Display Name <email@domain>" 格式，先用 email.utils 解析地址
-        _, addr = parseaddr(sender_email)
+        _, addr = parseaddr(email_str)
         if not addr or "@" not in addr:
-            addr = sender_email  # fallback：直接用原始字串
+            addr = email_str
         domain = addr.split("@")[1].lower().rstrip(">").strip()
-        # Try exact match
         company = self._company_repo.get_by_domain(domain)
         if company:
             return company.company_id, company.name
-        # Try subdomain fallback: mail.abc.com → abc.com
         parts = domain.split(".")
         fallback_domain = domain
         if len(parts) > 2:
@@ -120,7 +134,6 @@ class Classifier:
             company = self._company_repo.get_by_domain(fallback_domain)
             if company:
                 return company.company_id, company.name
-        # 查無對應公司：company_id 保持 None（FK 安全），display 回傳 domain
         return None, fallback_domain
 
     def _check_broadcast(self, text: str) -> bool:

@@ -223,3 +223,61 @@ class TestSubjectTagParser:
         c = Classifier(seeded_db.connection)
         result = c.classify("問題(待確認)(處理中)", "")
         assert result.get("progress") is None
+
+
+class TestClassifierOurSideSender:
+    def test_classify_our_side_sender_uses_recipient(self, seeded_db):
+        """sender 為我方（ares.com.tw）時，公司應從 to_recipients 識別。"""
+        c = Classifier(seeded_db.connection)
+        result = c.classify(
+            "RE: 薪資問題",
+            "已處理",
+            sender_email="hcpservice@ares.com.tw",
+            to_recipients=["user@aseglobal.com"],
+        )
+        assert result["company_id"] == "C-ASE"
+        assert result["company_display"] == "日月光集團"
+
+    def test_classify_our_side_sender_skips_ares_recipients(self, seeded_db):
+        """to_recipients 中若有多個地址，應跳過 ares.com.tw，用第一個非我方地址。"""
+        c = Classifier(seeded_db.connection)
+        result = c.classify(
+            "RE: 測試",
+            "body",
+            sender_email="hcpservice@ares.com.tw",
+            to_recipients=["internal@ares.com.tw", "user@aseglobal.com"],
+        )
+        assert result["company_id"] == "C-ASE"
+
+    def test_classify_our_side_sender_no_usable_recipient(self, seeded_db):
+        """我方寄件但收件人也全是我方時，company_id 應為 None。"""
+        c = Classifier(seeded_db.connection)
+        result = c.classify(
+            "RE: 內部信",
+            "body",
+            sender_email="hcpservice@ares.com.tw",
+            to_recipients=["other@ares.com.tw"],
+        )
+        assert result["company_id"] is None
+
+    def test_classify_our_side_sender_empty_recipients(self, seeded_db):
+        """我方寄件但 to_recipients 為空時，company_id 應為 None。"""
+        c = Classifier(seeded_db.connection)
+        result = c.classify(
+            "RE: 測試",
+            "body",
+            sender_email="hcpservice@ares.com.tw",
+            to_recipients=[],
+        )
+        assert result["company_id"] is None
+
+    def test_classify_customer_sender_unchanged_behavior(self, seeded_db):
+        """非我方寄件人時，行為與修改前一致，使用 sender_email。"""
+        c = Classifier(seeded_db.connection)
+        result = c.classify(
+            "薪資問題",
+            "body",
+            sender_email="user@aseglobal.com",
+            to_recipients=["hcpservice@ares.com.tw"],
+        )
+        assert result["company_id"] == "C-ASE"
