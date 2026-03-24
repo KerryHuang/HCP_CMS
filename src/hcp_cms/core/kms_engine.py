@@ -9,6 +9,7 @@ from hcp_cms.core.anonymizer import Anonymizer
 from hcp_cms.data.fts import FTSManager
 from hcp_cms.data.models import Case, QAKnowledge
 from hcp_cms.data.repositories import QARepository
+from hcp_cms.services.mail.base import RawEmail
 
 # Question detection patterns
 _QUESTION_PATTERNS = ["請問", "如何", "是否", "怎麼", "可否", "能否", "為什麼", "為何"]
@@ -22,12 +23,14 @@ class KMSEngine:
         self._anonymizer = Anonymizer()
 
     def search(self, query: str, system_product: str | None = None) -> list[QAKnowledge]:
-        """Search QA via FTS5, return full QAKnowledge objects."""
+        """Search QA via FTS5, return full QAKnowledge objects. 只返回已完成的 QA。"""
         fts_results = self._fts.search_qa(query)
         qa_list = []
         for result in fts_results:
             qa = self._qa_repo.get_by_id(result["qa_id"])
             if qa:
+                if qa.status != "已完成":
+                    continue
                 if system_product and qa.system_product != system_product:
                     continue
                 qa_list.append(qa)
@@ -45,8 +48,9 @@ class KMSEngine:
         source: str = "manual",
         source_case_id: str | None = None,
         created_by: str | None = None,
+        status: str = "已完成",
     ) -> QAKnowledge:
-        """Create a new QA entry and index it."""
+        """Create a new QA entry. 若 status 為已完成則建立 FTS 索引。"""
         qa_id = self._qa_repo.next_qa_id()
         qa = QAKnowledge(
             qa_id=qa_id,
@@ -60,27 +64,58 @@ class KMSEngine:
             source=source,
             source_case_id=source_case_id,
             created_by=created_by,
+            status=status,
         )
         self._qa_repo.insert(qa)
-        self._fts.index_qa(qa_id, question, answer, solution, keywords)
+        if status == "已完成":
+            self._fts.index_qa(qa_id, question, answer, solution, keywords)
         return qa
 
     def update_qa(self, qa_id: str, **fields: str | None) -> QAKnowledge | None:
-        """Update QA fields and rebuild FTS index."""
+        """Update QA fields and rebuild FTS index. 已完成 → 待審核 降級被拒絕。"""
         qa = self._qa_repo.get_by_id(qa_id)
         if not qa:
+            return None
+        incoming_status = fields.get("status")
+        if qa.status == "已完成" and incoming_status == "待審核":
             return None
         for key, value in fields.items():
             if hasattr(qa, key):
                 setattr(qa, key, value)
         self._qa_repo.update(qa)
-        self._fts.update_qa_index(qa_id, qa.question, qa.answer, qa.solution, qa.keywords)
+        if qa.status == "已完成":
+            self._fts.update_qa_index(qa_id, qa.question, qa.answer, qa.solution, qa.keywords)
         return qa
 
     def delete_qa(self, qa_id: str) -> None:
         """Delete QA and remove FTS index."""
         self._qa_repo.delete(qa_id)
         self._fts.remove_qa_index(qa_id)
+
+    def extract_qa_from_email(self, raw_email: RawEmail, case_id: str | None = None) -> QAKnowledge | None:
+        """從 RawEmail thread 欄位抽取 QA，儲存為待審核。無問題段則回傳 None。"""
+        if not raw_email.thread_question:
+            return None
+        return self.create_qa(
+            question=raw_email.thread_question,
+            answer=raw_email.thread_answer or "",
+            source="email",
+            source_case_id=case_id,
+            status="待審核",
+        )
+
+    def approve_qa(self, qa_id: str, **updated_fields) -> QAKnowledge | None:
+        """單一入口：更新欄位 → status='已完成' → FTS 索引建立。"""
+        updated_fields["status"] = "已完成"
+        return self.update_qa(qa_id, **updated_fields)
+
+    def list_pending(self) -> list[QAKnowledge]:
+        """列出所有待審核 QA。"""
+        return self._qa_repo.list_by_status("待審核")
+
+    def list_approved(self) -> list[QAKnowledge]:
+        """列出所有已完成 QA（供 UI 層顯示全部使用）。"""
+        return self._qa_repo.list_approved()
 
     def auto_extract_qa(
         self,
@@ -89,6 +124,8 @@ class KMSEngine:
         company_aliases: list[str] | None = None,
     ) -> QAKnowledge | None:
         """Auto-extract QA from a case if it contains a question pattern.
+
+        .. deprecated:: 由 extract_qa_from_email() 取代。
         Returns QA with source='email' or None if no question detected."""
         if not case.subject:
             return None
@@ -134,9 +171,9 @@ class KMSEngine:
         return count
 
     def export_to_excel(self, file_path: Path, qa_list: list[QAKnowledge] | None = None) -> Path:
-        """Export QA entries to Excel. If qa_list is None, export all."""
+        """Export QA entries to Excel. If qa_list is None, export approved only."""
         if qa_list is None:
-            qa_list = self._qa_repo.list_all()
+            qa_list = self._qa_repo.list_approved()
 
         wb = openpyxl.Workbook()
         ws = wb.active
