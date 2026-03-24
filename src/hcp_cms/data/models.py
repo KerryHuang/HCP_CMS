@@ -74,6 +74,7 @@ class QAKnowledge:
     company_id: str | None = None
     source_case_id: str | None = None
     source: str = "manual"
+    status: str = "已完成"    # '待審核' | '已完成'
     created_by: str | None = None
     created_at: str | None = None
     updated_at: str | None = None

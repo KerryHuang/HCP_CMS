@@ -58,6 +58,7 @@ CREATE TABLE IF NOT EXISTS qa_knowledge (
     company_id TEXT REFERENCES companies(company_id),
     source_case_id TEXT REFERENCES cs_cases(case_id),
     source TEXT DEFAULT 'manual',
+    status TEXT DEFAULT '已完成',
     created_by TEXT,
     created_at TEXT,
     updated_at TEXT,

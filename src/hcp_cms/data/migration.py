@@ -7,6 +7,15 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
+def _add_qa_status_column(conn: sqlite3.Connection) -> None:
+    """替既有 qa_knowledge 表加入 status 欄位，冪等（欄位已存在時跳過）。"""
+    try:
+        conn.execute("ALTER TABLE qa_knowledge ADD COLUMN status TEXT DEFAULT '已完成'")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass
+
+
 @dataclass
 class MigrationPreview:
     cases_count: int = 0
@@ -48,9 +57,7 @@ class MigrationManager:
         try:
             cases_count = conn.execute("SELECT COUNT(*) FROM cs_cases").fetchone()[0]
             qa_count = conn.execute("SELECT COUNT(*) FROM qa_knowledge").fetchone()[0]
-            mantis_count = conn.execute(
-                "SELECT COUNT(*) FROM mantis_tickets"
-            ).fetchone()[0]
+            mantis_count = conn.execute("SELECT COUNT(*) FROM mantis_tickets").fetchone()[0]
         finally:
             conn.close()
 
@@ -94,9 +101,7 @@ class MigrationManager:
             if domain:
                 domain_set.add(domain)
 
-        for row in old.execute(
-            "SELECT company FROM qa_knowledge WHERE company IS NOT NULL"
-        ):
+        for row in old.execute("SELECT company FROM qa_knowledge WHERE company IS NOT NULL"):
             domain = row[0].strip()
             if domain:
                 domain_set.add(domain)
@@ -226,9 +231,7 @@ class MigrationManager:
                     case_id = case_ref.strip()
                     if case_id:
                         # Only insert if the case exists in the new DB
-                        exists = self._new.execute(
-                            "SELECT 1 FROM cs_cases WHERE case_id = ?", (case_id,)
-                        ).fetchone()
+                        exists = self._new.execute("SELECT 1 FROM cs_cases WHERE case_id = ?", (case_id,)).fetchone()
                         if exists:
                             self._new.execute(
                                 "INSERT OR IGNORE INTO case_mantis (case_id, ticket_id) VALUES (?, ?)",
@@ -237,6 +240,7 @@ class MigrationManager:
 
             mantis_count += 1
 
+        _add_qa_status_column(self._new)
         self._new.commit()
 
         return MigrationPreview(

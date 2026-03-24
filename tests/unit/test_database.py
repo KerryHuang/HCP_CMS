@@ -30,9 +30,7 @@ class TestDatabaseManager:
     def test_all_tables_created(self, tmp_db_path: Path):
         db = DatabaseManager(tmp_db_path)
         db.initialize()
-        cursor = db.connection.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
-        )
+        cursor = db.connection.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
         tables = {row[0] for row in cursor.fetchall()}
         expected = {
             "cs_cases",
@@ -51,18 +49,14 @@ class TestDatabaseManager:
     def test_schema_version_set(self, tmp_db_path: Path):
         db = DatabaseManager(tmp_db_path)
         db.initialize()
-        result = db.connection.execute(
-            "SELECT value FROM db_meta WHERE key = 'schema_version'"
-        ).fetchone()
+        result = db.connection.execute("SELECT value FROM db_meta WHERE key = 'schema_version'").fetchone()
         assert result[0] == "2.0.0"
         db.close()
 
     def test_fts_tables_created(self, tmp_db_path: Path):
         db = DatabaseManager(tmp_db_path)
         db.initialize()
-        cursor = db.connection.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE '%fts%'"
-        )
+        cursor = db.connection.execute("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE '%fts%'")
         fts_tables = {row[0] for row in cursor.fetchall()}
         assert "qa_fts" in fts_tables
         assert "cases_fts" in fts_tables
@@ -79,3 +73,25 @@ class TestDatabaseManager:
         conn = db.connection
         assert isinstance(conn, sqlite3.Connection)
         db.close()
+
+
+class TestQAKnowledgeStatusColumn:
+    def test_qa_knowledge_has_status_column(self, tmp_db_path):
+        from hcp_cms.data.database import DatabaseManager
+
+        db = DatabaseManager(tmp_db_path)
+        db.initialize()
+        cols = {row[1] for row in db.connection.execute("PRAGMA table_info(qa_knowledge)")}
+        db.close()
+        assert "status" in cols
+
+    def test_status_default_is_已完成(self, tmp_db_path):
+        from hcp_cms.data.database import DatabaseManager
+
+        db = DatabaseManager(tmp_db_path)
+        db.initialize()
+        db.connection.execute("INSERT INTO qa_knowledge (qa_id, question, answer) VALUES ('QA-T01', 'q', 'a')")
+        db.connection.commit()
+        row = db.connection.execute("SELECT status FROM qa_knowledge WHERE qa_id = 'QA-T01'").fetchone()
+        db.close()
+        assert row[0] == "已完成"

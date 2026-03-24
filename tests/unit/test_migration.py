@@ -128,3 +128,19 @@ class TestMigration:
         assert "CS-2025-001" in case_ids
         assert "CS-2025-002" in case_ids
         assert len(links) == 2
+
+
+class TestQAStatusMigration:
+    def test_alter_table_冪等(self, tmp_path):
+        import sqlite3
+        from hcp_cms.data.migration import _add_qa_status_column
+        conn = sqlite3.connect(str(tmp_path / "test.db"))
+        conn.execute(
+            "CREATE TABLE qa_knowledge (qa_id TEXT PRIMARY KEY, question TEXT, answer TEXT)"
+        )
+        conn.commit()
+        _add_qa_status_column(conn)
+        _add_qa_status_column(conn)   # 第二次不拋例外
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(qa_knowledge)")}
+        conn.close()
+        assert "status" in cols

@@ -117,3 +117,15 @@ class TestCaseMantisLink:
     def test_create_link(self):
         link = CaseMantisLink(case_id="CS-2026-001", ticket_id="15562")
         assert link.case_id == "CS-2026-001"
+
+
+class TestQAKnowledgeStatus:
+    def test_default_status_is_已完成(self):
+        from hcp_cms.data.models import QAKnowledge
+        qa = QAKnowledge(qa_id="QA-001", question="q", answer="a")
+        assert qa.status == "已完成"
+
+    def test_status_可設為待審核(self):
+        from hcp_cms.data.models import QAKnowledge
+        qa = QAKnowledge(qa_id="QA-001", question="q", answer="a", status="待審核")
+        assert qa.status == "待審核"
