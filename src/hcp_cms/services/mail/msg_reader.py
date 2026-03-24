@@ -10,7 +10,7 @@ from pathlib import Path
 
 from hcp_cms.services.mail.base import MailProvider, RawEmail
 
-_PROGRESS_RE = re.compile(r"==進度[:：]\s*(.*?)==", re.DOTALL | re.IGNORECASE)
+_PROGRESS_RE = re.compile(r"==進度[:：]\s*(.*?)==", re.DOTALL)
 _FROM_ANGLE_RE = re.compile(r"^From:\s*[^<\n]*<([^>]+)>", re.MULTILINE)
 _FROM_PLAIN_RE = re.compile(r"^From:\s*(\S+@\S+)", re.MULTILINE)
 
