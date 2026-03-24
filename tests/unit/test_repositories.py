@@ -479,3 +479,59 @@ class TestCaseMantisRepository:
     def test_get_cases_for_ticket_empty(self, db: DatabaseManager) -> None:
         repo = CaseMantisRepository(db.connection)
         assert repo.get_cases_for_ticket("MT-NONE") == []
+
+
+# ---------------------------------------------------------------------------
+# TestQARepositoryStatus
+# ---------------------------------------------------------------------------
+
+
+class TestQARepositoryStatus:
+    @pytest.fixture
+    def db(self, tmp_db_path):
+        from hcp_cms.data.database import DatabaseManager
+        db = DatabaseManager(tmp_db_path)
+        db.initialize()
+        yield db
+        db.close()
+
+    @pytest.fixture
+    def repo(self, db):
+        from hcp_cms.data.repositories import QARepository
+        return QARepository(db.connection)
+
+    def test_insert_status_待審核(self, repo):
+        from hcp_cms.data.models import QAKnowledge
+        qa = QAKnowledge(qa_id="QA-S01", question="q", answer="a", status="待審核")
+        repo.insert(qa)
+        assert repo.get_by_id("QA-S01").status == "待審核"
+
+    def test_insert_status_default_已完成(self, repo):
+        from hcp_cms.data.models import QAKnowledge
+        qa = QAKnowledge(qa_id="QA-S02", question="q", answer="a")
+        repo.insert(qa)
+        assert repo.get_by_id("QA-S02").status == "已完成"
+
+    def test_update_status_持久化(self, repo):
+        from hcp_cms.data.models import QAKnowledge
+        qa = QAKnowledge(qa_id="QA-S03", question="q", answer="a", status="待審核")
+        repo.insert(qa)
+        qa.status = "已完成"
+        repo.update(qa)
+        assert repo.get_by_id("QA-S03").status == "已完成"
+
+    def test_list_by_status_待審核(self, repo):
+        from hcp_cms.data.models import QAKnowledge
+        repo.insert(QAKnowledge(qa_id="QA-S04", question="q1", answer="a", status="待審核"))
+        repo.insert(QAKnowledge(qa_id="QA-S05", question="q2", answer="a", status="已完成"))
+        pending = repo.list_by_status("待審核")
+        assert len(pending) == 1
+        assert pending[0].qa_id == "QA-S04"
+
+    def test_list_approved(self, repo):
+        from hcp_cms.data.models import QAKnowledge
+        repo.insert(QAKnowledge(qa_id="QA-S06", question="q1", answer="a", status="待審核"))
+        repo.insert(QAKnowledge(qa_id="QA-S07", question="q2", answer="a", status="已完成"))
+        approved = repo.list_approved()
+        assert len(approved) == 1
+        assert approved[0].qa_id == "QA-S07"

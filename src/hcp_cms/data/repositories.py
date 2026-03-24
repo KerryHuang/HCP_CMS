@@ -270,11 +270,11 @@ class QARepository:
             INSERT INTO qa_knowledge (
                 qa_id, system_product, issue_type, error_type, question, answer,
                 solution, keywords, has_image, doc_name, company_id, source_case_id,
-                source, created_by, created_at, updated_at, notes
+                source, status, created_by, created_at, updated_at, notes
             ) VALUES (
                 :qa_id, :system_product, :issue_type, :error_type, :question, :answer,
                 :solution, :keywords, :has_image, :doc_name, :company_id, :source_case_id,
-                :source, :created_by, :created_at, :updated_at, :notes
+                :source, :status, :created_by, :created_at, :updated_at, :notes
             )
             """,
             {
@@ -291,6 +291,7 @@ class QARepository:
                 "company_id": qa.company_id,
                 "source_case_id": qa.source_case_id,
                 "source": qa.source,
+                "status": qa.status,
                 "created_by": qa.created_by,
                 "created_at": qa.created_at,
                 "updated_at": qa.updated_at,
@@ -324,6 +325,13 @@ class QARepository:
         rows = self._conn.execute("SELECT * FROM qa_knowledge").fetchall()
         return [QAKnowledge(**dict(row)) for row in rows]
 
+    def list_by_status(self, status: str) -> list[QAKnowledge]:
+        rows = self._conn.execute("SELECT * FROM qa_knowledge WHERE status = ?", (status,)).fetchall()
+        return [QAKnowledge(**dict(row)) for row in rows]
+
+    def list_approved(self) -> list[QAKnowledge]:
+        return self.list_by_status("已完成")
+
     def update(self, qa: QAKnowledge) -> None:
         qa.updated_at = _now()
         self._conn.execute(
@@ -341,6 +349,7 @@ class QARepository:
                 company_id = :company_id,
                 source_case_id = :source_case_id,
                 source = :source,
+                status = :status,
                 created_by = :created_by,
                 updated_at = :updated_at,
                 notes = :notes
@@ -360,6 +369,7 @@ class QARepository:
                 "company_id": qa.company_id,
                 "source_case_id": qa.source_case_id,
                 "source": qa.source,
+                "status": qa.status,
                 "created_by": qa.created_by,
                 "updated_at": qa.updated_at,
                 "notes": qa.notes,
