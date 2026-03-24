@@ -2,9 +2,10 @@
 
 import sqlite3
 from datetime import datetime
+from email.utils import parseaddr
 from pathlib import Path
 
-from hcp_cms.core.classifier import Classifier
+from hcp_cms.core.classifier import Classifier, OUR_DOMAIN
 from hcp_cms.core.thread_tracker import ThreadTracker
 from hcp_cms.data.fts import FTSManager
 from hcp_cms.data.models import Case
@@ -19,11 +20,56 @@ class CaseManager:
         self._classifier = Classifier(conn)
         self._tracker = ThreadTracker(conn)
 
+    def import_email(
+        self,
+        subject: str,
+        body: str,
+        sender_email: str = "",
+        to_recipients: list[str] | None = None,
+        sent_time: str | None = None,
+        source_filename: str | None = None,
+    ) -> tuple[Case | None, str]:
+        """智慧匯入：自動判斷客戶來信或我方回覆。
+
+        Returns:
+            (case, action) — action 為 'created' / 'replied' / 'skipped'
+        """
+        recipients = to_recipients or []
+
+        # 判斷是否為我方寄件
+        _, addr = parseaddr(sender_email)
+        if not addr:
+            addr = sender_email
+        sender_domain = addr.split("@")[1].lower() if "@" in addr else ""
+        is_our_side = sender_domain == OUR_DOMAIN or sender_domain.endswith(f".{OUR_DOMAIN}")
+
+        if is_our_side:
+            # 我方回覆：呼叫 Classifier 公開方法取得客戶公司，再比對父案件
+            company_id, _ = self._classifier.resolve_external_company(recipients)
+            parent = self._tracker.find_thread_parent(company_id, subject)
+            if not parent:
+                return None, "skipped"
+            self.mark_replied(parent.case_id, sent_time)
+            updated = self._case_repo.get_by_id(parent.case_id)
+            return updated, "replied"
+
+        # 客戶來信：走正常建案流程（帶 to_recipients 給 Classifier）
+        case = self.create_case(
+            subject=subject,
+            body=body,
+            sender_email=sender_email,
+            to_recipients=recipients,
+            sent_time=sent_time,
+            source_filename=source_filename,
+        )
+        return case, "created"
+
     def create_case(
         self,
         subject: str,
         body: str,
         sender_email: str = "",
+        to_recipients: list[str] | None = None,
         sent_time: str | None = None,
         contact_person: str | None = None,
         handler: str | None = None,
@@ -31,7 +77,7 @@ class CaseManager:
     ) -> Case:
         """Create a new case from email data, with auto-classification and thread detection."""
         # Classify
-        classification = self._classifier.classify(subject, body, sender_email)
+        classification = self._classifier.classify(subject, body, sender_email, to_recipients or [])
 
         # 解析檔名標記（ISSUE#/RD handler/進度）優先於 email 主旨標記
         # 舊系統會將 ISSUE 前綴和 (RD_XXX)(進度) 加在 .msg 檔名中

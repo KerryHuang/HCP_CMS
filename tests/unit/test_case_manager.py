@@ -184,3 +184,95 @@ class TestCaseManager:
         repo = CaseRepository(seeded_db.connection)
         child = repo.get_by_id(c2.case_id)
         assert child.linked_case_id == c1.case_id
+
+
+class TestImportEmail:
+    """測試 import_email() 智慧派送邏輯。"""
+
+    @pytest.fixture
+    def mgr(self, seeded_db):
+        return CaseManager(seeded_db.connection)
+
+    def test_customer_email_creates_case(self, mgr):
+        """客戶發信 → 建立新案件，action 為 'created'。"""
+        case, action = mgr.import_email(
+            subject="薪資問題",
+            body="員工薪資異常",
+            sender_email="user@aseglobal.com",
+            to_recipients=["hcpservice@ares.com.tw"],
+            sent_time="2026/03/20 09:00",
+        )
+        assert action == "created"
+        assert case is not None
+        assert case.case_id.startswith("CS-")
+
+    def test_our_reply_marks_parent_replied(self, mgr, seeded_db):
+        """我方回覆 → 找到父案件並標記已回覆，action 為 'replied'。"""
+        # 先建立父案件（客戶來信）
+        parent, _ = mgr.import_email(
+            subject="薪資計算問題",
+            body="有異常",
+            sender_email="user@aseglobal.com",
+            to_recipients=["hcpservice@ares.com.tw"],
+            sent_time="2026/03/20 09:00",
+        )
+        assert parent is not None
+
+        # 我方回覆
+        result_case, action = mgr.import_email(
+            subject="RE: 薪資計算問題",
+            body="已處理",
+            sender_email="hcpservice@ares.com.tw",
+            to_recipients=["user@aseglobal.com"],
+            sent_time="2026/03/20 10:00",
+        )
+        assert action == "replied"
+        assert result_case is not None
+        assert result_case.case_id == parent.case_id
+
+        # 確認父案件狀態更新
+        from hcp_cms.data.repositories import CaseRepository
+        updated = CaseRepository(seeded_db.connection).get_by_id(parent.case_id)
+        assert updated.status == "已回覆"
+        assert updated.reply_count == 1
+
+    def test_our_reply_increments_reply_count(self, mgr, seeded_db):
+        """我方每次回覆都應讓 reply_count +1。"""
+        parent, _ = mgr.import_email(
+            subject="問題追蹤",
+            body="內容",
+            sender_email="user@aseglobal.com",
+            to_recipients=["hcpservice@ares.com.tw"],
+            sent_time="2026/03/20 09:00",
+        )
+
+        mgr.import_email(
+            subject="RE: 問題追蹤",
+            body="第一次回覆",
+            sender_email="hcpservice@ares.com.tw",
+            to_recipients=["user@aseglobal.com"],
+            sent_time="2026/03/20 10:00",
+        )
+        mgr.import_email(
+            subject="RE: 問題追蹤",
+            body="第二次回覆",
+            sender_email="hcpservice@ares.com.tw",
+            to_recipients=["user@aseglobal.com"],
+            sent_time="2026/03/21 10:00",
+        )
+
+        from hcp_cms.data.repositories import CaseRepository
+        updated = CaseRepository(seeded_db.connection).get_by_id(parent.case_id)
+        assert updated.reply_count == 2
+
+    def test_our_reply_no_parent_skipped(self, mgr):
+        """我方回覆但找不到父案件 → action 為 'skipped'，case 為 None。"""
+        case, action = mgr.import_email(
+            subject="RE: 完全不存在的案件",
+            body="回覆",
+            sender_email="hcpservice@ares.com.tw",
+            to_recipients=["user@aseglobal.com"],
+            sent_time="2026/03/20 10:00",
+        )
+        assert action == "skipped"
+        assert case is None
