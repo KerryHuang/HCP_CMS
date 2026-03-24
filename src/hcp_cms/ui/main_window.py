@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from hcp_cms.core.kms_engine import KMSEngine
 from hcp_cms.ui.case_view import CaseView
 from hcp_cms.ui.dashboard_view import DashboardView
 from hcp_cms.ui.email_view import EmailView
@@ -93,11 +94,13 @@ class MainWindow(QMainWindow):
         # Content area (stacked widget)
         self._stack = QStackedWidget()
 
+        kms = KMSEngine(self._conn) if self._conn else None
+
         self._views: dict[str, QWidget] = {
             "dashboard": DashboardView(self._conn),
             "cases": CaseView(self._conn),
-            "kms": KMSView(self._conn),
-            "email": EmailView(self._conn),
+            "kms": KMSView(self._conn),  # kms 將在 Task 6 注入
+            "email": EmailView(self._conn, kms=kms),
             "mantis": MantisView(self._conn),
             "reports": ReportView(self._conn),
             "rules": RulesView(self._conn),

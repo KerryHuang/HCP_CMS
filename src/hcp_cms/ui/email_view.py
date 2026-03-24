@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+import traceback
 from html import escape
 from pathlib import Path
 
@@ -27,6 +28,7 @@ from PySide6.QtWidgets import (
 )
 
 from hcp_cms.core.case_manager import CaseManager
+from hcp_cms.core.kms_engine import KMSEngine
 from hcp_cms.services.mail.base import RawEmail
 from hcp_cms.services.mail.msg_reader import MSGReader
 
@@ -43,9 +45,10 @@ class EmailView(QWidget):
         "img{max-width:100%;}"
     )
 
-    def __init__(self, conn: sqlite3.Connection | None = None) -> None:
+    def __init__(self, conn: sqlite3.Connection | None = None, kms: KMSEngine | None = None) -> None:
         super().__init__()
         self._conn = conn
+        self._kms = kms
         self._pending_files: list[Path] = []
         self._emails: list[RawEmail | None] = []   # 與 _pending_files 平行
         self._setup_ui()
@@ -109,8 +112,10 @@ class EmailView(QWidget):
         self._preview.setHtml(self._placeholder_html())
         self._splitter.addWidget(self._preview)
 
-        self._splitter.setSizes([300, 200])
-        layout.addWidget(self._splitter)
+        self._splitter.setSizes([400, 300])
+        self._splitter.setStretchFactor(0, 1)
+        self._splitter.setStretchFactor(1, 1)
+        layout.addWidget(self._splitter, stretch=1)
 
         # Actions
         action_layout = QHBoxLayout()
@@ -130,7 +135,7 @@ class EmailView(QWidget):
         # Log
         self._log = QTextEdit()
         self._log.setReadOnly(True)
-        self._log.setMaximumHeight(100)
+        self._log.setFixedHeight(120)
         self._log.setPlaceholderText("處理日誌...")
         layout.addWidget(self._log)
 
@@ -154,16 +159,34 @@ class EmailView(QWidget):
         if not files:
             return
 
-        self._pending_files = [Path(f) for f in files]
-        self._emails = []
-        self._log.append(f"已選擇 {len(files)} 個檔案，解析中...")
+        raw_files = [Path(f) for f in files]
+        self._log.append(f"已選擇 {len(raw_files)} 個檔案，解析中...")
 
         reader = MSGReader()
+
+        # 顯示解析進度條
+        self._progress.setVisible(True)
+        self._progress.setMaximum(len(raw_files))
+        self._progress.setValue(0)
+
+        # 先解析所有檔案，再按寄件日期排序（舊→新），確保 thread 偵測能正確連結
+        parsed: list[tuple[Path, object, str | None]] = []
+        for i, file_path in enumerate(raw_files):
+            email, parse_err = reader.read_single_file_verbose(file_path)
+            parsed.append((file_path, email, parse_err))
+            self._progress.setValue(i + 1)
+            # 強制刷新 UI，讓進度條即時更新
+            self._progress.repaint()
+
+        self._progress.setVisible(False)
+        self._log.append(f"解析完成，依日期排序中...")
+        parsed.sort(key=lambda t: (t[1] is None, str(t[1].date) if t[1] and t[1].date else ""))
+
+        self._pending_files = [t[0] for t in parsed]
+        self._emails = [t[1] for t in parsed]
         self._table.setRowCount(0)
 
-        for file_path in self._pending_files:
-            email = reader.read_single_file(file_path)
-            self._emails.append(email)
+        for file_path, email, parse_err in parsed:
             row = self._table.rowCount()
             self._table.insertRow(row)
 
@@ -182,6 +205,7 @@ class EmailView(QWidget):
                 self._table.setItem(row, 2, QTableWidgetItem(file_path.name))
                 self._table.setItem(row, 3, QTableWidgetItem(""))
                 self._table.setItem(row, 4, QTableWidgetItem("無法讀取"))
+                self._log.append(f"⚠️ {file_path.name} 解析失敗：{parse_err}")
 
         self._log.append(f"解析完成，共 {self._table.rowCount()} 封信件")
 
@@ -280,13 +304,17 @@ class EmailView(QWidget):
                     )
                     label = label_map.get(action, "已匯入")
                     self._table.setItem(row, 4, QTableWidgetItem(label))
+                    if email.thread_question and self._kms:
+                        self._kms.extract_qa_from_email(email, case.case_id if case else None)
                     success += 1
                 except Exception as e:
                     self._table.setItem(row, 4, QTableWidgetItem("匯入失敗"))
-                    self._log.append(f"❌ {file_path.name}: {e}")
+                    tb = traceback.format_exc()
+                    self._log.append(f"❌ {file_path.name}: {e}\n{tb}")
                     fail += 1
             else:
                 self._table.setItem(row, 4, QTableWidgetItem("讀取失敗"))
+                self._log.append(f"❌ {file_path.name}: 讀取 .msg 失敗（可能為加密或格式不支援）")
                 fail += 1
 
             self._progress.setValue(i + 1)
