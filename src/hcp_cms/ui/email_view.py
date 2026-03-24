@@ -6,6 +6,7 @@ import sqlite3
 from pathlib import Path
 
 from PySide6.QtCore import QDate, Qt
+from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWidgets import (
     QComboBox,
     QDateEdit,
@@ -31,6 +32,15 @@ from hcp_cms.services.mail.msg_reader import MSGReader
 
 class EmailView(QWidget):
     """Email processing page."""
+
+    _BASE_STYLE = (
+        "body{margin:16px;font-family:'Segoe UI',Arial,sans-serif;"
+        "font-size:13px;background:#1e293b;color:#e2e8f0;line-height:1.6;}"
+        "pre{white-space:pre-wrap;word-break:break-word;}"
+        "a{color:#60a5fa;}"
+        "blockquote{border-left:3px solid #4b5563;margin:0;padding-left:12px;color:#94a3b8;}"
+        "img{max-width:100%;}"
+    )
 
     def __init__(self, conn: sqlite3.Connection | None = None) -> None:
         super().__init__()
@@ -93,11 +103,9 @@ class EmailView(QWidget):
         self._table.itemSelectionChanged.connect(self._on_row_selected)
         self._splitter.addWidget(self._table)
 
-        # 下半：信件內容預覽
-        self._preview = QTextEdit()
-        self._preview.setReadOnly(True)
-        self._preview.setPlaceholderText("點選信件以預覽內容...")
-        self._preview.setStyleSheet("background-color: #1e293b; color: #e2e8f0;")
+        # 下半：信件內容預覽（QWebEngineView）
+        self._preview = QWebEngineView()
+        self._preview.setHtml(self._placeholder_html())
         self._splitter.addWidget(self._preview)
 
         self._splitter.setSizes([300, 200])
@@ -176,6 +184,29 @@ class EmailView(QWidget):
 
         self._log.append(f"解析完成，共 {self._table.rowCount()} 封信件")
 
+    def _placeholder_html(self) -> str:
+        return (
+            f"<html><head><style>{self._BASE_STYLE}</style></head>"
+            "<body><p style='color:#64748b'>點選信件以預覽內容…</p></body></html>"
+        )
+
+    def _wrap_plain(self, text: str) -> str:
+        from html import escape
+
+        return (
+            f"<html><head><style>{self._BASE_STYLE}</style></head>"
+            f"<body><pre>{escape(text)}</pre></body></html>"
+        )
+
+    def _inject_style(self, html: str) -> str:
+        """在信件 HTML 中注入深色背景 CSS。"""
+        tag = f"<style>{self._BASE_STYLE}</style>"
+        lower = html.lower()
+        if "<head>" in lower:
+            pos = lower.index("<head>") + len("<head>")
+            return html[:pos] + tag + html[pos:]
+        return f"<html><head>{tag}</head><body>{html}</body></html>"
+
     def _on_row_selected(self) -> None:
         """顯示選中行的信件內容（HTML 優先，fallback 純文字）。"""
         selected = self._table.selectedItems()
@@ -186,12 +217,12 @@ class EmailView(QWidget):
             return
         email = self._emails[row]
         if email is None:
-            self._preview.setPlainText("（無法讀取信件內容）")
+            self._preview.setHtml(self._wrap_plain("（無法讀取信件內容）"))
             return
         if email.html_body:
-            self._preview.setHtml(email.html_body)
+            self._preview.setHtml(self._inject_style(email.html_body))
         else:
-            self._preview.setPlainText(email.body)
+            self._preview.setHtml(self._wrap_plain(email.body))
 
     def _on_import_selected(self) -> None:
         rows = [

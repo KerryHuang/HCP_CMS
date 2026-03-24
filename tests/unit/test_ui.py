@@ -97,20 +97,20 @@ class TestEmailView:
         assert view is not None
 
     def test_email_view_has_preview_widget(self, qapp):
+        from PySide6.QtWebEngineWidgets import QWebEngineView
+
         from hcp_cms.ui.email_view import EmailView
 
         view = EmailView()
-        # 確認預覽用 QTextEdit 存在
         assert hasattr(view, "_preview")
-        from PySide6.QtWidgets import QTextEdit
+        assert isinstance(view._preview, QWebEngineView)
 
-        assert isinstance(view._preview, QTextEdit)
-
-    def test_email_view_preview_read_only(self, qapp):
+    def test_email_view_has_emails_list(self, qapp):
         from hcp_cms.ui.email_view import EmailView
 
         view = EmailView()
-        assert view._preview.isReadOnly()
+        assert hasattr(view, "_emails")
+        assert isinstance(view._emails, list)
 
 
 class TestOtherViews:
