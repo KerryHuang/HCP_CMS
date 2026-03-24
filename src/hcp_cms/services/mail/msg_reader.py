@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from datetime import datetime
+from email.utils import getaddresses
 from pathlib import Path
 
 from hcp_cms.services.mail.base import MailProvider, RawEmail
@@ -64,8 +65,6 @@ class MSGReader(MailProvider):
     def _read_msg_file(file_path: Path) -> RawEmail | None:
         """Parse a .msg file using extract-msg."""
         try:
-            from email.utils import getaddresses
-
             import extract_msg
 
             msg = extract_msg.Message(file_path)
