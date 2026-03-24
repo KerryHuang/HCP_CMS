@@ -5,7 +5,7 @@ from datetime import datetime
 from email.utils import parseaddr
 from pathlib import Path
 
-from hcp_cms.core.classifier import Classifier, OUR_DOMAIN
+from hcp_cms.core.classifier import OUR_DOMAIN, Classifier
 from hcp_cms.core.thread_tracker import ThreadTracker
 from hcp_cms.data.fts import FTSManager
 from hcp_cms.data.models import Case
