@@ -130,7 +130,7 @@ SQLite
 | 表名 | 用途 |
 |------|------|
 | cs_cases | 客服案件 |
-| qa_knowledge | QA 知識庫 |
+| qa_knowledge | QA 知識庫（含 status 欄位：待審核 / 已完成） |
 | mantis_tickets | Mantis 工單 |
 | companies | 公司（正規化） |
 | case_mantis | 案件-Mantis 多對多關聯 |

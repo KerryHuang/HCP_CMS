@@ -310,20 +310,42 @@ print(f"搜尋「薪水」（同義詞擴展）: {len(results3)} 筆")
 ```
 - [ ] 搜尋「薪水」能找到含「薪資」的 QA（同義詞擴展生效）
 
-### D4. 自動抽取 QA
+### D4. 從信件對話串抽取待審核 QA
 ```python
-from hcp_cms.data.models import Case
+from hcp_cms.services.mail.base import RawEmail
+from hcp_cms.services.mail.msg_reader import MSGReader
 
-# 案件 4 主旨含「請問」，應自動抽取 QA
-case4 = CaseRepository(db.connection).get_by_id(c4.case_id)
-auto_qa = kms.auto_extract_qa(case4)
-if auto_qa:
-    print(f"✅ 自動抽取 QA: {auto_qa.qa_id} | 來源={auto_qa.source}")
-    print(f"   問題: {auto_qa.question[:40]}...")
+# 模擬含對話串的信件 body（我方回覆在上，客戶問題在下）
+body = (
+    "您好，薪資計算問題已確認，請依以下步驟操作。\n\n"
+    "From: user@aseglobal.com\n"
+    "Sent: 2026-03-20\n"
+    "To: hcpservice@ares.com.tw\n"
+    "Subject: 請問薪資如何計算\n\n"
+    "請問系統薪資計算邏輯為何？"
+)
+ta, tq = MSGReader._split_thread(body)
+raw = RawEmail(thread_question=tq, thread_answer=ta)
+
+# 抽取為待審核 QA
+pending_qa = kms.extract_qa_from_email(raw)
+if pending_qa:
+    print(f"✅ 抽取成功: {pending_qa.qa_id} | status={pending_qa.status}")
+    print(f"   問題: {pending_qa.question}")
 else:
-    print("❌ 未偵測到詢問句型")
+    print("❌ 未找到對話串")
+
+# 審核通過
+approved = kms.approve_qa(pending_qa.qa_id, answer="請至 HCP > 薪資參數確認計算公式。")
+print(f"✅ 審核通過: status={approved.status}")
+
+# 搜尋應可找到
+results = kms.search("薪資計算")
+print(f"搜尋「薪資計算」: {len(results)} 筆")
 ```
-- [ ] 自動抽取成功，source=email
+- [ ] 抽取成功，status=待審核
+- [ ] 審核通過後 status=已完成
+- [ ] 搜尋「薪資計算」找到剛審核的 QA
 
 ---
 
@@ -420,12 +442,16 @@ python -m hcp_cms
 3. 點擊篩選選「處理中」→「🔄 重新整理」
 - [ ] 只顯示處理中的案件
 
-### G4. KMS 搜尋
+### G4. KMS 搜尋與待審核
 1. 點擊「📚 KMS 知識庫」
 2. 搜尋框輸入「薪資」按搜尋
-- [ ] 顯示搜尋結果
+- [ ] 顯示搜尋結果（只含已完成 QA）
 3. 點擊結果，下方顯示問題/回覆/解決方案
 - [ ] 詳情正確顯示
+4. 切換至「待審核」分頁
+- [ ] 顯示待審核 QA 列表（若有，tab 標題顯示 🔴N）
+5. 點擊一筆 QA → 點「✏️ 編輯審核」
+- [ ] 開啟對話框，欄位已預填問題與回覆
 
 ### G5. 規則瀏覽
 1. 點擊「📏 規則設定」
@@ -449,7 +475,7 @@ python -m hcp_cms
 - [ ] 案件生命週期正常（建立→回覆→重開→結案）
 - [ ] 對話串追蹤正確（RE: 信件自動關聯）
 - [ ] KMS 搜尋正常（直接搜尋 + 同義詞擴展）
-- [ ] QA 自動抽取正常
+- [ ] 信件 QA 抽取正常（待審核流程：抽取→草稿→審核通過→搜尋可找到）
 - [ ] 報表產生正確（追蹤表 + 月報）
 - [ ] 備份/匯出功能正常
 - [ ] GUI 顯示正確
