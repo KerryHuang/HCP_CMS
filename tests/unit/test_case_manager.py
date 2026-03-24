@@ -185,6 +185,39 @@ class TestCaseManager:
         child = repo.get_by_id(c2.case_id)
         assert child.linked_case_id == c1.case_id
 
+    def test_create_case_with_progress_note(self, seeded_db):
+        """create_case(progress_note=…) → case.progress 應寫入 progress_note。"""
+        mgr = CaseManager(seeded_db.connection)
+        case = mgr.create_case(
+            subject="薪資問題",
+            body="員工薪資異常",
+            sender_email="user@aseglobal.com",
+            progress_note="待與jacky確認組織代號",
+        )
+        assert case.progress == "待與jacky確認組織代號"
+
+    def test_create_case_progress_note_overrides_subject_tag(self, seeded_db):
+        """body 進度標記應優先於主旨解析出的進度。"""
+        mgr = CaseManager(seeded_db.connection)
+        case = mgr.create_case(
+            subject="問題(RD_JACKY)(待確認主旨進度)",
+            body="內容",
+            sender_email="user@aseglobal.com",
+            progress_note="body進度優先",
+        )
+        assert case.progress == "body進度優先"
+
+    def test_create_case_no_progress_note_uses_subject_tag(self, seeded_db):
+        """progress_note 為 None 時，仍使用主旨/檔名解析的進度。"""
+        mgr = CaseManager(seeded_db.connection)
+        case = mgr.create_case(
+            subject="問題(RD_JACKY)(待確認)",
+            body="內容",
+            sender_email="user@aseglobal.com",
+            progress_note=None,
+        )
+        assert case.progress == "待確認"
+
 
 class TestImportEmail:
     """測試 import_email() 智慧派送邏輯。"""
@@ -276,3 +309,16 @@ class TestImportEmail:
         )
         assert action == "skipped"
         assert case is None
+
+    def test_import_email_passes_progress_note_to_case(self, mgr, seeded_db):
+        """import_email(progress_note=…) → 建案後 case.progress 正確。"""
+        case, action = mgr.import_email(
+            subject="組織異動問題",
+            body="說明",
+            sender_email="user@aseglobal.com",
+            to_recipients=["hcpservice@ares.com.tw"],
+            progress_note="待確認人天費用",
+        )
+        assert action == "created"
+        assert case is not None
+        assert case.progress == "待確認人天費用"

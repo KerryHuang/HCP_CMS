@@ -28,6 +28,7 @@ class CaseManager:
         to_recipients: list[str] | None = None,
         sent_time: str | None = None,
         source_filename: str | None = None,
+        progress_note: str | None = None,
     ) -> tuple[Case | None, str]:
         """智慧匯入：自動判斷客戶來信或我方回覆。
 
@@ -61,6 +62,7 @@ class CaseManager:
             to_recipients=recipients,
             sent_time=sent_time,
             source_filename=source_filename,
+            progress_note=progress_note,
         )
         return case, "created"
 
@@ -74,6 +76,7 @@ class CaseManager:
         contact_person: str | None = None,
         handler: str | None = None,
         source_filename: str | None = None,
+        progress_note: str | None = None,
     ) -> Case:
         """Create a new case from email data, with auto-classification and thread detection."""
         # Classify
@@ -99,6 +102,9 @@ class CaseManager:
         issue_number = classification.get("issue_number")
         notes = f"ISSUE#{issue_number}" if issue_number else None
 
+        # body ==進度== 標記優先；若無則用主旨/檔名解析結果
+        final_progress = progress_note.strip() if progress_note else classification.get("progress")
+
         case = Case(
             case_id=case_id,
             subject=subject,
@@ -110,7 +116,7 @@ class CaseManager:
             error_type=classification["error_type"],
             priority=classification["priority"],
             handler=handler or classification.get("handler"),
-            progress=classification.get("progress"),
+            progress=final_progress,
             notes=notes,
             source="email",
         )
