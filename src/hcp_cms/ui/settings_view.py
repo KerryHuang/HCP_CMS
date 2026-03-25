@@ -91,6 +91,27 @@ class SettingsView(QWidget):
         save_btn = QPushButton("💾 儲存設定")
         layout.addWidget(save_btn)
 
+        # ── 移機提醒 ──────────────────────────────────────────
+        from PySide6.QtWidgets import QFrame
+        notice = QFrame()
+        notice.setObjectName("migrationNotice")
+        notice.setStyleSheet(
+            "QFrame#migrationNotice { background-color: #fef3c7; border-radius: 6px; padding: 8px; }"
+        )
+        notice_layout = QVBoxLayout(notice)
+        notice_layout.setContentsMargins(12, 8, 12, 8)
+        notice_lbl = QLabel(
+            "📦 移機注意事項\n"
+            "移機時請確認以下項目一併複製至新電腦：\n"
+            "  • hcp_cms.db　　  — 資料庫\n"
+            "  • kms_attachments/ — 知識庫圖片（與 .db 同目錄）\n"
+            "缺少 kms_attachments/ 時，知識庫圖片將無法顯示。"
+        )
+        notice_lbl.setStyleSheet("color: #92400e; font-size: 12px;")
+        notice_lbl.setWordWrap(True)
+        notice_layout.addWidget(notice_lbl)
+        layout.addWidget(notice)
+
         layout.addStretch()
 
     def _on_browse_db(self) -> None:
