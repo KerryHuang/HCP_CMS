@@ -1,5 +1,6 @@
 """Excel report generation — tracking table and monthly report."""
 
+import re
 import sqlite3
 from datetime import datetime
 from pathlib import Path
@@ -17,6 +18,9 @@ from hcp_cms.data.repositories import (
     QARepository,
 )
 
+# XML 1.0 不允許的控制字元（openpyxl IllegalCharacterError 的根源）
+_ILLEGAL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
 # Style constants
 FONT_HEADER = Font(name="微軟正黑體", size=11, bold=True, color="FFFFFF")
 FILL_HEADER = PatternFill(start_color="1E3A5F", end_color="1E3A5F", fill_type="solid")
@@ -27,6 +31,18 @@ BORDER_THIN = Border(
     top=Side(style="thin", color="CCCCCC"),
     bottom=Side(style="thin", color="CCCCCC"),
 )
+
+
+def _clean(v: Any) -> Any:
+    """過濾 XML 1.0 非法控制字元，避免 openpyxl IllegalCharacterError。"""
+    if isinstance(v, str):
+        return _ILLEGAL_CHARS_RE.sub("", v)
+    return v
+
+
+def _clean_row(row: list[Any]) -> list[Any]:
+    """對整列每個值套用 _clean()。"""
+    return [_clean(v) for v in row]
 
 
 def _reply_hours(sent: str | None, replied: str | None) -> str:
@@ -86,7 +102,7 @@ class ReportEngine:
         self._write_header(ws, ["#", "公司名稱", "Email 域名", "聯絡方式", "案件數", "快速連結"])
         for i, comp in enumerate(companies, 1):
             count = sum(1 for c in cases if c.company_id == comp.company_id)
-            ws.append([i, comp.name, comp.domain, comp.contact_info or "", count, ""])
+            ws.append(_clean_row([i, comp.name, comp.domain, comp.contact_info or "", count, ""]))
             self._style_data_row(ws, i + 1)
             if comp.company_id in company_sheet_names:
                 sn = company_sheet_names[comp.company_id]
@@ -110,7 +126,7 @@ class ReportEngine:
             company_name = comp.name if comp else (case.company_id or "")
             company_phone = comp.contact_info if comp else ""
             closed_at = case.updated_at if case.status in ("已完成", "Closed") else ""
-            ws2.append([
+            ws2.append(_clean_row([
                 case.case_id, case.contact_method, case.status, case.priority, case.replied,
                 case.sent_time, _reply_hours(case.sent_time, case.actual_reply),
                 case.contact_person, company_name, company_phone or "",
@@ -118,7 +134,7 @@ class ReportEngine:
                 "", case.impact_period, case.progress, case.handler,
                 "", case.actual_reply, closed_at,
                 "", "", "", case.notes or "",
-            ])
+            ]))
             self._style_data_row(ws2, i + 1)
 
         # ── Sheet 3: QA知識庫 ──────────────────────────────────────────
@@ -130,12 +146,12 @@ class ReportEngine:
         ]
         self._write_header(ws3, qa_headers)
         for i, qa in enumerate(qas, 1):
-            ws3.append([
+            ws3.append(_clean_row([
                 qa.qa_id, qa.system_product, qa.issue_type, qa.error_type,
                 qa.question, qa.answer,
                 qa.has_image, qa.doc_name or "", qa.created_at or "",
                 qa.created_by or "", qa.notes or "",
-            ])
+            ]))
             self._style_data_row(ws3, i + 1)
 
         # ── 個別公司頁籤 ───────────────────────────────────────────────
@@ -161,20 +177,20 @@ class ReportEngine:
             for i, case in enumerate(comp_cases, 1):
                 closed_at = case.updated_at if case.status in ("已完成", "Closed") else ""
                 row_num = i + 2
-                ws_c.cell(row=row_num, column=1, value=case.case_id)
-                ws_c.cell(row=row_num, column=2, value=case.contact_method)
-                ws_c.cell(row=row_num, column=3, value=case.status)
-                ws_c.cell(row=row_num, column=4, value=case.priority)
-                ws_c.cell(row=row_num, column=5, value=case.sent_time)
-                ws_c.cell(row=row_num, column=6, value=case.subject)
-                ws_c.cell(row=row_num, column=7, value=case.system_product)
-                ws_c.cell(row=row_num, column=8, value=case.issue_type)
-                ws_c.cell(row=row_num, column=9, value=case.error_type)
-                ws_c.cell(row=row_num, column=10, value=case.impact_period)
-                ws_c.cell(row=row_num, column=11, value=case.progress)
-                ws_c.cell(row=row_num, column=12, value=case.actual_reply)
-                ws_c.cell(row=row_num, column=13, value=closed_at)
-                ws_c.cell(row=row_num, column=14, value=case.notes or "")
+                ws_c.cell(row=row_num, column=1, value=_clean(case.case_id))
+                ws_c.cell(row=row_num, column=2, value=_clean(case.contact_method))
+                ws_c.cell(row=row_num, column=3, value=_clean(case.status))
+                ws_c.cell(row=row_num, column=4, value=_clean(case.priority))
+                ws_c.cell(row=row_num, column=5, value=_clean(case.sent_time))
+                ws_c.cell(row=row_num, column=6, value=_clean(case.subject))
+                ws_c.cell(row=row_num, column=7, value=_clean(case.system_product))
+                ws_c.cell(row=row_num, column=8, value=_clean(case.issue_type))
+                ws_c.cell(row=row_num, column=9, value=_clean(case.error_type))
+                ws_c.cell(row=row_num, column=10, value=_clean(case.impact_period))
+                ws_c.cell(row=row_num, column=11, value=_clean(case.progress))
+                ws_c.cell(row=row_num, column=12, value=_clean(case.actual_reply))
+                ws_c.cell(row=row_num, column=13, value=_clean(closed_at))
+                ws_c.cell(row=row_num, column=14, value=_clean(case.notes or ""))
                 self._style_data_row(ws_c, row_num)
 
         # ── Mantis提單追蹤 ─────────────────────────────────────────────
@@ -189,13 +205,13 @@ class ReportEngine:
             comp = company_map.get(ticket.company_id or "")
             company_name = comp.name if comp else (ticket.company_id or "")
             linked = ", ".join(self._case_mantis_repo.get_cases_for_ticket(ticket.ticket_id))
-            ws_m.append([
+            ws_m.append(_clean_row([
                 ticket.ticket_id, ticket.created_time or "", company_name,
                 ticket.summary, linked,
                 ticket.priority or "", ticket.status or "", ticket.issue_type or "",
                 ticket.module or "", ticket.progress or "", ticket.handler or "",
                 ticket.planned_fix or "", ticket.actual_fix or "", ticket.notes or "",
-            ])
+            ]))
             self._style_data_row(ws_m, i + 1)
 
         # ── 客制需求 ───────────────────────────────────────────────────
@@ -205,13 +221,13 @@ class ReportEngine:
             self._write_header(ws_custom, comp_case_headers)
             for i, case in enumerate(custom_cases, 1):
                 closed_at = case.updated_at if case.status in ("已完成", "Closed") else ""
-                ws_custom.append([
+                ws_custom.append(_clean_row([
                     case.case_id, case.contact_method, case.status, case.priority,
                     case.sent_time, case.subject, case.system_product,
                     case.issue_type, case.error_type,
                     case.impact_period, case.progress, case.actual_reply,
                     closed_at, case.notes or "",
-                ])
+                ]))
                 self._style_data_row(ws_custom, i + 1)
 
         wb.save(str(output_path))
@@ -277,7 +293,7 @@ class ReportEngine:
         for i, case in enumerate(cases, 1):
             comp = company_map.get(case.company_id or "")
             company_name = comp.name if comp else (case.company_id or "")
-            ws2.append([
+            ws2.append(_clean_row([
                 case.case_id, case.contact_method, case.status, case.priority,
                 case.replied, case.sent_time,
                 company_name, case.contact_person, case.subject,
@@ -285,7 +301,7 @@ class ReportEngine:
                 case.impact_period, case.progress, case.actual_reply,
                 case.notes or "", case.rd_assignee or "", case.handler or "",
                 case.reply_count, case.linked_case_id or "",
-            ])
+            ]))
             self._style_data_row(ws2, i + 1)
 
         # ── Sheet 3: 客戶分析 ──────────────────────────────────────────
@@ -304,7 +320,7 @@ class ReportEngine:
                 company_stats[cname]["pending"] += 1
         for i, (cname, stat) in enumerate(sorted(company_stats.items()), 1):
             total_c = stat["replied"] + stat["pending"]
-            ws3.append([cname, stat["replied"], stat["pending"], total_c])
+            ws3.append(_clean_row([cname, stat["replied"], stat["pending"], total_c]))
             self._style_data_row(ws3, i + 1)
 
         wb.save(str(output_path))
