@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
@@ -97,10 +98,16 @@ class QAReviewDialog(QDialog):
 class KMSView(QWidget):
     """KMS knowledge base page."""
 
-    def __init__(self, conn: sqlite3.Connection | None = None, kms: KMSEngine | None = None) -> None:
+    def __init__(
+        self,
+        conn: sqlite3.Connection | None = None,
+        kms: KMSEngine | None = None,
+        db_dir: Path | None = None,
+    ) -> None:
         super().__init__()
         self._conn = conn
         self._kms = kms or (KMSEngine(conn) if conn else None)
+        self._db_dir = db_dir
         self._results: list = []
         self._pending: list = []
         self._setup_ui()

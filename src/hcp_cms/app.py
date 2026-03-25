@@ -41,7 +41,7 @@ def main() -> int:
     db.initialize()
 
     # Create and show main window
-    window = MainWindow(db.connection)
+    window = MainWindow(db.connection, db_dir=db_path.parent)
     window.show()
 
     # Run application

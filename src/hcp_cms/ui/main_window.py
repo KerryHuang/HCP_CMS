@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+from pathlib import Path
 
 from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QAction, QKeySequence
@@ -32,9 +33,14 @@ from hcp_cms.ui.settings_view import SettingsView
 class MainWindow(QMainWindow):
     """HCP CMS main application window."""
 
-    def __init__(self, db_connection: sqlite3.Connection | None = None) -> None:
+    def __init__(
+        self,
+        db_connection: sqlite3.Connection | None = None,
+        db_dir: Path | None = None,
+    ) -> None:
         super().__init__()
         self._conn = db_connection
+        self._db_dir = db_dir
         self.setWindowTitle("HCP CMS v2.0")
         self.setMinimumSize(1200, 800)
 
@@ -99,7 +105,7 @@ class MainWindow(QMainWindow):
         self._views: dict[str, QWidget] = {
             "dashboard": DashboardView(self._conn),
             "cases": CaseView(self._conn),
-            "kms": KMSView(self._conn, kms=kms),
+            "kms": KMSView(self._conn, kms=kms, db_dir=self._db_dir),
             "email": EmailView(self._conn, kms=kms),
             "mantis": MantisView(self._conn),
             "reports": ReportView(self._conn),
