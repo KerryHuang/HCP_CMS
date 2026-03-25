@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import sqlite3
 from datetime import date
 from pathlib import Path
@@ -29,6 +30,8 @@ from PySide6.QtWidgets import (
 )
 
 from hcp_cms.core.kms_engine import KMSEngine
+
+_IMAGE_EXTS = frozenset({".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"})
 
 
 class TextExpandDialog(QDialog):
@@ -72,7 +75,6 @@ class KMSImageViewDialog(QDialog):
         layout.addWidget(self._web, stretch=1)
 
         # 附件縮圖列
-        _IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"}
         img_dir = (self._db_dir / "kms_attachments" / self._qa.qa_id) if self._db_dir else None
         if img_dir and img_dir.exists():
             scroll = QScrollArea()
@@ -114,7 +116,6 @@ class KMSImageViewDialog(QDialog):
             return html_body
 
         # fallback：用圖片 + 文字組合簡易 HTML
-        _IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"}
         img_dir = (self._db_dir / "kms_attachments" / qa.qa_id) if self._db_dir else None
         img_html = ""
         if img_dir and img_dir.exists():
@@ -136,7 +137,6 @@ class KMSImageViewDialog(QDialog):
         """將 cid: 圖片參考替換為 file:// 路徑。"""
         if not self._db_dir:
             return html
-        import re
         img_dir = self._db_dir / "kms_attachments" / self._qa.qa_id
         def replacer(m):
             cid = m.group(1).split("@")[0]
