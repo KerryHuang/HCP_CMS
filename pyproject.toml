@@ -9,14 +9,14 @@ description = "HCP Customer Service Management System"
 requires-python = ">=3.10"
 dependencies = [
     "PySide6>=6.6",
-    "openpyxl>=3.1",
-    "extract-msg>=0.48",
+    "PySide6-Addons>=6.6",
     "exchangelib>=5.1",
-    "requests>=2.31",
-    "keyring>=25.0",
+    "extract-msg>=0.48",
     "jieba>=0.42",
-    "PySide6_Addons>=6.6",
+    "keyring>=25.0",
+    "openpyxl>=3.1",
     "python-docx>=1.1",
+    "requests>=2.31",
 ]
 
 [project.optional-dependencies]
