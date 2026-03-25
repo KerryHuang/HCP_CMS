@@ -21,9 +21,9 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSplitter,
-    QTabWidget,
     QTableWidget,
     QTableWidgetItem,
+    QTabWidget,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -86,7 +86,11 @@ class KMSImageViewDialog(QDialog):
             for img_path in sorted(img_dir.iterdir()):
                 if img_path.suffix.lower() in _IMAGE_EXTS:
                     lbl = QLabel()
-                    pix = QPixmap(str(img_path)).scaled(100, 100, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+                    pix = QPixmap(str(img_path)).scaled(
+                        100, 100,
+                        Qt.AspectRatioMode.KeepAspectRatio,
+                        Qt.TransformationMode.SmoothTransformation,
+                    )
                     lbl.setPixmap(pix)
                     lbl.setCursor(Qt.CursorShape.PointingHandCursor)
                     img_path_str = str(img_path)
@@ -153,7 +157,11 @@ class KMSImageViewDialog(QDialog):
         lay = QVBoxLayout(dlg)
         lbl = QLabel()
         pix = QPixmap(img_path_str)
-        lbl.setPixmap(pix.scaled(780, 560, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+        lbl.setPixmap(pix.scaled(
+            780, 560,
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        ))
         lay.addWidget(lbl)
         dlg.exec()
 
@@ -262,7 +270,10 @@ class KMSView(QWidget):
         expand_btn = QPushButton("⛶")
         expand_btn.setFixedSize(22, 22)
         expand_btn.setToolTip("展開檢視")
-        expand_btn.setStyleSheet("QPushButton { background: transparent; color: #64748b; font-size: 14px; border: none; } QPushButton:hover { color: #e2e8f0; }")
+        expand_btn.setStyleSheet(
+            "QPushButton { background: transparent; color: #64748b; font-size: 14px; border: none; }"
+            " QPushButton:hover { color: #e2e8f0; }"
+        )
         hlay.addWidget(expand_btn)
         vlay.addWidget(header)
 
