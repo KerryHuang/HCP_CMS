@@ -68,6 +68,18 @@ class ReportEngine:
 
         wb = openpyxl.Workbook()
 
+        # 預先計算各公司頁籤名稱（供快速連結使用）
+        company_cases: dict[str, list[Case]] = {}
+        for case in cases:
+            cid = case.company_id or "unknown"
+            company_cases.setdefault(cid, []).append(case)
+
+        company_sheet_names: dict[str, str] = {}
+        for comp in companies:
+            if company_cases.get(comp.company_id):
+                raw = f"{comp.domain}({comp.name})" if comp.domain else comp.name
+                company_sheet_names[comp.company_id] = (raw[:28] + "_問題")[:31]
+
         # ── Sheet 1: 客戶索引 ──────────────────────────────────────────
         ws = wb.active
         ws.title = "📋 客戶索引"
@@ -76,6 +88,11 @@ class ReportEngine:
             count = sum(1 for c in cases if c.company_id == comp.company_id)
             ws.append([i, comp.name, comp.domain, comp.contact_info or "", count, ""])
             self._style_data_row(ws, i + 1)
+            if comp.company_id in company_sheet_names:
+                sn = company_sheet_names[comp.company_id]
+                lc = ws.cell(row=i + 1, column=6)
+                lc.value = f'=HYPERLINK("#\'{sn}\'!A1","→ {comp.name}問題記錄")'
+                lc.font = Font(name="微軟正黑體", size=11, color="0563C1", underline="single")
 
         # ── Sheet 2: 問題追蹤總表 ──────────────────────────────────────
         ws2 = wb.create_sheet("問題追蹤總表")
@@ -127,29 +144,38 @@ class ReportEngine:
             "寄件時間", "主旨", "系統／產品", "問題類型", "錯誤類型",
             "影響期間", "處理進度", "實際回覆時間", "結案時間", "備註",
         ]
-        company_cases: dict[str, list[Case]] = {}
-        for case in cases:
-            cid = case.company_id or "unknown"
-            company_cases.setdefault(cid, []).append(case)
 
         for comp in companies:
             comp_cases = company_cases.get(comp.company_id, [])
             if not comp_cases:
                 continue
-            raw = f"{comp.domain}({comp.name})" if comp.domain else comp.name
-            sheet_name = (raw[:28] + "_問題")[:31]
+            sheet_name = company_sheet_names[comp.company_id]
             ws_c = wb.create_sheet(sheet_name)
-            self._write_header(ws_c, comp_case_headers)
+            # Row 1：返回客戶索引連結
+            back_cell = ws_c.cell(row=1, column=1,
+                value='=HYPERLINK("#\'📋 客戶索引\'!A1","↩ 返回客戶索引")')
+            back_cell.font = Font(name="微軟正黑體", size=10, color="0563C1", underline="single")
+            # Row 2：表頭
+            self._write_header(ws_c, comp_case_headers, row_num=2)
+            # Row 3+：資料
             for i, case in enumerate(comp_cases, 1):
                 closed_at = case.updated_at if case.status in ("已完成", "Closed") else ""
-                ws_c.append([
-                    case.case_id, case.contact_method, case.status, case.priority,
-                    case.sent_time, case.subject, case.system_product,
-                    case.issue_type, case.error_type,
-                    case.impact_period, case.progress, case.actual_reply,
-                    closed_at, case.notes or "",
-                ])
-                self._style_data_row(ws_c, i + 1)
+                row_num = i + 2
+                ws_c.cell(row=row_num, column=1, value=case.case_id)
+                ws_c.cell(row=row_num, column=2, value=case.contact_method)
+                ws_c.cell(row=row_num, column=3, value=case.status)
+                ws_c.cell(row=row_num, column=4, value=case.priority)
+                ws_c.cell(row=row_num, column=5, value=case.sent_time)
+                ws_c.cell(row=row_num, column=6, value=case.subject)
+                ws_c.cell(row=row_num, column=7, value=case.system_product)
+                ws_c.cell(row=row_num, column=8, value=case.issue_type)
+                ws_c.cell(row=row_num, column=9, value=case.error_type)
+                ws_c.cell(row=row_num, column=10, value=case.impact_period)
+                ws_c.cell(row=row_num, column=11, value=case.progress)
+                ws_c.cell(row=row_num, column=12, value=case.actual_reply)
+                ws_c.cell(row=row_num, column=13, value=closed_at)
+                ws_c.cell(row=row_num, column=14, value=case.notes or "")
+                self._style_data_row(ws_c, row_num)
 
         # ── Mantis提單追蹤 ─────────────────────────────────────────────
         ws_m = wb.create_sheet("Mantis提單追蹤")

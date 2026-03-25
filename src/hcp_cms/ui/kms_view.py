@@ -116,7 +116,24 @@ class KMSImageViewDialog(QDialog):
                 if raw and raw.html_body:
                     html_body = self._replace_cid(raw.html_body)
 
+        # 注入響應式 CSS，避免水平捲軸
+        _RESPONSIVE_CSS = """<style>
+body { max-width:100% !important; overflow-x:hidden !important;
+       word-wrap:break-word !important; overflow-wrap:break-word !important; }
+table { max-width:100% !important; table-layout:fixed !important; }
+img { max-width:100% !important; height:auto !important; }
+td, th { word-wrap:break-word !important; overflow-wrap:break-word !important; }
+pre { white-space:pre-wrap !important; word-break:break-word !important; }
+</style>"""
+
         if html_body:
+            # 在 </head> 之前注入 CSS；若無 head 則插在最前面
+            import re as _re2
+            if _re2.search(r"</head>", html_body, _re2.IGNORECASE):
+                html_body = _re2.sub(r"(</head>)", _RESPONSIVE_CSS + r"\1",
+                                     html_body, count=1, flags=_re2.IGNORECASE)
+            else:
+                html_body = _RESPONSIVE_CSS + html_body
             return html_body
 
         # fallback：用圖片 + 文字組合簡易 HTML
@@ -125,16 +142,23 @@ class KMSImageViewDialog(QDialog):
         if img_dir and img_dir.exists():
             for img_path in sorted(img_dir.iterdir()):
                 if img_path.suffix.lower() in _IMAGE_EXTS:
-                    img_html += f'<img src="{img_path.as_uri()}" style="max-width:100%;margin:8px 0;"><br>'
+                    img_html += f'<img src="{img_path.as_uri()}" style="max-width:100%;height:auto;margin:8px 0;"><br>'
 
-        q = (qa.question or "").replace("<", "&lt;").replace(">", "&gt;")
-        a = (qa.answer or "").replace("<", "&lt;").replace(">", "&gt;")
-        s = (qa.solution or "").replace("<", "&lt;").replace(">", "&gt;")
-        return f"""<html><body style="font-family:sans-serif;padding:16px">
-<h3>問題</h3><pre>{q}</pre>
-<h3>回覆</h3><pre>{a}</pre>
+        q = (qa.question or "").replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br>")
+        a = (qa.answer or "").replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br>")
+        s = (qa.solution or "").replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br>")
+        return f"""<!DOCTYPE html><html><head><meta charset="utf-8">
+<style>
+  body {{ font-family:sans-serif; padding:16px; max-width:100%;
+          word-wrap:break-word; overflow-wrap:break-word; overflow-x:hidden; }}
+  .content {{ line-height:1.6; }}
+  img {{ max-width:100%; height:auto; }}
+</style>
+</head><body>
+<h3>問題</h3><div class="content">{q}</div>
+<h3>回覆</h3><div class="content">{a}</div>
 {img_html}
-{'<h3>解決方案</h3><pre>' + s + '</pre>' if s else ''}
+{'<h3>解決方案</h3><div class="content">' + s + '</div>' if s else ''}
 </body></html>"""
 
     def _replace_cid(self, html: str) -> str:
@@ -302,27 +326,48 @@ class KMSView(QWidget):
         all_tab = QWidget()
         all_layout = QVBoxLayout(all_tab)
 
-        search_layout = QHBoxLayout()
+        # ── 搜尋列（獨立一排，輸入框放大）──────────────────────────
+        search_row = QHBoxLayout()
         self._search_input = QLineEdit()
-        self._search_input.setPlaceholderText("搜尋知識庫（支援同義詞擴展）...")
+        self._search_input.setPlaceholderText("🔍  搜尋知識庫（支援同義詞擴展）...")
+        self._search_input.setMinimumHeight(36)
+        font = self._search_input.font()
+        font.setPointSize(11)
+        self._search_input.setFont(font)
         self._search_input.returnPressed.connect(self._on_search)
-        search_layout.addWidget(self._search_input)
+        search_row.addWidget(self._search_input, stretch=1)
         search_btn = QPushButton("🔍 搜尋")
+        search_btn.setMinimumHeight(36)
+        search_btn.setMinimumWidth(80)
         search_btn.clicked.connect(self._on_search)
-        search_layout.addWidget(search_btn)
+        search_row.addWidget(search_btn)
         show_all_btn = QPushButton("📋 顯示全部")
+        show_all_btn.setMinimumHeight(36)
         show_all_btn.clicked.connect(self._on_show_all)
-        search_layout.addWidget(show_all_btn)
+        search_row.addWidget(show_all_btn)
+        all_layout.addLayout(search_row)
+
+        # ── 功能按鈕列（第二排）─────────────────────────────────────
+        search_layout = QHBoxLayout()
         new_btn = QPushButton("➕ 新增 QA")
         new_btn.clicked.connect(self._on_new_qa)
         search_layout.addWidget(new_btn)
+        import_msg_btn = QPushButton("📁 批次匯入 .msg")
+        import_msg_btn.clicked.connect(self._on_import_msg_bulk)
+        search_layout.addWidget(import_msg_btn)
+        import_folder_btn = QPushButton("📂 匯入整個資料夾")
+        import_folder_btn.clicked.connect(self._on_import_msg_folder)
+        search_layout.addWidget(import_folder_btn)
+        import_excel_btn = QPushButton("📊 匯入 Excel/CSV")
+        import_excel_btn.clicked.connect(self._on_import_excel)
+        search_layout.addWidget(import_excel_btn)
         export_sel_btn = QPushButton("💾 匯出選取")
         export_sel_btn.clicked.connect(self._on_export_selected)
         search_layout.addWidget(export_sel_btn)
-
         export_all_btn = QPushButton("📄 匯出全部")
         export_all_btn.clicked.connect(self._on_export_all)
         search_layout.addWidget(export_all_btn)
+        search_layout.addStretch()
         all_layout.addLayout(search_layout)
 
         splitter = QSplitter(Qt.Orientation.Vertical)
@@ -389,6 +434,81 @@ class KMSView(QWidget):
         pending_layout.addLayout(pending_btn_layout)
         self._tabs.addTab(pending_tab, "待審核")
 
+        # ── 智慧查詢 tab ──────────────────────────────────────────────
+        smart_tab = QWidget()
+        smart_layout = QVBoxLayout(smart_tab)
+        smart_layout.setSpacing(8)
+
+        smart_desc = QLabel(
+            "📋 將客戶來信的問題描述貼入下方，系統會自動分析語意、比對歷史 Q&A，"
+            "整理出建議回覆供參考使用。"
+        )
+        smart_desc.setWordWrap(True)
+        smart_desc.setStyleSheet("color: #94a3b8; padding: 4px 0;")
+        smart_layout.addWidget(smart_desc)
+
+        self._smart_input = QTextEdit()
+        self._smart_input.setPlaceholderText(
+            "請在此貼上客戶問題原文（可貼整封信件，系統自動萃取關鍵詞比對）..."
+        )
+        self._smart_input.setMinimumHeight(120)
+        self._smart_input.setMaximumHeight(180)
+        smart_layout.addWidget(self._smart_input)
+
+        smart_btn_row = QHBoxLayout()
+        smart_search_btn = QPushButton("🧠 分析比對")
+        smart_search_btn.setMinimumHeight(36)
+        smart_search_btn.setMinimumWidth(120)
+        smart_search_btn.clicked.connect(self._on_smart_search)
+        smart_btn_row.addWidget(smart_search_btn)
+        smart_clear_btn = QPushButton("🗑 清除")
+        smart_clear_btn.setMinimumHeight(36)
+        smart_clear_btn.clicked.connect(lambda: (
+            self._smart_input.clear(),
+            self._smart_result_table.setRowCount(0),
+            self._smart_answer_box.clear(),
+        ))
+        smart_btn_row.addWidget(smart_clear_btn)
+        smart_btn_row.addStretch()
+        smart_layout.addLayout(smart_btn_row)
+
+        smart_result_label = QLabel("比對結果（點選查看建議回覆）：")
+        smart_result_label.setStyleSheet("color: #94a3b8; font-size: 11px;")
+        smart_layout.addWidget(smart_result_label)
+
+        smart_splitter = QSplitter(Qt.Orientation.Vertical)
+
+        self._smart_result_table = QTableWidget(0, 4)
+        self._smart_result_table.setHorizontalHeaderLabels(["相符度", "QA 編號", "問題摘要", "產品"])
+        self._smart_result_table.horizontalHeader().setStretchLastSection(True)
+        self._smart_result_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self._smart_result_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self._smart_result_table.itemSelectionChanged.connect(self._on_smart_select)
+        self._smart_result_table.setColumnWidth(0, 70)
+        self._smart_result_table.setColumnWidth(1, 120)
+        self._smart_result_table.setColumnWidth(2, 400)
+        smart_splitter.addWidget(self._smart_result_table)
+
+        answer_widget = QWidget()
+        answer_layout = QVBoxLayout(answer_widget)
+        answer_layout.setContentsMargins(0, 0, 0, 0)
+        answer_label = QLabel("建議回覆：")
+        answer_label.setStyleSheet("color: #60a5fa; font-weight: bold;")
+        answer_layout.addWidget(answer_label)
+        self._smart_answer_box = QTextEdit()
+        self._smart_answer_box.setReadOnly(True)
+        self._smart_answer_box.setStyleSheet(
+            "background: #1e293b; color: #f1f5f9; border: 1px solid #334155; border-radius: 4px;"
+        )
+        answer_layout.addWidget(self._smart_answer_box)
+        smart_splitter.addWidget(answer_widget)
+        smart_splitter.setSizes([200, 300])
+
+        smart_layout.addWidget(smart_splitter, stretch=1)
+        self._tabs.addTab(smart_tab, "🧠 智慧查詢")
+
+        self._smart_results: list[QAKnowledge] = []
+
         layout.addWidget(self._tabs)
 
     def _on_tab_changed(self, index: int) -> None:
@@ -451,7 +571,309 @@ class KMSView(QWidget):
             self._view_btn.setStyleSheet("")
 
     def _on_new_qa(self) -> None:
-        pass  # 預留給新增 QA 對話框
+        """手動新增 QA 對話框。"""
+        if not self._kms:
+            return
+        from hcp_cms.data.models import QAKnowledge
+        empty = QAKnowledge(qa_id="（新增）", question="", answer="")
+        dlg = QAReviewDialog(empty, parent=self)
+        dlg.setWindowTitle("新增 QA")
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        fields = dlg.result_fields()
+        if not fields.get("question") or not fields.get("answer"):
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "欄位不完整", "「問題」與「回覆」為必填欄位。")
+            return
+        action = dlg.result_action()
+        status = "已完成" if action == "approve" else "待審核"
+        self._kms.create_qa(status=status, **fields)
+        self._refresh_pending()
+        self._on_show_all()
+
+    def _on_import_msg_bulk(self) -> None:
+        """批次選取多個 .msg 直接建立 KMS QA（待審核）。"""
+        if not self._kms:
+            return
+        from PySide6.QtWidgets import QMessageBox, QProgressDialog
+        from hcp_cms.services.mail.msg_reader import MSGReader
+
+        files, _ = QFileDialog.getOpenFileNames(
+            self, "選擇 .msg 檔案（可多選）", "", "Outlook Messages (*.msg)"
+        )
+        if not files:
+            return
+
+        paths = [Path(f) for f in files]
+        reader = MSGReader()
+
+        progress = QProgressDialog("批次匯入中...", "取消", 0, len(paths), self)
+        progress.setWindowTitle("批次匯入 .msg")
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
+        progress.show()
+
+        ok, fail = 0, 0
+        for i, path in enumerate(paths):
+            if progress.wasCanceled():
+                break
+            progress.setLabelText(f"處理 {path.name}（{i + 1}/{len(paths)}）")
+            progress.setValue(i)
+            try:
+                email = reader.read_single_file(path)
+                if email:
+                    self._kms.extract_qa_from_email(email, db_dir=self._db_dir)
+                    ok += 1
+                else:
+                    fail += 1
+            except Exception:
+                fail += 1
+        progress.setValue(len(paths))
+
+        self._refresh_pending()
+        self._on_show_all()
+        QMessageBox.information(
+            self, "批次匯入完成",
+            f"✅ 成功：{ok} 筆\n❌ 失敗／略過：{fail} 筆\n\n已匯入的 QA 位於「待審核」頁籤。"
+        )
+
+    def _on_import_msg_folder(self) -> None:
+        """選擇資料夾，自動遞迴讀取所有 .msg / .xlsx / .xls / .csv 並建立 KMS QA。"""
+        if not self._kms:
+            return
+        from PySide6.QtWidgets import QMessageBox, QProgressDialog
+        from hcp_cms.services.mail.msg_reader import MSGReader
+        import csv, openpyxl
+
+        folder = QFileDialog.getExistingDirectory(
+            self, "選擇資料夾（含子資料夾，支援 .msg / .xlsx / .xls / .csv）", ""
+        )
+        if not folder:
+            return
+
+        root = Path(folder)
+        msg_paths   = sorted(root.rglob("*.msg"))
+        excel_paths = sorted(root.rglob("*.xlsx")) + sorted(root.rglob("*.xls")) + sorted(root.rglob("*.csv"))
+        all_paths   = msg_paths + excel_paths
+
+        if not all_paths:
+            QMessageBox.information(self, "無檔案",
+                f"在資料夾中找不到任何支援的檔案：\n{folder}\n\n"
+                "支援格式：.msg、.xlsx、.xls、.csv")
+            return
+
+        reader = MSGReader()
+        progress = QProgressDialog("批次匯入中...", "取消", 0, len(all_paths), self)
+        progress.setWindowTitle(
+            f"匯入資料夾（.msg×{len(msg_paths)} + Excel/CSV×{len(excel_paths)}）"
+        )
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
+        progress.show()
+
+        COL_Q = ["問題", "question", "Q", "題目", "issue"]
+        COL_A = ["回覆", "答案", "answer", "A", "回答", "reply"]
+        COL_S = ["解決方案", "solution", "解法"]
+        COL_K = ["關鍵字", "keywords", "keyword", "關鍵詞"]
+        COL_P = ["產品", "product", "系統", "system_product"]
+
+        def _find(row: dict, keys: list[str]) -> str | None:
+            for k in keys:
+                if k in row and row[k]:
+                    return row[k]
+            return None
+
+        def _import_excel_rows(rows: list[dict]) -> tuple[int, int]:
+            ok2, fail2 = 0, 0
+            for row in rows:
+                q = _find(row, COL_Q)
+                a = _find(row, COL_A)
+                if not q and not a:
+                    continue  # 完全空白列，靜默略過
+                if not q or not a:
+                    fail2 += 1
+                    continue
+                try:
+                    self._kms.create_qa(
+                        question=q, answer=a,
+                        solution=_find(row, COL_S),
+                        keywords=_find(row, COL_K),
+                        system_product=_find(row, COL_P),
+                        status="已完成",
+                    )
+                    ok2 += 1
+                except Exception:
+                    fail2 += 1
+            return ok2, fail2
+
+        ok, fail = 0, 0
+        for i, path in enumerate(all_paths):
+            if progress.wasCanceled():
+                break
+            progress.setLabelText(f"處理 {path.name}（{i + 1}/{len(all_paths)}）")
+            progress.setValue(i)
+            try:
+                if path.suffix.lower() == ".msg":
+                    email = reader.read_single_file(path)
+                    if email:
+                        self._kms.extract_qa_from_email(email, db_dir=self._db_dir)
+                        ok += 1
+                    else:
+                        fail += 1
+                elif path.suffix.lower() in (".xlsx", ".xls"):
+                    wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+                    ws = wb.active
+                    header_row = next(ws.iter_rows(max_row=1))
+                    headers = [str(c.value or "").strip() for c in header_row]
+                    rows = []
+                    for row in ws.iter_rows(min_row=2, values_only=True):
+                        rows.append(dict(zip(headers, [str(v or "").strip() for v in row])))
+                    wb.close()
+                    o, f = _import_excel_rows(rows)
+                    ok += o; fail += f
+                else:  # .csv
+                    with open(path, newline="", encoding="utf-8-sig") as f_csv:
+                        rows = [{k.strip(): (v or "").strip() for k, v in r.items()}
+                                for r in csv.DictReader(f_csv)]
+                    o, f = _import_excel_rows(rows)
+                    ok += o; fail += f
+            except Exception:
+                fail += 1
+        progress.setValue(len(all_paths))
+
+        self._refresh_pending()
+        self._on_show_all()
+        QMessageBox.information(
+            self, "資料夾匯入完成",
+            f"資料夾：{folder}\n\n"
+            f"📧 .msg 檔案：{len(msg_paths)} 個\n"
+            f"📊 Excel/CSV 檔案：{len(excel_paths)} 個\n\n"
+            f"✅ 成功：{ok} 筆\n❌ 失敗／略過：{fail} 筆\n\n"
+            ".msg → 「待審核」頁籤；Excel/CSV → 直接「已完成」"
+        )
+
+    def _on_import_excel(self) -> None:
+        """從 Excel / CSV 批次匯入 QA（直接建立為「已完成」）。"""
+        if not self._kms:
+            return
+        from PySide6.QtWidgets import QMessageBox
+        import csv
+        import openpyxl
+
+        path, _ = QFileDialog.getOpenFileName(
+            self, "選擇 Excel 或 CSV 檔案", "",
+            "試算表 (*.xlsx *.xls *.csv)"
+        )
+        if not path:
+            return
+
+        p = Path(path)
+        rows: list[dict] = []
+        try:
+            if p.suffix.lower() in (".xlsx", ".xls"):
+                wb = openpyxl.load_workbook(p, read_only=True, data_only=True)
+                ws = wb.active
+                header_row = next(ws.iter_rows(max_row=1))
+                headers = [str(c.value or "").strip() for c in header_row]
+                for row in ws.iter_rows(min_row=2, values_only=True):
+                    rows.append(dict(zip(headers, [str(v or "").strip() for v in row])))
+                wb.close()
+            else:
+                with open(p, newline="", encoding="utf-8-sig") as f:
+                    for row in csv.DictReader(f):
+                        rows.append({k.strip(): (v or "").strip() for k, v in row.items()})
+        except Exception as e:
+            QMessageBox.critical(self, "讀取失敗", f"無法解析檔案：\n{e}")
+            return
+
+        # 彈性欄位對應
+        COL_Q = ["問題", "question", "Q", "題目", "issue"]
+        COL_A = ["回覆", "答案", "answer", "A", "回答", "reply"]
+        COL_S = ["解決方案", "solution", "解法"]
+        COL_K = ["關鍵字", "keywords", "keyword", "關鍵詞"]
+        COL_P = ["產品", "product", "系統", "system_product"]
+
+        def _find(row: dict, candidates: list[str]) -> str | None:
+            for c in candidates:
+                if c in row and row[c]:
+                    return row[c]
+            return None
+
+        ok, fail = 0, 0
+        for row in rows:
+            q = _find(row, COL_Q)
+            a = _find(row, COL_A)
+            if not q and not a:
+                continue  # 完全空白列，靜默略過
+            if not q or not a:
+                fail += 1
+                continue
+            try:
+                self._kms.create_qa(
+                    question=q,
+                    answer=a,
+                    solution=_find(row, COL_S),
+                    keywords=_find(row, COL_K),
+                    system_product=_find(row, COL_P),
+                    status="已完成",
+                )
+                ok += 1
+            except Exception:
+                fail += 1
+
+        self._refresh_pending()
+        self._on_show_all()
+        QMessageBox.information(
+            self, "匯入完成",
+            f"✅ 成功：{ok} 筆\n❌ 失敗／略過：{fail} 筆\n\n"
+            "📋 Excel 欄位名稱（擇一）：\n"
+            "  問題（必填）、回覆（必填）、解決方案、關鍵字、產品"
+        )
+
+    def _on_smart_search(self) -> None:
+        """智慧查詢：貼入客戶問題原文，比對 KMS 知識庫，回傳最相近的 QA。"""
+        if not self._kms:
+            return
+        query = self._smart_input.toPlainText().strip()
+        if not query:
+            return
+
+        from PySide6.QtWidgets import QTableWidgetItem as TWI
+        results = self._kms.search(query)
+        self._smart_results = results[:10]
+        self._smart_result_table.setRowCount(0)
+        self._smart_answer_box.clear()
+
+        if not results:
+            self._smart_answer_box.setPlainText("⚠️ 未找到相符的歷史 Q&A，建議手動回覆。")
+            return
+
+        for rank, qa in enumerate(self._smart_results, start=1):
+            row = self._smart_result_table.rowCount()
+            self._smart_result_table.insertRow(row)
+            pct = max(0, 100 - (rank - 1) * 8)
+            self._smart_result_table.setItem(row, 0, TWI(f"{pct}%"))
+            self._smart_result_table.setItem(row, 1, TWI(qa.qa_id))
+            self._smart_result_table.setItem(row, 2, TWI(qa.question[:80] if qa.question else ""))
+            self._smart_result_table.setItem(row, 3, TWI(qa.system_product or ""))
+
+        # 預設選第一筆
+        self._smart_result_table.selectRow(0)
+
+    def _on_smart_select(self) -> None:
+        """點選智慧查詢結果，顯示建議回覆。"""
+        rows = self._smart_result_table.selectionModel().selectedRows()
+        if not rows or not self._smart_results:
+            return
+        idx = rows[0].row()
+        if idx >= len(self._smart_results):
+            return
+        qa = self._smart_results[idx]
+        parts = []
+        if qa.answer:
+            parts.append(f"【建議回覆】\n{qa.answer}")
+        if qa.solution:
+            parts.append(f"\n【解決方案】\n{qa.solution}")
+        parts.append(f"\n— 來源：{qa.qa_id}")
+        self._smart_answer_box.setPlainText("\n".join(parts))
 
     def _on_review(self) -> None:
         if not self._kms:
