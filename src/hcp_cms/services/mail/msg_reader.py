@@ -18,17 +18,21 @@ _THREAD_FROM_RE = re.compile(
     re.MULTILINE | re.IGNORECASE,
 )
 _HEADER_LINE_RE = re.compile(
-    r"^(?:From|To|Sent|Subject|寄件者|收件者|傳送時間|主旨)\s*:.*$",
+    r"^(?:From|To|Cc|Date|Sent|Subject|Importance|Priority|寄件者|收件者|副本|傳送時間|主旨|重要性)\s*:.*$",
     re.MULTILINE | re.IGNORECASE,
 )
 
 
 def _strip_leading_headers(text: str) -> str:
-    """移除 text 開頭連續符合 header pattern 的行，遇到非 header 行即停止。"""
+    """移除 text 開頭連續符合 header pattern 的行（含其間空行），遇到非空非 header 行即停止。"""
     lines = text.split("\n")
     i = 0
-    while i < len(lines) and _HEADER_LINE_RE.match(lines[i]):
-        i += 1
+    while i < len(lines):
+        line = lines[i]
+        if _HEADER_LINE_RE.match(line) or line.strip() == "":
+            i += 1
+        else:
+            break
     return "\n".join(lines[i:])
 
 
@@ -40,34 +44,71 @@ _SIGNATURE_KEYWORDS = frozenset({
     "此致", "敬上", "謝謝", "感謝",
     "best regards", "regards", "thanks", "sincerely",
 })
-_SEPARATOR_RE = re.compile(r"^(-{3,}|_{3,})$")
+# 以特定前綴開頭的簽名語句（不需完整比對），含常見中文客套結尾
+_SIGNATURE_PREFIX_RE = re.compile(
+    r"^(感謝您|感謝您的|如有問題請聯絡|如有疑問|請不吝|敬祝|祝\s*您)",
+    re.IGNORECASE,
+)
+# 各種樣式的免責聲明起始標記（星號行 / "Confidentiality Notice" / "This e-mail" 免責聲明）
+_DISCLAIMER_START_RE = re.compile(
+    r"(?m)^\*{10,}|confidentiality\s+notice|this\s+e-?mail\s+(?:along|is\s+intended|contains)",
+    re.IGNORECASE,
+)
+# ==進度:...== 格式的進度備忘標記（不屬於 QA 正文）
+_PROGRESS_NOTE_RE = re.compile(r"==進度[:：].*?==\n?", re.DOTALL)
+# 行內聯絡資訊簽名：TEL / Fax / E-Mail 欄位（後接電話或 email）
+_SIG_CONTACT_RE = re.compile(
+    r"(?:tel|fax|e-?mail|電話|傳真)\s*[：:]\s*(?:[+\d（(]|[\w.]+@)",
+    re.IGNORECASE,
+)
+# 簽名分隔線：精確兩個破折號 "--"（email client 標準）或 6 個以上長分隔線
+# 刻意排除 "---"（3個）避免與正文中的 Markdown 分隔線衝突
+_SEPARATOR_RE = re.compile(r"^(--|[-]{6,}|[_]{6,})$")
 _BRACKET_CO_RE = re.compile(r"^\[.{1,20}\]$")
 _BLANK_LINES_RE = re.compile(r"\n{3,}")
 _IMAGE_EXTS = frozenset({".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"})
 
 
 def _clean_qa_text(text: str) -> str:
-    """去除 QA 文字的招呼語、簽名檔，壓縮多餘空行。"""
+    """去除 QA 文字的招呼語、簽名檔、免責聲明、進度備忘，壓縮多餘空行。"""
     if not text:
         return ""
-    # 1. 去招呼語
+    # 1. 移除 ==進度:...== 進度備忘標記（非 QA 正文）
+    text = _PROGRESS_NOTE_RE.sub("", text).strip()
+    if not text:
+        return ""
+    # 2. 截斷免責聲明（含 **** 星號行、----- Confidentiality Notice / This e-mail 等格式）
+    #    從包含匹配的「整行行首」截斷，連帶移除該行前的追蹤 ID（如 #64643 email）
+    disc_match = _DISCLAIMER_START_RE.search(text)
+    if disc_match:
+        line_start = text.rfind("\n", 0, disc_match.start())
+        cut_pos = line_start + 1 if line_start != -1 else 0
+        text = text[:cut_pos].rstrip()
+    # 3. 去招呼語
     text = _GREETING_RE.sub("", text, count=1).lstrip()
-    # 2. 截斷簽名
+    # 4. 截斷簽名（逐行判斷）
     lines = text.split("\n")
     clean_lines: list[str] = []
     for line in lines:
         stripped = line.strip()
+        stripped_clean = stripped.lower().rstrip(",.，。!！:：~ ")
         if (
-            stripped.lower() in _SIGNATURE_KEYWORDS
+            stripped_clean in _SIGNATURE_KEYWORDS
+            or _SIGNATURE_PREFIX_RE.match(stripped)
             or _SEPARATOR_RE.match(stripped)
             or _BRACKET_CO_RE.match(stripped)
         ):
             break
         clean_lines.append(line)
     text = "\n".join(clean_lines)
-    # 3. 壓縮連續空行（> 2 個空行 → 2 個）
+    # 5. 截斷行內聯絡資訊（Tel：/ Fax：/ E-Mail: 欄位，含同行前方的姓名部門）
+    sig_match = _SIG_CONTACT_RE.search(text)
+    if sig_match:
+        line_start = text.rfind("\n", 0, sig_match.start())
+        text = (text[:line_start].rstrip() if line_start != -1 else text[:sig_match.start()].rstrip())
+    # 6. 壓縮連續空行（> 2 個空行 → 2 個）
     text = _BLANK_LINES_RE.sub("\n\n", text)
-    # 4. strip
+    # 7. strip
     return text.strip()
 
 

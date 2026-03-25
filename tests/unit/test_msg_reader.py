@@ -12,7 +12,8 @@ class TestStripLeadingHeaders:
     def test_removes_leading_header_lines(self):
         text = "From: foo@bar.com\nSubject: 測試主旨\n\n正文內容"
         result = _strip_leading_headers(text)
-        assert result == "\n正文內容"
+        # header 後的空行也應被跳過，直接回傳正文
+        assert result == "正文內容"
 
     def test_stops_at_first_non_header(self):
         text = "From: foo@bar.com\n正文第一行\nSubject: 這行在正文裡"
@@ -31,6 +32,20 @@ class TestStripLeadingHeaders:
     def test_no_headers_unchanged(self):
         text = "這是一般文字\n第二行"
         assert _strip_leading_headers(text) == text
+
+    def test_removes_cc_line(self):
+        """Cc: 行應被視為 header 並移除"""
+        text = "From: foo@bar.com\nCc: cc@bar.com\n\n正文內容"
+        result = _strip_leading_headers(text)
+        assert "Cc:" not in result
+        assert "正文內容" in result
+
+    def test_skips_blank_lines_within_header_block(self):
+        """header 之間的空行應略過，繼續移除後續 header"""
+        text = "From: foo@bar.com\n\nSubject: 測試\n\n正文內容"
+        result = _strip_leading_headers(text)
+        assert "Subject:" not in result
+        assert "正文內容" in result
 
 
 class TestCleanQaText:
@@ -72,10 +87,25 @@ class TestCleanQaText:
         assert "謝謝您的協助" in result
 
     def test_truncates_dashes_separator(self):
-        text = "正文\n---\n公司資訊"
+        # 6 個以上破折號才觸發（3 個 --- 是正文常見分隔，不截斷）
+        text = "正文\n------\n公司資訊"
         result = _clean_qa_text(text)
         assert "正文" in result
         assert "公司資訊" not in result
+
+    def test_three_dashes_not_truncated(self):
+        """--- (3個) 不應觸發截斷，避免誤刪正文內容"""
+        text = "說明如下：\n---\n1. 補休建檔請使用 A 程式\n2. 查詢請使用 B 程式"
+        result = _clean_qa_text(text)
+        assert "1. 補休建檔" in result
+        assert "2. 查詢" in result
+
+    def test_double_dash_separator_truncates(self):
+        """-- (兩個，email client 標準簽名分隔線) 應觸發截斷"""
+        text = "回覆內容\n--\n姓名\n電話"
+        result = _clean_qa_text(text)
+        assert "回覆內容" in result
+        assert "姓名" not in result
 
     def test_compresses_multiple_blank_lines(self):
         text = "行一\n\n\n\n\n行二"
@@ -95,6 +125,102 @@ class TestCleanQaText:
         result = _clean_qa_text(text)
         assert "正文內容" in result
         assert "聯絡資訊" not in result
+
+    def test_truncates_best_regards_with_comma(self):
+        """'Best Regards,' 帶逗號也應觸發截斷"""
+        text = "解答內容\nBest Regards,\n王小明\n公司電話"
+        result = _clean_qa_text(text)
+        assert "解答內容" in result
+        assert "Best Regards" not in result
+        assert "公司電話" not in result
+
+    def test_truncates_感謝您_prefix(self):
+        """'感謝您的耐心等候' 應觸發截斷（不需完整比對）"""
+        text = "解答內容\n感謝您的耐心等候\n如有問題請聯絡我"
+        result = _clean_qa_text(text)
+        assert "解答內容" in result
+        assert "感謝您的耐心等候" not in result
+
+    def test_removes_confidentiality_notice_block(self):
+        """UNIMICRON Confidentiality Notice 免責聲明區塊應被移除"""
+        text = (
+            "正文內容\n\n"
+            "************* UNIMICRON Confidentiality Notice ********************\n"
+            "The information transmitted contains confidential material.\n"
+            "***************************************************************"
+        )
+        result = _clean_qa_text(text)
+        assert "正文內容" in result
+        assert "Confidentiality" not in result
+        assert "UNIMICRON" not in result
+
+    def test_removes_repeated_confidentiality_blocks(self):
+        """重複三次的免責聲明應全部移除"""
+        block = (
+            "************* UNIMICRON Confidentiality Notice ********************\n"
+            "The information transmitted contains confidential material.\n"
+            "***************************************************************\n"
+        )
+        text = "正文內容\n\n" + block * 3
+        result = _clean_qa_text(text)
+        assert "正文內容" in result
+        assert "Confidentiality" not in result
+
+    def test_removes_ase_dash_style_confidentiality(self):
+        """ASE 破折號樣式免責聲明應被移除"""
+        text = (
+            "解答內容\n\n"
+            "#64643 Jackey_Lo@aseglobal.com ----- ASE Confidentiality Notice -----"
+            " The preceding message (including any attachments) contains proprietary information."
+        )
+        result = _clean_qa_text(text)
+        assert "解答內容" in result
+        assert "Confidentiality" not in result
+        assert "#64643" not in result
+
+    def test_removes_dash_separator_confidentiality(self):
+        """破折號分隔的免責聲明區塊應被移除"""
+        text = (
+            "正文\n\n"
+            "----- Confidentiality Notice -----\n"
+            "This message is confidential.\n"
+        )
+        result = _clean_qa_text(text)
+        assert "正文" in result
+        assert "Confidentiality" not in result
+
+    def test_removes_this_email_disclaimer(self):
+        """'This e-mail along...' 樣式的免責聲明應被移除"""
+        text = "回覆內容\nThis e-mail along with any attachments is intended only for the addressee."
+        result = _clean_qa_text(text)
+        assert "回覆內容" in result
+        assert "This e-mail" not in result
+
+    def test_removes_progress_note_from_text(self):
+        """==進度:...== 標記應從文字中移除"""
+        text = "==進度: 待與jacky確認1.組織代號是否可以這樣異動2.所需的人天評估費用等=="
+        result = _clean_qa_text(text)
+        assert result == ""
+
+    def test_progress_note_stripped_leaving_surrounding_content(self):
+        """==進度:...== 前後的正文應保留"""
+        text = "正式回覆內容\n==進度: 待確認==\n其他說明"
+        result = _clean_qa_text(text)
+        assert "正式回覆內容" in result
+        assert "進度" not in result
+
+    def test_cuts_at_tel_contact_info(self):
+        """行內 Tel：電話 簽名資訊應觸發截斷"""
+        text = (
+            "請問如何操作薪資模組？\n"
+            "Nicole Chang 桃園市中壢區 Tel：+886-3-426-2828 Fax：+886-3-425-1919 "
+            "E-Mail:nicole@example.com"
+        )
+        result = _clean_qa_text(text)
+        assert "請問如何操作薪資模組" in result
+        assert "Tel：" not in result
+        assert "Fax：" not in result
+        assert "E-Mail:" not in result
 
 
 class TestSplitThreadFixed:

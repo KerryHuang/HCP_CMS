@@ -375,6 +375,7 @@ class KMSView(QWidget):
         self._pending_table.horizontalHeader().setStretchLastSection(True)
         self._pending_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._pending_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self._pending_table.doubleClicked.connect(self._on_review)
         pending_layout.addWidget(self._pending_table)
 
         pending_btn_layout = QHBoxLayout()
