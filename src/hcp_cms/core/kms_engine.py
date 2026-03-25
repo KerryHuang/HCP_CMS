@@ -14,6 +14,9 @@ from hcp_cms.services.mail.base import RawEmail
 # Question detection patterns
 _QUESTION_PATTERNS = ["請問", "如何", "是否", "怎麼", "可否", "能否", "為什麼", "為何"]
 
+# 圖片副檔名（與 msg_reader._IMAGE_EXTS 保持一致）
+_IMAGE_EXTS = frozenset({".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"})
+
 
 class KMSEngine:
     def __init__(self, conn: sqlite3.Connection) -> None:
@@ -229,7 +232,7 @@ class KMSEngine:
             img_dir = db_dir / "kms_attachments" / qa.qa_id
             if img_dir.exists():
                 for img_path in sorted(img_dir.iterdir()):
-                    if img_path.suffix.lower() in {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"}:
+                    if img_path.suffix.lower() in _IMAGE_EXTS:
                         try:
                             doc.add_picture(str(img_path), width=Cm(14))
                         except Exception:
