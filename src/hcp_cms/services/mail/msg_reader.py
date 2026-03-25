@@ -42,6 +42,7 @@ _SIGNATURE_KEYWORDS = frozenset({
 })
 _SEPARATOR_RE = re.compile(r"^(-{3,}|_{3,})$")
 _BRACKET_CO_RE = re.compile(r"^\[.{1,20}\]$")
+_BLANK_LINES_RE = re.compile(r"\n{3,}")
 
 
 def _clean_qa_text(text: str) -> str:
@@ -64,7 +65,7 @@ def _clean_qa_text(text: str) -> str:
         clean_lines.append(line)
     text = "\n".join(clean_lines)
     # 3. 壓縮連續空行（> 2 個空行 → 2 個）
-    text = re.sub(r"\n{3,}", "\n\n", text)
+    text = _BLANK_LINES_RE.sub("\n\n", text)
     # 4. strip
     return text.strip()
 

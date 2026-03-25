@@ -9,7 +9,7 @@ from hcp_cms.services.mail.msg_reader import (
 
 class TestStripLeadingHeaders:
     def test_removes_leading_header_lines(self):
-        text = "From: foo@bar.com\nSubject: test\n\n正文內容"
+        text = "From: foo@bar.com\nSubject: 測試主旨\n\n正文內容"
         result = _strip_leading_headers(text)
         assert result == "\n正文內容"
 
@@ -20,7 +20,7 @@ class TestStripLeadingHeaders:
         assert "Subject: 這行在正文裡" in result
 
     def test_all_headers_returns_empty(self):
-        text = "From: a@b.com\nTo: c@d.com\nSubject: hi"
+        text = "From: a@b.com\nTo: c@d.com\nSubject: 測試"
         result = _strip_leading_headers(text)
         assert result.strip() == ""
 
@@ -49,6 +49,7 @@ class TestCleanQaText:
         text = "Dear 客服人員,\n請協助處理"
         result = _clean_qa_text(text)
         assert not result.lower().startswith("dear")
+        assert "請協助處理" in result
 
     def test_truncates_signature_best_regards(self):
         text = "這是正文\n\nBest regards\n王小明\n公司電話：02-1234"
@@ -88,6 +89,12 @@ class TestCleanQaText:
         result = _clean_qa_text(text)
         assert result == ""
 
+    def test_bracket_company_triggers_cutoff(self):
+        text = "正文內容\n[公司名稱]\n聯絡資訊"
+        result = _clean_qa_text(text)
+        assert "正文內容" in result
+        assert "聯絡資訊" not in result
+
 
 class TestSplitThreadFixed:
     def test_multi_layer_uses_last_customer_from(self):
@@ -126,3 +133,11 @@ class TestSplitThreadFixed:
         answer, question = MSGReader._split_thread(body, own_domain="@ares.com.tw")
         assert answer is None
         assert question is None
+
+    def test_customer_from_at_start_answer_is_none(self):
+        """客戶 From 在最開頭，answer 應為 None"""
+        body = "From: customer@client.com\nSubject: 問題\n\n客戶問題內容"
+        answer, question = MSGReader._split_thread(body, own_domain="@ares.com.tw")
+        assert answer is None
+        assert question is not None
+        assert "客戶問題內容" in question
