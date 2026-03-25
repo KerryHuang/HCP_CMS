@@ -124,6 +124,72 @@ class MSGReader(MailProvider):
         except Exception as exc:
             return None, str(exc)
 
+    @staticmethod
+    def extract_images(msg_path: Path, dest_dir: Path) -> list[Path]:
+        """從 .msg 提取圖片附件至 dest_dir。若 msg_path 不存在回傳 []。
+
+        提取對象：
+        1. htmlBody 中 cid: 對應的 attachment
+        2. 副檔名 .png/.jpg/.jpeg/.gif/.bmp/.webp 的一般附件
+        冪等：dest_dir 已有同名檔案時跳過。
+        """
+        if not msg_path.exists():
+            return []
+        try:
+            import extract_msg
+            msg = extract_msg.Message(msg_path)
+        except Exception:
+            return []
+
+        # 收集 CID 對應的 attachment content-id 集合
+        cid_names: set[str] = set()
+        try:
+            html = getattr(msg, "htmlBody", None)
+            if html:
+                if isinstance(html, bytes):
+                    html = html.decode("utf-8", errors="replace")
+                for cid in re.findall(r'src=["\']cid:([^"\'>\s]+)["\']', html, re.IGNORECASE):
+                    cid_names.add(cid.split("@")[0].lower())
+        except Exception:
+            pass
+
+        _IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"}
+        saved: list[Path] = []
+        dest_dir.mkdir(parents=True, exist_ok=True)
+
+        try:
+            attachments = msg.attachments or []
+        except Exception:
+            attachments = []
+
+        for att in attachments:
+            try:
+                filename = getattr(att, "longFilename", None) or getattr(att, "shortFilename", None) or ""
+                if not filename:
+                    continue
+                ext = Path(filename).suffix.lower()
+                content_id = (getattr(att, "contentId", None) or "").split("@")[0].lower()
+                is_cid = content_id in cid_names
+                is_image_ext = ext in _IMAGE_EXTS
+                if not (is_cid or is_image_ext):
+                    continue
+                dest_file = dest_dir / filename
+                if dest_file.exists():
+                    saved.append(dest_file)
+                    continue
+                data = att.data
+                if data:
+                    dest_file.write_bytes(data)
+                    saved.append(dest_file)
+            except Exception:
+                continue
+
+        try:
+            msg.close()
+        except Exception:
+            pass
+        return saved
+
     def compute_file_hash(self, file_path: Path) -> str:
         """Compute SHA256 hash of a file."""
         sha256 = hashlib.sha256()

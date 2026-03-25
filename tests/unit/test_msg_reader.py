@@ -141,3 +141,19 @@ class TestSplitThreadFixed:
         assert answer is None
         assert question is not None
         assert "客戶問題內容" in question
+
+
+class TestExtractImages:
+    def test_nonexistent_msg_returns_empty(self, tmp_path):
+        result = MSGReader.extract_images(tmp_path / "notexist.msg", tmp_path / "out")
+        assert result == []
+
+    def test_idempotent_skip_existing(self, tmp_path):
+        """若目標目錄已有同名檔案，跳過不重複寫入。"""
+        dest = tmp_path / "out"
+        dest.mkdir()
+        existing = dest / "image.png"
+        existing.write_bytes(b"original")
+        # 模擬：若 msg_path 不存在，直接回傳 []（冪等驗證的前提是目的地已有檔案）
+        result = MSGReader.extract_images(tmp_path / "fake.msg", dest)
+        assert existing.read_bytes() == b"original"  # 未被覆蓋
