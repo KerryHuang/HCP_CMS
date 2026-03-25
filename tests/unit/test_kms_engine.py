@@ -192,3 +192,73 @@ class TestKMSEngineStatus:
         questions = [r[1] for r in rows if r[1]]
         assert "已完成QA" in questions
         assert "待審核QA" not in questions
+
+    # --- Task 4 tests ---
+
+    def test_attach_images_nonexistent_msg(self, kms, tmp_path):
+        """msg 不存在時回傳 0，DB 不更新。"""
+        qa = kms.create_qa(question="測試", answer="答覆")
+        count = kms.attach_images(qa.qa_id, tmp_path / "notexist.msg", tmp_path)
+        assert count == 0
+        qa_after = kms._qa_repo.get_by_id(qa.qa_id)
+        assert qa_after.has_image == "否"  # 未更新
+
+    def test_attach_images_updates_db(self, kms, tmp_path):
+        """提供假 msg 路徑（存在但無圖片），has_image 更新為是。"""
+        fake_msg = tmp_path / "fake.msg"
+        fake_msg.write_bytes(b"")
+        qa = kms.create_qa(question="圖片測試", answer="答覆")
+        kms.attach_images(qa.qa_id, fake_msg, tmp_path)
+        qa_after = kms._qa_repo.get_by_id(qa.qa_id)
+        assert qa_after.has_image == "是"
+        assert qa_after.doc_name == str(fake_msg)
+
+    def test_extract_qa_from_email_with_db_dir(self, kms, db, tmp_path):
+        """帶 db_dir 時，extract_qa_from_email 成功建立 QA 並記錄 doc_name。"""
+        from hcp_cms.data.models import Case
+        from hcp_cms.data.repositories import CaseRepository
+        from hcp_cms.services.mail.base import RawEmail
+        CaseRepository(db.connection).insert(Case(case_id="CS-001", subject="測試案件"))
+        email = RawEmail(
+            sender="customer@client.com",
+            subject="測試",
+            body="您好，請問如何操作？",
+            thread_question="請問如何操作？",
+            thread_answer="操作說明如下",
+            source_file=str(tmp_path / "test.msg"),
+        )
+        # 建立假 msg 檔（讓 attach_images 不因不存在而略過）
+        (tmp_path / "test.msg").write_bytes(b"")
+        qa = kms.extract_qa_from_email(email, case_id="CS-001", db_dir=tmp_path)
+        assert qa is not None
+        assert qa.doc_name == str(tmp_path / "test.msg")
+
+    # --- Task 5 tests ---
+
+    def test_export_to_docx_creates_file(self, kms, tmp_path):
+        # 必須建立「已完成」的 QA，qa_list=None 時呼叫 list_approved()
+        kms.create_qa(question="問題一", answer="回覆一", status="已完成")
+        kms.create_qa(question="問題二", answer="回覆二", status="已完成")
+        out = tmp_path / "export.docx"
+        result = kms.export_to_docx(out, db_dir=tmp_path)
+        assert result == out
+        assert out.exists()
+
+    def test_export_to_docx_empty_list(self, kms, tmp_path):
+        """空列表時建立含『無資料』標題的空白 docx，不拋例外。"""
+        out = tmp_path / "empty.docx"
+        kms.export_to_docx(out, db_dir=tmp_path, qa_list=[])
+        assert out.exists()
+
+    def test_export_to_docx_qa_list_override(self, kms, tmp_path):
+        """傳入 qa_list 時只匯出指定的 QA。"""
+        qa1 = kms.create_qa(question="匯出這筆", answer="A")
+        kms.create_qa(question="不匯出這筆", answer="B")
+        out = tmp_path / "partial.docx"
+        kms.export_to_docx(out, db_dir=tmp_path, qa_list=[qa1])
+        # 讀取確認只有 qa1
+        from docx import Document
+        doc = Document(out)
+        full_text = " ".join(p.text for p in doc.paragraphs)
+        assert "匯出這筆" in full_text
+        assert "不匯出這筆" not in full_text

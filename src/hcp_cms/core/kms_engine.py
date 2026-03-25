@@ -92,17 +92,26 @@ class KMSEngine:
         self._qa_repo.delete(qa_id)
         self._fts.remove_qa_index(qa_id)
 
-    def extract_qa_from_email(self, raw_email: RawEmail, case_id: str | None = None) -> QAKnowledge | None:
+    def extract_qa_from_email(
+        self,
+        raw_email: RawEmail,
+        case_id: str | None = None,
+        db_dir: Path | None = None,
+    ) -> QAKnowledge | None:
         """從 RawEmail thread 欄位抽取 QA，儲存為待審核。無問題段則回傳 None。"""
         if not raw_email.thread_question:
             return None
-        return self.create_qa(
+        qa = self.create_qa(
             question=raw_email.thread_question,
             answer=raw_email.thread_answer or "",
             source="email",
             source_case_id=case_id,
             status="待審核",
         )
+        if db_dir is not None and raw_email.source_file:
+            self.attach_images(qa.qa_id, Path(raw_email.source_file), db_dir)
+            qa = self._qa_repo.get_by_id(qa.qa_id) or qa
+        return qa
 
     def approve_qa(self, qa_id: str, **updated_fields) -> QAKnowledge | None:
         """單一入口：更新欄位 → status='已完成' → FTS 索引建立。"""
@@ -169,6 +178,70 @@ class KMSEngine:
 
         wb.close()
         return count
+
+    def attach_images(self, qa_id: str, msg_path: Path, db_dir: Path) -> int:
+        """從 msg_path 提取圖片至 db_dir/kms_attachments/qa_id/。
+        若 msg_path 不存在回傳 0 且不更新 DB。
+        """
+        if not msg_path.exists():
+            return 0
+        from hcp_cms.services.mail.msg_reader import MSGReader
+        dest_dir = db_dir / "kms_attachments" / qa_id
+        saved = MSGReader.extract_images(msg_path, dest_dir)
+        # 無論有無圖片，只要 msg 存在就更新 DB（避免重複嘗試）
+        qa = self._qa_repo.get_by_id(qa_id)
+        if qa:
+            qa.has_image = "是"
+            qa.doc_name = str(msg_path)
+            self._qa_repo.update(qa)
+        return len(saved)
+
+    def export_to_docx(
+        self,
+        file_path: Path,
+        db_dir: Path,
+        qa_list: list[QAKnowledge] | None = None,
+    ) -> Path:
+        """匯出 QA 至 Word 文件。qa_list=None 時匯出全部已完成 QA。"""
+        from docx import Document
+        from docx.shared import Cm
+
+        if qa_list is None:
+            qa_list = self._qa_repo.list_approved()
+
+        doc = Document()
+        doc.add_heading("KMS 知識庫匯出", level=1)
+
+        if not qa_list:
+            doc.add_paragraph("無資料")
+            doc.save(str(file_path))
+            return file_path
+
+        for i, qa in enumerate(qa_list):
+            title = f"{qa.qa_id}"
+            if qa.system_product:
+                title += f"｜{qa.system_product}"
+            doc.add_heading(title, level=2)
+            doc.add_paragraph(f"問題：{qa.question or ''}")
+            doc.add_paragraph(f"回覆：{qa.answer or ''}")
+
+            # 插入圖片
+            img_dir = db_dir / "kms_attachments" / qa.qa_id
+            if img_dir.exists():
+                for img_path in sorted(img_dir.iterdir()):
+                    if img_path.suffix.lower() in {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"}:
+                        try:
+                            doc.add_picture(str(img_path), width=Cm(14))
+                        except Exception:
+                            continue
+
+            if qa.solution:
+                doc.add_paragraph(f"解決方案：{qa.solution}")
+            if i < len(qa_list) - 1:
+                doc.add_paragraph("─" * 40)
+
+        doc.save(str(file_path))
+        return file_path
 
     def export_to_excel(self, file_path: Path, qa_list: list[QAKnowledge] | None = None) -> Path:
         """Export QA entries to Excel. If qa_list is None, export approved only."""
