@@ -1,5 +1,6 @@
 """High-level case management — create, update, status transitions."""
 
+import re
 import sqlite3
 from datetime import datetime
 from pathlib import Path
@@ -9,6 +10,30 @@ from hcp_cms.core.thread_tracker import ThreadTracker
 from hcp_cms.data.fts import FTSManager
 from hcp_cms.data.models import Case
 from hcp_cms.data.repositories import CaseRepository
+
+
+_SLASH_FMT = re.compile(r"^\d{4}/\d{2}/\d{2}")
+
+
+def _normalize_sent_time(value: str | None) -> str | None:
+    """將任意格式的日期時間字串正規化為 YYYY/MM/DD HH:MM。
+
+    支援：
+    - 已正確格式 2026/03/17 09:34（直接回傳）
+    - ISO 8601（含或不含時區）：2026-03-17 09:34:03+08:00 / 2026-03-17T14:22:05Z
+    """
+    if not value:
+        return None
+    s = str(value)
+    if _SLASH_FMT.match(s):
+        return s  # 已是正確格式
+    try:
+        dt = datetime.fromisoformat(s)
+        return dt.strftime("%Y/%m/%d %H:%M")
+    except ValueError:
+        pass
+    # 最後 fallback：取前 16 碼後強制替換分隔符
+    return s[:16].replace("-", "/").replace("T", " ")
 
 
 class CaseManager:
@@ -91,7 +116,7 @@ class CaseManager:
         case = Case(
             case_id=case_id,
             subject=subject,
-            sent_time=sent_time or now,
+            sent_time=_normalize_sent_time(sent_time) or now,
             company_id=classification["company_id"],
             contact_person=contact_person,
             system_product=classification["system_product"],

@@ -159,7 +159,23 @@ class DatabaseManager:
             "INSERT OR IGNORE INTO db_meta (key, value) VALUES (?, ?)",
             ("schema_version", SCHEMA_VERSION),
         )
+        self._apply_pending_migrations()
         self._conn.commit()
+
+    def _apply_pending_migrations(self) -> None:
+        """冪等補欄遷移：確保各資料表存在所有必要欄位。
+
+        每次 initialize() 都會執行，對已存在欄位直接跳過（OperationalError 被吞掉）。
+        """
+        assert self._conn is not None
+        pending: list[str] = [
+            "ALTER TABLE qa_knowledge ADD COLUMN status TEXT DEFAULT '已完成'",
+        ]
+        for sql in pending:
+            try:
+                self._conn.execute(sql)
+            except sqlite3.OperationalError:
+                pass  # 欄位已存在，略過
 
     def close(self) -> None:
         if self._conn:

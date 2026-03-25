@@ -219,6 +219,30 @@ class TestCaseManager:
         assert case.progress == "待確認"
 
 
+    def test_create_case_normalizes_iso_sent_time(self, seeded_db):
+        """傳入 ISO 8601 格式 sent_time（含時區）應自動轉為 YYYY/MM/DD HH:MM。"""
+        mgr = CaseManager(seeded_db.connection)
+        case = mgr.create_case(
+            subject="日期格式測試",
+            body="測試",
+            sender_email="user@aseglobal.com",
+            sent_time="2026-03-17 09:34:03+08:00",
+        )
+        stored = CaseRepository(seeded_db.connection).get_by_id(case.case_id)
+        assert stored.sent_time == "2026/03/17 09:34"
+
+    def test_create_case_normalizes_iso_with_T(self, seeded_db):
+        """ISO 8601 T 格式也應正規化。"""
+        mgr = CaseManager(seeded_db.connection)
+        case = mgr.create_case(
+            subject="日期格式測試T",
+            body="測試",
+            sent_time="2026-03-17T14:22:05+00:00",
+        )
+        stored = CaseRepository(seeded_db.connection).get_by_id(case.case_id)
+        assert stored.sent_time == "2026/03/17 14:22"
+
+
 class TestImportEmail:
     """測試 import_email() 智慧派送邏輯。"""
 
