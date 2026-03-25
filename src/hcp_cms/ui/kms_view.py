@@ -3,16 +3,22 @@
 from __future__ import annotations
 
 import sqlite3
+from datetime import date
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QUrl
+from PySide6.QtGui import QPixmap
+from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWidgets import (
     QDialog,
+    QFileDialog,
     QFormLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QPushButton,
+    QScrollArea,
     QSplitter,
     QTabWidget,
     QTableWidget,
@@ -23,6 +29,133 @@ from PySide6.QtWidgets import (
 )
 
 from hcp_cms.core.kms_engine import KMSEngine
+
+
+class TextExpandDialog(QDialog):
+    """欄位展開檢視對話框。"""
+
+    def __init__(self, title: str, content: str, parent=None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.resize(700, 500)
+        layout = QVBoxLayout(self)
+        text = QTextEdit()
+        text.setReadOnly(True)
+        text.setPlainText(content)
+        layout.addWidget(text)
+        close_btn = QPushButton("關閉")
+        close_btn.clicked.connect(self.accept)
+        layout.addWidget(close_btn)
+
+
+class KMSImageViewDialog(QDialog):
+    """完整回覆視窗：HTML + 圖片。"""
+
+    def __init__(self, qa, db_dir: Path | None, parent=None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle(f"完整回覆 — {qa.qa_id}")
+        self.resize(900, 700)
+        self._qa = qa
+        self._db_dir = db_dir
+        self._setup_ui()
+
+    def _setup_ui(self) -> None:
+        layout = QVBoxLayout(self)
+
+        self._web = QWebEngineView()
+        html = self._build_html()
+        if self._db_dir:
+            base_url = QUrl.fromLocalFile(str(self._db_dir) + "/")
+            self._web.setHtml(html, base_url)
+        else:
+            self._web.setHtml(html)
+        layout.addWidget(self._web, stretch=1)
+
+        # 附件縮圖列
+        _IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"}
+        img_dir = (self._db_dir / "kms_attachments" / self._qa.qa_id) if self._db_dir else None
+        if img_dir and img_dir.exists():
+            scroll = QScrollArea()
+            scroll.setFixedHeight(120)
+            scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+            scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+            thumb_widget = QWidget()
+            thumb_layout = QHBoxLayout(thumb_widget)
+            for img_path in sorted(img_dir.iterdir()):
+                if img_path.suffix.lower() in _IMAGE_EXTS:
+                    lbl = QLabel()
+                    pix = QPixmap(str(img_path)).scaled(100, 100, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+                    lbl.setPixmap(pix)
+                    lbl.setCursor(Qt.CursorShape.PointingHandCursor)
+                    img_path_str = str(img_path)
+                    lbl.mousePressEvent = lambda e, p=img_path_str: self._open_full_image(p)
+                    thumb_layout.addWidget(lbl)
+            thumb_layout.addStretch()
+            scroll.setWidget(thumb_widget)
+            layout.addWidget(scroll)
+
+        close_btn = QPushButton("關閉")
+        close_btn.clicked.connect(self.accept)
+        layout.addWidget(close_btn)
+
+    def _build_html(self) -> str:
+        qa = self._qa
+        # 嘗試重讀 .msg html_body
+        html_body = None
+        if qa.doc_name:
+            msg_path = Path(qa.doc_name)
+            if msg_path.exists():
+                from hcp_cms.services.mail.msg_reader import MSGReader
+                raw = MSGReader(directory=None).read_single_file(msg_path)
+                if raw and raw.html_body:
+                    html_body = self._replace_cid(raw.html_body)
+
+        if html_body:
+            return html_body
+
+        # fallback：用圖片 + 文字組合簡易 HTML
+        _IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"}
+        img_dir = (self._db_dir / "kms_attachments" / qa.qa_id) if self._db_dir else None
+        img_html = ""
+        if img_dir and img_dir.exists():
+            for img_path in sorted(img_dir.iterdir()):
+                if img_path.suffix.lower() in _IMAGE_EXTS:
+                    img_html += f'<img src="{img_path.as_uri()}" style="max-width:100%;margin:8px 0;"><br>'
+
+        q = (qa.question or "").replace("<", "&lt;").replace(">", "&gt;")
+        a = (qa.answer or "").replace("<", "&lt;").replace(">", "&gt;")
+        s = (qa.solution or "").replace("<", "&lt;").replace(">", "&gt;")
+        return f"""<html><body style="font-family:sans-serif;padding:16px">
+<h3>問題</h3><pre>{q}</pre>
+<h3>回覆</h3><pre>{a}</pre>
+{img_html}
+{'<h3>解決方案</h3><pre>' + s + '</pre>' if s else ''}
+</body></html>"""
+
+    def _replace_cid(self, html: str) -> str:
+        """將 cid: 圖片參考替換為 file:// 路徑。"""
+        if not self._db_dir:
+            return html
+        import re
+        img_dir = self._db_dir / "kms_attachments" / self._qa.qa_id
+        def replacer(m):
+            cid = m.group(1).split("@")[0]
+            for f in (img_dir.iterdir() if img_dir.exists() else []):
+                if f.stem.lower() == cid.lower() or f.name.lower() == cid.lower():
+                    return f'src="{f.as_uri()}"'
+            return m.group(0)
+        return re.sub(r'src=["\']cid:([^"\'>\s]+)["\']', replacer, html, flags=re.IGNORECASE)
+
+    def _open_full_image(self, img_path_str: str) -> None:
+        dlg = QDialog(self)
+        dlg.setWindowTitle("圖片檢視")
+        dlg.resize(800, 600)
+        lay = QVBoxLayout(dlg)
+        lbl = QLabel()
+        pix = QPixmap(img_path_str)
+        lbl.setPixmap(pix.scaled(780, 560, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+        lay.addWidget(lbl)
+        dlg.exec()
 
 
 class QAReviewDialog(QDialog):
@@ -112,6 +245,37 @@ class KMSView(QWidget):
         self._pending: list = []
         self._setup_ui()
 
+    def _make_field_widget(self, label: str, attr_name: str) -> tuple[QWidget, QTextEdit]:
+        """建立標題列 + 展開按鈕 + QTextEdit 的組合 widget。"""
+        wrapper = QWidget()
+        vlay = QVBoxLayout(wrapper)
+        vlay.setContentsMargins(0, 0, 0, 0)
+        vlay.setSpacing(2)
+
+        header = QWidget()
+        hlay = QHBoxLayout(header)
+        hlay.setContentsMargins(0, 0, 0, 0)
+        lbl = QLabel(label)
+        lbl.setStyleSheet("color: #94a3b8; font-size: 11px;")
+        hlay.addWidget(lbl)
+        hlay.addStretch()
+        expand_btn = QPushButton("⛶")
+        expand_btn.setFixedSize(22, 22)
+        expand_btn.setToolTip("展開檢視")
+        expand_btn.setStyleSheet("QPushButton { background: transparent; color: #64748b; font-size: 14px; border: none; } QPushButton:hover { color: #e2e8f0; }")
+        hlay.addWidget(expand_btn)
+        vlay.addWidget(header)
+
+        edit = QTextEdit()
+        edit.setReadOnly(True)
+        vlay.addWidget(edit)
+
+        field_label = label
+        expand_btn.clicked.connect(
+            lambda: TextExpandDialog(f"{field_label} — 展開檢視", edit.toPlainText(), self).exec()
+        )
+        return wrapper, edit
+
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 20)
@@ -141,6 +305,13 @@ class KMSView(QWidget):
         new_btn = QPushButton("➕ 新增 QA")
         new_btn.clicked.connect(self._on_new_qa)
         search_layout.addWidget(new_btn)
+        export_sel_btn = QPushButton("💾 匯出選取")
+        export_sel_btn.clicked.connect(self._on_export_selected)
+        search_layout.addWidget(export_sel_btn)
+
+        export_all_btn = QPushButton("📄 匯出全部")
+        export_all_btn.clicked.connect(self._on_export_all)
+        search_layout.addWidget(export_all_btn)
         all_layout.addLayout(search_layout)
 
         splitter = QSplitter(Qt.Orientation.Vertical)
@@ -153,19 +324,33 @@ class KMSView(QWidget):
         splitter.addWidget(self._table)
 
         detail = QWidget()
-        detail_layout = QFormLayout(detail)
-        self._detail_question = QTextEdit()
-        self._detail_question.setMaximumHeight(80)
-        self._detail_question.setReadOnly(True)
-        self._detail_answer = QTextEdit()
-        self._detail_answer.setMaximumHeight(80)
-        self._detail_answer.setReadOnly(True)
-        self._detail_solution = QTextEdit()
-        self._detail_solution.setMaximumHeight(80)
-        self._detail_solution.setReadOnly(True)
-        detail_layout.addRow("問題:", self._detail_question)
-        detail_layout.addRow("回覆:", self._detail_answer)
-        detail_layout.addRow("解決方案:", self._detail_solution)
+        detail_layout = QVBoxLayout(detail)
+        detail_layout.setContentsMargins(4, 4, 4, 4)
+
+        # 查看完整回覆按鈕（頂部）
+        self._view_btn = QPushButton("🖼️ 查看完整回覆")
+        self._view_btn.clicked.connect(self._on_view_full)
+        detail_layout.addWidget(self._view_btn)
+
+        # 三個欄位放入垂直 QSplitter
+        field_splitter = QSplitter(Qt.Orientation.Vertical)
+
+        q_widget, self._detail_question = self._make_field_widget("問題", "question")
+        a_widget, self._detail_answer = self._make_field_widget("回覆", "answer")
+        s_widget, self._detail_solution = self._make_field_widget("解決方案", "solution")
+
+        field_splitter.addWidget(q_widget)
+        field_splitter.addWidget(a_widget)
+        field_splitter.addWidget(s_widget)
+        field_splitter.setSizes([200, 400, 200])
+
+        detail_layout.addWidget(field_splitter)
+
+        # 單筆匯出按鈕
+        self._export_single_btn = QPushButton("💾 另存 .docx")
+        self._export_single_btn.clicked.connect(self._on_export_single)
+        detail_layout.addWidget(self._export_single_btn)
+
         splitter.addWidget(detail)
         all_layout.addWidget(splitter)
         self._tabs.addTab(all_tab, "全部")
@@ -247,6 +432,11 @@ class KMSView(QWidget):
         self._detail_question.setPlainText(qa.question or "")
         self._detail_answer.setPlainText(qa.answer or "")
         self._detail_solution.setPlainText(qa.solution or "")
+        # 高亮查看按鈕
+        if qa.has_image == "是":
+            self._view_btn.setStyleSheet("color: #60a5fa;")
+        else:
+            self._view_btn.setStyleSheet("")
 
     def _on_new_qa(self) -> None:
         pass  # 預留給新增 QA 對話框
@@ -283,3 +473,42 @@ class KMSView(QWidget):
         qa = self._pending[row]
         self._kms.delete_qa(qa.qa_id)
         self._refresh_pending()
+
+    def _on_view_full(self) -> None:
+        rows = self._table.selectionModel().selectedRows()
+        if not rows or not self._results:
+            return
+        qa = self._results[rows[0].row()]
+        dlg = KMSImageViewDialog(qa, self._db_dir, parent=self)
+        dlg.exec()
+
+    def _on_export_single(self) -> None:
+        rows = self._table.selectionModel().selectedRows()
+        if not rows or not self._results:
+            return
+        qa = self._results[rows[0].row()]
+        self._do_export([qa])
+
+    def _on_export_selected(self) -> None:
+        rows = self._table.selectionModel().selectedRows()
+        if not rows:
+            return
+        qa_list = [self._results[r.row()] for r in rows if r.row() < len(self._results)]
+        self._do_export(qa_list)
+
+    def _on_export_all(self) -> None:
+        self._do_export(self._results if self._results else [])
+
+    def _do_export(self, qa_list: list) -> None:
+        if not self._kms:
+            return
+        today = date.today().strftime("%Y%m%d")
+        default_name = f"KMS匯出_{today}.docx"
+        path, _ = QFileDialog.getSaveFileName(self, "另存 Word 文件", default_name, "Word 文件 (*.docx)")
+        if not path:
+            return
+        try:
+            self._kms.export_to_docx(Path(path), db_dir=self._db_dir or Path("."), qa_list=qa_list)
+            QMessageBox.information(self, "匯出完成", f"已儲存至：\n{path}")
+        except Exception as e:
+            QMessageBox.critical(self, "匯出失敗", str(e))
