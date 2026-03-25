@@ -129,7 +129,7 @@ SQLite
 ### 主表（7 張）
 | 表名 | 用途 |
 |------|------|
-| cs_cases | 客服案件 |
+| cs_cases | 客服案件（含 `reply_time TEXT`：從 progress 解析的回覆時間，供統計報表使用） |
 | qa_knowledge | QA 知識庫（含 status 欄位：待審核 / 已完成） |
 | mantis_tickets | Mantis 工單 |
 | companies | 公司（正規化） |

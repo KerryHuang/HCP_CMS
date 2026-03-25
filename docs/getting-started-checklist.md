@@ -361,7 +361,11 @@ engine = ReportEngine(db.connection)
 output_dir = Path("D:/CMS/test_reports")
 output_dir.mkdir(exist_ok=True)
 
-tracking_path = engine.generate_tracking_table(2026, 3, output_dir / "追蹤表_202603.xlsx")
+tracking_path = engine.generate_tracking_table(
+    start_date="2026/03/01",
+    end_date="2026/03/31",
+    output_path=output_dir / "追蹤表_202603.xlsx",
+)
 print(f"✅ 追蹤表: {tracking_path}")
 ```
 - [ ] 檔案產生在 D:\CMS\test_reports\追蹤表_202603.xlsx
@@ -370,18 +374,23 @@ print(f"✅ 追蹤表: {tracking_path}")
   - [ ] 「問題追蹤總表」有 5 筆案件
   - [ ] 「QA知識庫」有 QA 記錄
   - [ ] 有客戶獨立頁籤（如「日月光_問題」）
+  - [ ] 有「Mantis提單追蹤」頁籤
   - [ ] 標題列為深藍色白字
 
 ### E2. 產生月報
 ```python
-report_path = engine.generate_monthly_report(2026, 3, output_dir / "月報_202603.xlsx")
+report_path = engine.generate_monthly_report(
+    start_date="2026/03/01",
+    end_date="2026/03/31",
+    output_path=output_dir / "月報_202603.xlsx",
+)
 print(f"✅ 月報: {report_path}")
 ```
 - [ ] 檔案產生成功
 - [ ] 用 Excel 開啟，檢查：
   - [ ] 「月報摘要」有 KPI 數據（案件總數=5）
   - [ ] 「案件明細」有 5 筆
-  - [ ] 「未結案清單」有未完成的案件
+  - [ ] 「客戶分析」有各客戶統計數據
 
 ---
 
