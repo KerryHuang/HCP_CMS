@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS cs_cases (
     impact_period TEXT,
     progress TEXT,
     actual_reply TEXT,
+    reply_time TEXT,
     notes TEXT,
     rd_assignee TEXT,
     handler TEXT,
@@ -170,6 +171,7 @@ class DatabaseManager:
         assert self._conn is not None
         pending: list[str] = [
             "ALTER TABLE qa_knowledge ADD COLUMN status TEXT DEFAULT '已完成'",
+            "ALTER TABLE cs_cases ADD COLUMN reply_time TEXT",
         ]
         for sql in pending:
             try:

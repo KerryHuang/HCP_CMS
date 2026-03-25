@@ -105,13 +105,13 @@ class CaseRepository:
             INSERT INTO cs_cases (
                 case_id, contact_method, status, priority, replied, sent_time,
                 company_id, contact_person, subject, system_product, issue_type,
-                error_type, impact_period, progress, actual_reply, notes,
+                error_type, impact_period, progress, actual_reply, reply_time, notes,
                 rd_assignee, handler, reply_count, linked_case_id, source,
                 created_at, updated_at
             ) VALUES (
                 :case_id, :contact_method, :status, :priority, :replied, :sent_time,
                 :company_id, :contact_person, :subject, :system_product, :issue_type,
-                :error_type, :impact_period, :progress, :actual_reply, :notes,
+                :error_type, :impact_period, :progress, :actual_reply, :reply_time, :notes,
                 :rd_assignee, :handler, :reply_count, :linked_case_id, :source,
                 :created_at, :updated_at
             )
@@ -132,6 +132,7 @@ class CaseRepository:
                 "impact_period": case.impact_period,
                 "progress": case.progress,
                 "actual_reply": case.actual_reply,
+                "reply_time": case.reply_time,
                 "notes": case.notes,
                 "rd_assignee": case.rd_assignee,
                 "handler": case.handler,
@@ -210,6 +211,7 @@ class CaseRepository:
                 impact_period = :impact_period,
                 progress = :progress,
                 actual_reply = :actual_reply,
+                reply_time = :reply_time,
                 notes = :notes,
                 rd_assignee = :rd_assignee,
                 handler = :handler,
@@ -235,6 +237,7 @@ class CaseRepository:
                 "impact_period": case.impact_period,
                 "progress": case.progress,
                 "actual_reply": case.actual_reply,
+                "reply_time": case.reply_time,
                 "notes": case.notes,
                 "rd_assignee": case.rd_assignee,
                 "handler": case.handler,

@@ -27,6 +27,7 @@ class Case:
     impact_period: str | None = None
     progress: str | None = None
     actual_reply: str | None = None
+    reply_time: str | None = None
     notes: str | None = None
     rd_assignee: str | None = None
     handler: str | None = None
