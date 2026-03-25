@@ -513,7 +513,7 @@ class TestMSGReaderSplitThread:
         ta, tq = MSGReader._split_thread(body)
         assert tq is None
 
-    def test_多層巢狀只取最外層客戶(self):
+    def test_多層巢狀取最後一個非我方客戶(self):
         body = (
             "最新回覆\n\n"
             "From: customer@abc.com\n"
@@ -524,4 +524,4 @@ class TestMSGReaderSplitThread:
             "更早的問題"
         )
         ta, tq = MSGReader._split_thread(body)
-        assert tq is not None and "第一次問題" in tq
+        assert tq is not None and "更早的問題" in tq

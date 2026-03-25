@@ -23,6 +23,52 @@ _HEADER_LINE_RE = re.compile(
 )
 
 
+def _strip_leading_headers(text: str) -> str:
+    """移除 text 開頭連續符合 header pattern 的行，遇到非 header 行即停止。"""
+    lines = text.split("\n")
+    i = 0
+    while i < len(lines) and _HEADER_LINE_RE.match(lines[i]):
+        i += 1
+    return "\n".join(lines[i:])
+
+
+_GREETING_RE = re.compile(
+    r"^(您好[\s，,、！!]*|Hi[\s,，]+|Hello[\s,，]+|Dear\s+.{1,20}[,，]\s*|親愛的.{1,10}[：:，,]\s*)\n?",
+    re.IGNORECASE | re.MULTILINE,
+)
+_SIGNATURE_KEYWORDS = frozenset({
+    "此致", "敬上", "謝謝", "感謝",
+    "best regards", "regards", "thanks", "sincerely",
+})
+_SEPARATOR_RE = re.compile(r"^(-{3,}|_{3,})$")
+_BRACKET_CO_RE = re.compile(r"^\[.{1,20}\]$")
+
+
+def _clean_qa_text(text: str) -> str:
+    """去除 QA 文字的招呼語、簽名檔，壓縮多餘空行。"""
+    if not text:
+        return ""
+    # 1. 去招呼語
+    text = _GREETING_RE.sub("", text, count=1).lstrip()
+    # 2. 截斷簽名
+    lines = text.split("\n")
+    clean_lines: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        if (
+            stripped.lower() in _SIGNATURE_KEYWORDS
+            or _SEPARATOR_RE.match(stripped)
+            or _BRACKET_CO_RE.match(stripped)
+        ):
+            break
+        clean_lines.append(line)
+    text = "\n".join(clean_lines)
+    # 3. 壓縮連續空行（> 2 個空行 → 2 個）
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    # 4. strip
+    return text.strip()
+
+
 class MSGReader(MailProvider):
     """Reads .msg files from a directory. Not a server connection."""
 
@@ -88,18 +134,20 @@ class MSGReader(MailProvider):
     @staticmethod
     def _split_thread(body: str, own_domain: str = "@ares.com.tw") -> tuple[str | None, str | None]:
         """回傳 (thread_answer, thread_question)。
-        找到第一個非我方 From 行：上方為 answer，下方清除 header 行後為 question。
+        取最後一個非我方 From 行：上方為 answer，下方清除 leading header 行後為 question。
         strip 後為空字串一律轉 None。own_domain 比對大小寫不敏感。
         """
         own = own_domain.lower()
+        last_match = None
         for match in _THREAD_FROM_RE.finditer(body):
             addr = match.group(1).lower()
             if own not in addr:
-                split_pos = match.start()
-                answer = body[:split_pos].strip() or None
-                question_raw = body[split_pos:]
-                question = _HEADER_LINE_RE.sub("", question_raw).strip() or None
-                return answer, question
+                last_match = match
+        if last_match:
+            split_pos = last_match.start()
+            answer = body[:split_pos].strip() or None
+            question = _strip_leading_headers(body[split_pos:]).strip() or None
+            return answer, question
         return None, None
 
     @staticmethod
@@ -164,6 +212,8 @@ class MSGReader(MailProvider):
 
         # ── 對話串切割（客戶問題段 / 我方回覆段）────────────────────
         thread_answer, thread_question = MSGReader._split_thread(body_text)
+        thread_answer = _clean_qa_text(thread_answer) if thread_answer else None
+        thread_question = _clean_qa_text(thread_question) if thread_question else None
 
         # ── 草稿寄件人補修（msg.sender 空白時從 body 搜尋 From: 行）───
         sender = MSGReader._safe_str(msg, "sender")
@@ -192,7 +242,7 @@ class MSGReader(MailProvider):
             body=body_text,
             date=date,
             attachments=attachments,
-            source_file=file_path.name,
+            source_file=str(file_path),
             to_recipients=to_recipients,
             html_body=html_body,
             thread_question=thread_question,
