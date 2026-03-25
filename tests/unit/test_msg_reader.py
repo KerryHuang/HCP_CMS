@@ -1,5 +1,6 @@
 """Tests for MSGReader helper functions."""
 import pytest
+from unittest.mock import MagicMock, patch
 from hcp_cms.services.mail.msg_reader import (
     _clean_qa_text,
     _strip_leading_headers,
@@ -157,3 +158,80 @@ class TestExtractImages:
         # 模擬：若 msg_path 不存在，直接回傳 []（冪等驗證的前提是目的地已有檔案）
         result = MSGReader.extract_images(tmp_path / "fake.msg", dest)
         assert existing.read_bytes() == b"original"  # 未被覆蓋
+
+    def test_corrupt_msg_returns_empty(self, tmp_path):
+        """損壞的 .msg 檔案（開啟失敗）回傳 []。"""
+        bad_msg = tmp_path / "bad.msg"
+        bad_msg.write_bytes(b"not a real msg")
+        # extract_msg.Message 會拋出例外，extract_images 應吞掉並回傳 []
+        result = MSGReader.extract_images(bad_msg, tmp_path / "out")
+        assert result == []
+
+    def test_extracts_image_attachment_by_extension(self, tmp_path):
+        """有圖片副檔名的附件會被提取。"""
+        msg_path = tmp_path / "test.msg"
+        msg_path.write_bytes(b"placeholder")
+        dest = tmp_path / "out"
+
+        mock_att = MagicMock()
+        mock_att.longFilename = "photo.png"
+        mock_att.shortFilename = "photo.png"
+        mock_att.contentId = ""
+        mock_att.data = b"\x89PNG fake image data"
+
+        mock_msg = MagicMock()
+        mock_msg.htmlBody = None
+        mock_msg.attachments = [mock_att]
+
+        with patch("extract_msg.Message", return_value=mock_msg):
+            result = MSGReader.extract_images(msg_path, dest)
+
+        assert len(result) == 1
+        assert result[0].name == "photo.png"
+        assert (dest / "photo.png").read_bytes() == b"\x89PNG fake image data"
+
+    def test_skips_non_image_attachment(self, tmp_path):
+        """非圖片附件不提取。"""
+        msg_path = tmp_path / "test.msg"
+        msg_path.write_bytes(b"placeholder")
+        dest = tmp_path / "out"
+
+        mock_att = MagicMock()
+        mock_att.longFilename = "document.pdf"
+        mock_att.shortFilename = "document.pdf"
+        mock_att.contentId = ""
+        mock_att.data = b"PDF content"
+
+        mock_msg = MagicMock()
+        mock_msg.htmlBody = None
+        mock_msg.attachments = [mock_att]
+
+        with patch("extract_msg.Message", return_value=mock_msg):
+            result = MSGReader.extract_images(msg_path, dest)
+
+        assert result == []
+
+    def test_idempotent_existing_file_not_overwritten(self, tmp_path):
+        """目標目錄已有同名檔案時跳過，原始內容不被覆蓋。"""
+        msg_path = tmp_path / "test.msg"
+        msg_path.write_bytes(b"placeholder")
+        dest = tmp_path / "out"
+        dest.mkdir()
+        existing = dest / "photo.png"
+        existing.write_bytes(b"original content")
+
+        mock_att = MagicMock()
+        mock_att.longFilename = "photo.png"
+        mock_att.shortFilename = "photo.png"
+        mock_att.contentId = ""
+        mock_att.data = b"new content"
+
+        mock_msg = MagicMock()
+        mock_msg.htmlBody = None
+        mock_msg.attachments = [mock_att]
+
+        with patch("extract_msg.Message", return_value=mock_msg):
+            result = MSGReader.extract_images(msg_path, dest)
+
+        assert existing.read_bytes() == b"original content"  # 未被覆蓋
+        assert len(result) == 1  # 仍加入 saved 列表

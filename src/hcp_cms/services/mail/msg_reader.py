@@ -43,6 +43,7 @@ _SIGNATURE_KEYWORDS = frozenset({
 _SEPARATOR_RE = re.compile(r"^(-{3,}|_{3,})$")
 _BRACKET_CO_RE = re.compile(r"^\[.{1,20}\]$")
 _BLANK_LINES_RE = re.compile(r"\n{3,}")
+_IMAGE_EXTS = frozenset({".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"})
 
 
 def _clean_qa_text(text: str) -> str:
@@ -153,7 +154,6 @@ class MSGReader(MailProvider):
         except Exception:
             pass
 
-        _IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"}
         saved: list[Path] = []
         dest_dir.mkdir(parents=True, exist_ok=True)
 
