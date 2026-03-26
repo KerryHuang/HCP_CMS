@@ -238,6 +238,7 @@ class CsvImportEngine:
                VALUES (?, ?, ?, ?)""",
             (company_name, company_name, company_name, now),
         )
+        self._conn.commit()
 
     def execute(
         self,
