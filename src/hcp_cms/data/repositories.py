@@ -167,6 +167,10 @@ class CaseRepository:
             next_num = int(suffix) + 1
         return f"{prefix}{next_num:03d}"
 
+    def list_all(self) -> list[Case]:
+        rows = self._conn.execute("SELECT * FROM cs_cases ORDER BY sent_time DESC").fetchall()
+        return [Case(**dict(row)) for row in rows]
+
     def list_by_status(self, status: str) -> list[Case]:
         rows = self._conn.execute("SELECT * FROM cs_cases WHERE status = ?", (status,)).fetchall()
         return [Case(**dict(row)) for row in rows]

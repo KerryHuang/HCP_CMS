@@ -131,9 +131,7 @@ class CaseView(QWidget):
             repo = CaseRepository(self._conn)
             status_filter = self._filter_combo.currentText()
             if status_filter == "全部":
-                cases = []
-                for s in ["處理中", "已回覆", "已完成", "Closed"]:
-                    cases.extend(repo.list_by_status(s))
+                cases = repo.list_all()
             else:
                 cases = repo.list_by_status(status_filter)
 
