@@ -13,6 +13,7 @@ from hcp_cms.data.repositories import (
     CaseRepository,
     MantisRepository,
 )
+from hcp_cms.services.mantis.base import MantisClient
 
 
 class CaseDetailManager:
@@ -98,7 +99,7 @@ class CaseDetailManager:
     def sync_mantis_ticket(
         self,
         ticket_id: str,
-        client: object | None = None,
+        client: MantisClient | None = None,
     ) -> MantisTicket | None:
         """呼叫 MantisClient 同步單一 ticket，更新本地快取。"""
         if client is None:
