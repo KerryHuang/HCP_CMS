@@ -180,14 +180,17 @@ class CaseDetailDialog(QDialog):
         dlg = CaseLogAddDialog(parent=self)
         if dlg.exec():
             data = dlg.get_data()
-            self._manager.add_log(
-                case_id=self._case_id,
-                direction=data["direction"],
-                content=data["content"],
-                mantis_ref=data["mantis_ref"] or None,
-                logged_by=data["logged_by"] or None,
-            )
-            self._refresh_log_table()
+            try:
+                self._manager.add_log(
+                    case_id=self._case_id,
+                    direction=data["direction"],
+                    content=data["content"],
+                    mantis_ref=data["mantis_ref"] or None,
+                    logged_by=data["logged_by"] or None,
+                )
+                self._refresh_log_table()
+            except Exception as e:
+                QMessageBox.critical(self, "新增記錄失敗", str(e))
 
     def _build_tab3(self) -> QWidget:
         # 實作於 Task 6
@@ -327,7 +330,7 @@ class CaseLogAddDialog(QDialog):
     def _on_content_changed(self) -> None:
         self._save_btn.setEnabled(bool(self._content.toPlainText().strip()))
 
-    def get_data(self) -> dict:
+    def get_data(self) -> dict[str, str | None]:
         return {
             "direction": self._direction.currentText(),
             "content": self._content.toPlainText().strip(),
