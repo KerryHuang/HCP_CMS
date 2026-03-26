@@ -1,18 +1,22 @@
 """CSV 匯入精靈 — 3 步驟 QDialog。"""
 from __future__ import annotations
 
+import re as _re
 import sqlite3
 from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal
 from PySide6.QtWidgets import (
     QButtonGroup,
+    QCheckBox,
     QComboBox,
     QDialog,
     QFileDialog,
     QFormLayout,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QMessageBox,
     QProgressBar,
     QPushButton,
@@ -36,6 +40,9 @@ from hcp_cms.core.csv_import_engine import (
     _detect_encoding,
 )
 
+# 用於從 combo 顯示文字（如 "主旨 (subject)"）解析出 col_key
+_COMBO_KEY_RE = _re.compile(r'\(([^)]+)\)$')
+
 
 class CsvImportDialog(QDialog):
     """3 步驟 CSV 匯入精靈。"""
@@ -47,6 +54,7 @@ class CsvImportDialog(QDialog):
         self._headers: list[str] = []
         self._mapping: Mapping = {}
         self._preview: ImportPreview | None = None
+        self._unmatched_checks: dict[str, tuple[QCheckBox, QLineEdit]] = {}
         self.setWindowTitle("📥 CSV 匯入精靈")
         self.setMinimumSize(700, 500)
         self._setup_ui()
@@ -124,6 +132,13 @@ class CsvImportDialog(QDialog):
         layout.addWidget(scroll)
 
         self._combo_map: dict[str, QComboBox] = {}  # csv_col → QComboBox
+
+        # 未對應欄位區塊
+        self._unmatched_group = QGroupBox("尚未對應的 CSV 欄位 — 勾選可自動建立新欄位：")
+        self._unmatched_group.setVisible(False)
+        self._unmatched_layout = QVBoxLayout(self._unmatched_group)
+        layout.addWidget(self._unmatched_group)
+
         return w
 
     def _build_step3(self) -> QWidget:
@@ -202,20 +217,77 @@ class CsvImportDialog(QDialog):
             self._mapping_layout.removeRow(0)
         self._combo_map.clear()
 
+        # 取得可對應欄位（含中文標籤）
+        conn = sqlite3.connect(str(self._db_path))
+        conn.row_factory = sqlite3.Row
+        try:
+            from hcp_cms.core.custom_column_manager import CustomColumnManager
+            mgr = CustomColumnManager(conn)
+            mappable = mgr.get_mappable_columns()  # [(col_key, col_label), ...]
+        finally:
+            conn.close()
+
+        items = ["skip"] + [f"{label} ({key})" for key, label in mappable]
+
         for csv_col in self._headers:
             combo = QComboBox()
-            combo.addItems(MAPPABLE_DB_COLS)
-            # 預設值
-            default = DEFAULT_MAPPING.get(csv_col, "skip")
-            idx = combo.findText(default)
+            combo.addItems(items)
+            # 預設值：依 DEFAULT_MAPPING 找 col_key，再比對文字
+            default_db_col = DEFAULT_MAPPING.get(csv_col, "skip")
+            target_text = next(
+                (f"{label} ({key})" for key, label in mappable if key == default_db_col),
+                "skip",
+            )
+            idx = combo.findText(target_text)
             if idx >= 0:
                 combo.setCurrentIndex(idx)
+            combo.currentIndexChanged.connect(self._refresh_unmatched_section)
             self._combo_map[csv_col] = combo
             self._mapping_layout.addRow(csv_col, combo)
 
+        self._refresh_unmatched_section()
+
+    def _refresh_unmatched_section(self) -> None:
+        """重算未對應 CSV 欄位，更新 unmatched_group。"""
+        # 清除舊內容
+        for i in reversed(range(self._unmatched_layout.count())):
+            item = self._unmatched_layout.itemAt(i)
+            w = item.widget() if item else None
+            if w:
+                w.setParent(None)
+        self._unmatched_checks.clear()
+
+        unmatched = []
+        for csv_col, combo in self._combo_map.items():
+            text = combo.currentText()
+            m = _COMBO_KEY_RE.search(text)
+            db_col = m.group(1) if m else "skip"
+            if db_col == "skip":
+                unmatched.append(csv_col)
+
+        self._unmatched_group.setVisible(bool(unmatched))
+        for csv_col in unmatched:
+            row_widget = QWidget()
+            row_layout = QHBoxLayout(row_widget)
+            row_layout.setContentsMargins(0, 0, 0, 0)
+            chk = QCheckBox(csv_col)
+            chk.setChecked(True)
+            label_input = QLineEdit(csv_col)
+            label_input.setPlaceholderText("中文標籤")
+            row_layout.addWidget(chk)
+            row_layout.addWidget(QLabel("  中文標籤："))
+            row_layout.addWidget(label_input)
+            self._unmatched_layout.addWidget(row_widget)
+            self._unmatched_checks[csv_col] = (chk, label_input)
+
     def _validate_step2(self) -> bool:
         """檢查必填欄位（sent_time, subject, company_id）是否已對應。"""
-        mapped_db_cols = {combo.currentText() for combo in self._combo_map.values()}
+        mapped_db_cols = set()
+        for combo in self._combo_map.values():
+            text = combo.currentText()
+            m = _COMBO_KEY_RE.search(text)
+            if m:
+                mapped_db_cols.add(m.group(1))
         missing = REQUIRED_DB_COLS - mapped_db_cols
         if missing:
             QMessageBox.warning(
@@ -227,10 +299,12 @@ class CsvImportDialog(QDialog):
         return True
 
     def _collect_mapping(self) -> None:
-        self._mapping = {
-            csv_col: combo.currentText()
-            for csv_col, combo in self._combo_map.items()
-        }
+        result = {}
+        for csv_col, combo in self._combo_map.items():
+            text = combo.currentText()
+            m = _COMBO_KEY_RE.search(text)
+            result[csv_col] = m.group(1) if m else "skip"
+        self._mapping = result
 
     # ------------------------------------------------------------------
     # Step 3 邏輯
@@ -316,6 +390,24 @@ class CsvImportDialog(QDialog):
             if not self._validate_step2():
                 return
             self._collect_mapping()
+            # 建立勾選的自訂欄（在 preview 前）
+            requests = [
+                (csv_col, line_edit.text().strip() or csv_col)
+                for csv_col, (chk, line_edit) in self._unmatched_checks.items()
+                if chk.isChecked()
+            ]
+            if requests:
+                conn = sqlite3.connect(str(self._db_path))
+                conn.row_factory = sqlite3.Row
+                try:
+                    engine = CsvImportEngine(conn)
+                    new_cols = engine.create_custom_columns(requests)
+                    # 更新 mapping：csv_col → cx_N
+                    for (csv_col, _), col in zip(requests, new_cols):
+                        if self._mapping.get(csv_col) == "skip":
+                            self._mapping[csv_col] = col.col_key
+                finally:
+                    conn.close()
             self._populate_step3()
             self._stack.setCurrentIndex(2)
             self._step_label.setText("步驟 3 / 3：預覽與執行")
