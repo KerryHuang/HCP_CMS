@@ -127,6 +127,8 @@ class CaseDetailDialog(QDialog):
         pf.addRow("處理進度：", self._f_progress)
         pf.addRow("備註：", self._f_notes)
         pf.addRow("實際回覆：", self._f_actual_reply)
+        self._extra_form = pf
+        self._extra_field_widgets: dict[str, QLineEdit] = {}
         outer.addLayout(pf)
 
         # 按鈕列
@@ -338,6 +340,25 @@ class CaseDetailDialog(QDialog):
         self._f_progress.setPlainText(case.progress or "")
         self._f_notes.setPlainText(case.notes or "")
         self._f_actual_reply.setPlainText(case.actual_reply or "")
+        self._refresh_extra_fields()
+
+    def _refresh_extra_fields(self) -> None:
+        """清除舊自訂欄 widget，依目前 DB 自訂欄重新建立。"""
+        from hcp_cms.core.custom_column_manager import CustomColumnManager
+
+        # 清除舊 widget（從 form layout 底部移除 len(_extra_field_widgets) 列）
+        for _ in range(len(self._extra_field_widgets)):
+            self._extra_form.removeRow(self._extra_form.rowCount() - 1)
+        self._extra_field_widgets.clear()
+
+        if self._case is None:
+            return
+
+        custom_cols = CustomColumnManager(self._conn).list_columns()
+        for col in custom_cols:
+            le = QLineEdit(self._case.extra_fields.get(col.col_key) or "")
+            self._extra_form.addRow(f"{col.col_label}：", le)
+            self._extra_field_widgets[col.col_key] = le
 
     def _collect_case(self) -> Case:
         if self._case is None:
@@ -369,6 +390,10 @@ class CaseDetailDialog(QDialog):
     def _on_save(self) -> None:
         try:
             self._manager.update_case(self._collect_case())
+            # 儲存自訂欄
+            for col_key, le in self._extra_field_widgets.items():
+                val = le.text().strip() or None
+                self._manager.update_extra_field(self._case_id, col_key, val)
             self._load_case()
             self.case_updated.emit()
         except Exception as e:
