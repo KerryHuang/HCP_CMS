@@ -89,6 +89,7 @@ class CaseDetailDialog(QDialog):
         # 右欄
         self._f_status = QComboBox()
         self._f_status.addItems(["處理中", "已回覆", "已完成", "Closed"])
+        self._f_status.setEnabled(False)
         self._f_priority = QComboBox()
         self._f_priority.addItems(["高", "中", "低"])
         self._f_issue_type = QLineEdit()
@@ -152,6 +153,9 @@ class CaseDetailDialog(QDialog):
         add_btn = QPushButton("➕ 新增記錄")
         add_btn.clicked.connect(self._on_add_log)
         toolbar.addWidget(add_btn)
+        delete_btn = QPushButton("🗑 刪除記錄")
+        delete_btn.clicked.connect(self._on_delete_log)
+        toolbar.addWidget(delete_btn)
         toolbar.addStretch()
         layout.addLayout(toolbar)
 
@@ -191,6 +195,21 @@ class CaseDetailDialog(QDialog):
                 self._refresh_log_table()
             except Exception as e:
                 QMessageBox.critical(self, "新增記錄失敗", str(e))
+
+    def _on_delete_log(self) -> None:
+        rows = self._log_table.selectionModel().selectedRows()
+        if not rows:
+            return
+        row_idx = rows[0].row()
+        logs = self._manager.list_logs(self._case_id)
+        if row_idx >= len(logs):
+            return
+        log_id = logs[row_idx].log_id
+        try:
+            self._manager.delete_log(log_id)
+            self._refresh_log_table()
+        except Exception as e:
+            QMessageBox.critical(self, "刪除記錄失敗", str(e))
 
     def _build_tab3(self) -> QWidget:
         w = QWidget()
