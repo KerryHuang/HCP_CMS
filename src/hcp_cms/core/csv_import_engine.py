@@ -1,10 +1,13 @@
 """CsvImportEngine — CSV 歷史客服記錄批次匯入。"""
 from __future__ import annotations
 
+import csv
 import re
+import sqlite3
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
+from pathlib import Path
 
 
 # ---------------------------------------------------------------------------
@@ -122,9 +125,40 @@ def _parse_sent_time(value: str | None) -> str | None:
 
 
 # ---------------------------------------------------------------------------
-# 主引擎（後續 Task 實作）
+# 編碼偵測
+# ---------------------------------------------------------------------------
+
+
+def _detect_encoding(path: Path) -> str:
+    """依序嘗試 UTF-8-BOM、UTF-8、Big5，回傳可用編碼，失敗拋 ValueError。"""
+    for enc in ("utf-8-sig", "utf-8", "big5"):
+        try:
+            path.read_text(encoding=enc)
+            return enc
+        except (UnicodeDecodeError, UnicodeError):
+            continue
+    raise ValueError(f"無法識別編碼：{path.name}")
+
+
+# ---------------------------------------------------------------------------
+# 主引擎
 # ---------------------------------------------------------------------------
 
 
 class CsvImportEngine:
     """CSV 歷史客服記錄批次匯入引擎。"""
+
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        from hcp_cms.data.repositories import CaseRepository, CompanyRepository
+
+        self._conn = conn
+        self._case_repo = CaseRepository(conn)
+        self._company_repo = CompanyRepository(conn)
+
+    def parse_headers(self, path: Path) -> list[str]:
+        """偵測編碼並回傳 CSV 標頭清單。"""
+        enc = _detect_encoding(path)
+        with path.open(encoding=enc, newline="") as f:
+            reader = csv.reader(f)
+            headers = next(reader, [])
+        return headers
