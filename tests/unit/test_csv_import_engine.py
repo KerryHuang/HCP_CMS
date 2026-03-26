@@ -297,3 +297,61 @@ class TestExecuteSkip:
         result = engine.execute(csv_file, mapping, ConflictStrategy.SKIP)
         assert result.failed == 1
         assert "subject 為空" in result.errors[0]
+
+
+class TestExecuteOverwrite:
+    def _write_csv(self, tmp_path: Path, subject: str, tech2: str = "") -> Path:
+        csv_file = tmp_path / "cases.csv"
+        content = (
+            "問題狀態,寄件時間,公司,聯絡人,主旨,技術協助人員2\n"
+            f"待確認,2026/03/01 09:00,達爾,王小明,{subject},{tech2}"
+        )
+        csv_file.write_text(content, encoding="utf-8")
+        return csv_file
+
+    @pytest.fixture
+    def mapping(self):
+        return {
+            "問題狀態": "status", "寄件時間": "sent_time",
+            "公司": "company_id", "聯絡人": "contact_person",
+            "主旨": "subject", "技術協助人員2": "notes",
+        }
+
+    def test_overwrites_subject(self, db: DatabaseManager, tmp_path: Path, mapping):
+        db.connection.execute(
+            "INSERT INTO cs_cases (case_id, subject, status, created_at) VALUES (?, ?, ?, ?)",
+            ("CS-202603-001", "舊主旨", "已完成", "2025/01/01 00:00:00")
+        )
+        db.connection.commit()
+        csv_file = self._write_csv(tmp_path, "新主旨")
+        engine = CsvImportEngine(db.connection)
+        result = engine.execute(csv_file, mapping, ConflictStrategy.OVERWRITE)
+        assert result.overwritten == 1
+        case = db.connection.execute(
+            "SELECT subject, created_at FROM cs_cases WHERE case_id = 'CS-202603-001'"
+        ).fetchone()
+        assert case["subject"] == "新主旨"
+        assert case["created_at"] == "2025/01/01 00:00:00"  # created_at 保留
+
+    def test_overwrite_tech2_replaces_old(self, db: DatabaseManager, tmp_path: Path):
+        db.connection.execute(
+            "INSERT INTO cs_cases (case_id, subject, status, notes) VALUES (?, ?, ?, ?)",
+            ("CS-202603-001", "主旨", "待確認", "原備註\n【技術協助2】舊技術員")
+        )
+        db.connection.commit()
+        csv_file = tmp_path / "c.csv"
+        csv_file.write_text(
+            "問題狀態,寄件時間,公司,聯絡人,主旨,技術協助人員2\n"
+            "待確認,2026/03/01 09:00,達爾,王小明,主旨,新技術員",
+            encoding="utf-8"
+        )
+        mapping = {
+            "問題狀態": "status", "寄件時間": "sent_time",
+            "公司": "company_id", "聯絡人": "contact_person",
+            "主旨": "subject", "技術協助人員2": "notes",
+        }
+        engine = CsvImportEngine(db.connection)
+        engine.execute(csv_file, mapping, ConflictStrategy.OVERWRITE)
+        case = db.connection.execute("SELECT notes FROM cs_cases").fetchone()
+        assert "新技術員" in (case["notes"] or "")
+        assert "舊技術員" not in (case["notes"] or "")
