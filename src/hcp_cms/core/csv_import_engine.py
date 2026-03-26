@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from datetime import datetime
 from enum import Enum
 
 
@@ -95,8 +96,6 @@ def _parse_sent_time(value: str | None) -> str | None:
 
     # 移除星期部分後嘗試其他格式
     s = _WEEKDAY_RE.sub(" ", s).strip()
-
-    from datetime import datetime
 
     # YYYY/MM/DD HH:MM:SS
     try:
