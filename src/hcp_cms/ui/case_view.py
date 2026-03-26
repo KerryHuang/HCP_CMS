@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
@@ -27,9 +28,14 @@ from hcp_cms.data.repositories import CaseRepository, CompanyRepository
 class CaseView(QWidget):
     """Case management page."""
 
-    def __init__(self, conn: sqlite3.Connection | None = None) -> None:
+    def __init__(
+        self,
+        conn: sqlite3.Connection | None = None,
+        db_path: Path | None = None,
+    ) -> None:
         super().__init__()
         self._conn = conn
+        self._db_path = db_path
         self._setup_ui()
 
     def _setup_ui(self) -> None:
@@ -58,6 +64,10 @@ class CaseView(QWidget):
         new_btn = QPushButton("➕ 手動建案")
         new_btn.clicked.connect(self._on_new_case)
         header.addWidget(new_btn)
+
+        import_btn = QPushButton("📥 匯入 CSV")
+        import_btn.clicked.connect(self._on_import_csv)
+        header.addWidget(import_btn)
 
         layout.addLayout(header)
 
@@ -173,6 +183,14 @@ class CaseView(QWidget):
 
     def _on_new_case(self) -> None:
         pass  # Will be implemented with dialog
+
+    def _on_import_csv(self) -> None:
+        if not self._db_path:
+            return
+        from hcp_cms.ui.csv_import_dialog import CsvImportDialog
+        dialog = CsvImportDialog(self._db_path, parent=self)
+        dialog.exec()
+        self.refresh()
 
     def _on_mark_replied(self) -> None:
         if not self._conn or not self._detail_id.text():

@@ -104,7 +104,7 @@ class MainWindow(QMainWindow):
 
         self._views: dict[str, QWidget] = {
             "dashboard": DashboardView(self._conn),
-            "cases": CaseView(self._conn),
+            "cases": CaseView(self._conn, db_path=self._db_dir / "cs_tracker.db" if self._db_dir else None),
             "kms": KMSView(self._conn, kms=kms, db_dir=self._db_dir),
             "email": EmailView(self._conn, kms=kms),
             "mantis": MantisView(self._conn),
