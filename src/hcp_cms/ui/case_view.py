@@ -83,6 +83,7 @@ class CaseView(QWidget):
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self._table.itemSelectionChanged.connect(self._on_selection_changed)
+        self._table.itemDoubleClicked.connect(self._on_row_double_clicked)
         splitter.addWidget(self._table)
 
         # Detail panel
@@ -201,3 +202,15 @@ class CaseView(QWidget):
             return
         CaseManager(self._conn).close_case(self._detail_id.text())
         self.refresh()
+
+    def _on_row_double_clicked(self, item) -> None:
+        if not self._conn or not hasattr(self, '_cases'):
+            return
+        row = item.row()
+        if row < 0 or row >= len(self._cases):
+            return
+        case_id = self._cases[row].case_id
+        from hcp_cms.ui.case_detail_dialog import CaseDetailDialog
+        dlg = CaseDetailDialog(self._conn, case_id, parent=self)
+        dlg.case_updated.connect(self.refresh)
+        dlg.exec()
