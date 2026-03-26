@@ -30,7 +30,6 @@ from PySide6.QtWidgets import (
 
 from hcp_cms.core.csv_import_engine import (
     DEFAULT_MAPPING,
-    MAPPABLE_DB_COLS,
     REQUIRED_DB_COLS,
     ConflictStrategy,
     CsvImportEngine,

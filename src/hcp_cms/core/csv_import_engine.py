@@ -150,8 +150,8 @@ class CsvImportEngine:
     """CSV 歷史客服記錄批次匯入引擎。"""
 
     def __init__(self, conn: sqlite3.Connection) -> None:
-        from hcp_cms.data.repositories import CaseRepository, CompanyRepository
         from hcp_cms.core.custom_column_manager import CustomColumnManager
+        from hcp_cms.data.repositories import CaseRepository, CompanyRepository
 
         self._conn = conn
         self._case_repo = CaseRepository(conn)
