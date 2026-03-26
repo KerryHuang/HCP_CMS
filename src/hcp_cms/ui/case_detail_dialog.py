@@ -273,7 +273,12 @@ class CaseDetailDialog(QDialog):
             url = creds.retrieve("mantis_url") or ""
             user = creds.retrieve("mantis_user") or ""
             pwd = creds.retrieve("mantis_password") or ""
-            client = MantisSoapClient(url, user, pwd) if url else None
+            if url:
+                client = MantisSoapClient(url, user, pwd)
+                if not client.connect():
+                    client = None
+            else:
+                client = None
         except Exception:
             client = None
 
@@ -370,8 +375,7 @@ class CaseDetailDialog(QDialog):
         if index == 1:
             self._refresh_log_table()
         elif index == 2:
-            if hasattr(self, "_mantis_table"):
-                self._refresh_mantis_table()
+            self._refresh_mantis_table()
 
 
 class CaseLogAddDialog(QDialog):
