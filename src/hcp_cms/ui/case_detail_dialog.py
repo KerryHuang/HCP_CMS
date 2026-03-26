@@ -193,8 +193,95 @@ class CaseDetailDialog(QDialog):
                 QMessageBox.critical(self, "新增記錄失敗", str(e))
 
     def _build_tab3(self) -> QWidget:
-        # 實作於 Task 6
-        return QWidget()
+        w = QWidget()
+        layout = QVBoxLayout(w)
+
+        # 工具列
+        toolbar = QHBoxLayout()
+        self._ticket_input = QLineEdit()
+        self._ticket_input.setPlaceholderText("輸入 Ticket 編號")
+        self._ticket_input.setFixedWidth(150)
+        link_btn = QPushButton("🔗 連結")
+        link_btn.clicked.connect(self._on_link_mantis)
+        sync_btn = QPushButton("🔄 同步選取")
+        sync_btn.clicked.connect(self._on_sync_mantis)
+        unlink_btn = QPushButton("🗑 取消連結")
+        unlink_btn.clicked.connect(self._on_unlink_mantis)
+        toolbar.addWidget(self._ticket_input)
+        toolbar.addWidget(link_btn)
+        toolbar.addWidget(sync_btn)
+        toolbar.addWidget(unlink_btn)
+        toolbar.addStretch()
+        layout.addLayout(toolbar)
+
+        self._mantis_table = QTableWidget(0, 7)
+        self._mantis_table.setHorizontalHeaderLabels(
+            ["票號", "摘要", "狀態", "優先", "處理人", "預計修復", "最後同步"]
+        )
+        self._mantis_table.horizontalHeader().setStretchLastSection(True)
+        self._mantis_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self._mantis_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        layout.addWidget(self._mantis_table)
+
+        return w
+
+    def _refresh_mantis_table(self) -> None:
+        tickets = self._manager.list_linked_tickets(self._case_id)
+        self._mantis_table.setRowCount(len(tickets))
+        for i, t in enumerate(tickets):
+            self._mantis_table.setItem(i, 0, QTableWidgetItem(t.ticket_id))
+            self._mantis_table.setItem(i, 1, QTableWidgetItem(t.summary or ""))
+            self._mantis_table.setItem(i, 2, QTableWidgetItem(t.status or ""))
+            self._mantis_table.setItem(i, 3, QTableWidgetItem(t.priority or ""))
+            self._mantis_table.setItem(i, 4, QTableWidgetItem(t.handler or ""))
+            self._mantis_table.setItem(i, 5, QTableWidgetItem(t.planned_fix or ""))
+            self._mantis_table.setItem(i, 6, QTableWidgetItem(t.synced_at or ""))
+
+    def _on_link_mantis(self) -> None:
+        ticket_id = self._ticket_input.text().strip()
+        if not ticket_id:
+            return
+        ok = self._manager.link_mantis(self._case_id, ticket_id)
+        if ok:
+            self._ticket_input.clear()
+            self._refresh_mantis_table()
+        else:
+            QMessageBox.warning(
+                self, "找不到 Ticket",
+                f"Ticket {ticket_id} 不在本地資料庫。\n請先使用『同步選取』或前往 Mantis 同步頁面同步後再連結。"
+            )
+
+    def _on_unlink_mantis(self) -> None:
+        rows = self._mantis_table.selectionModel().selectedRows()
+        if not rows:
+            return
+        ticket_id = self._mantis_table.item(rows[0].row(), 0).text()
+        self._manager.unlink_mantis(self._case_id, ticket_id)
+        self._refresh_mantis_table()
+
+    def _on_sync_mantis(self) -> None:
+        rows = self._mantis_table.selectionModel().selectedRows()
+        if not rows:
+            QMessageBox.information(self, "提示", "請先選取要同步的 Ticket。")
+            return
+        ticket_id = self._mantis_table.item(rows[0].row(), 0).text()
+        # 嘗試從 MantisView 取得 client（無 client 時提示）
+        try:
+            from hcp_cms.services.credential import CredentialManager
+            from hcp_cms.services.mantis.soap import MantisSoapClient
+            creds = CredentialManager()
+            url = creds.retrieve("mantis_url") or ""
+            user = creds.retrieve("mantis_user") or ""
+            pwd = creds.retrieve("mantis_password") or ""
+            client = MantisSoapClient(url, user, pwd) if url else None
+        except Exception:
+            client = None
+
+        result = self._manager.sync_mantis_ticket(ticket_id, client=client)
+        if result is None:
+            QMessageBox.warning(self, "同步失敗", "無法連線至 Mantis，或 Mantis 設定未完成。")
+        else:
+            self._refresh_mantis_table()
 
     # ------------------------------------------------------------------
     # 資料載入
