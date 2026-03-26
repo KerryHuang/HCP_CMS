@@ -126,6 +126,16 @@ CREATE VIRTUAL TABLE IF NOT EXISTS qa_fts USING fts5(
     keywords
 );
 
+CREATE TABLE IF NOT EXISTS case_logs (
+    log_id     TEXT PRIMARY KEY,
+    case_id    TEXT NOT NULL REFERENCES cs_cases(case_id),
+    direction  TEXT NOT NULL,
+    content    TEXT NOT NULL,
+    mantis_ref TEXT,
+    logged_by  TEXT,
+    logged_at  TEXT NOT NULL
+);
+
 CREATE VIRTUAL TABLE IF NOT EXISTS cases_fts USING fts5(
     case_id UNINDEXED,
     subject,
