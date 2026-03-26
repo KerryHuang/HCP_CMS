@@ -100,6 +100,37 @@ class CompanyRepository:
 class CaseRepository:
     def __init__(self, conn: sqlite3.Connection) -> None:
         self._conn = conn
+        self._custom_col_repo = CustomColumnRepository(conn)
+        self._custom_cols = self._custom_col_repo.list_all()
+
+    def _build_select(self) -> str:
+        static = (
+            "case_id, company_id, subject, status, priority, replied, sent_time, "
+            "contact_person, contact_method, system_product, issue_type, error_type, "
+            "impact_period, progress, handler, actual_reply, reply_time, notes, "
+            "rd_assignee, reply_count, linked_case_id, source, created_at, updated_at"
+        )
+        if not self._custom_cols:
+            return f"SELECT {static} FROM cs_cases"
+        cx_cols = ", ".join(col.col_key for col in self._custom_cols)
+        return f"SELECT {static}, {cx_cols} FROM cs_cases"
+
+    def _row_to_case(self, row: sqlite3.Row) -> Case:
+        d = dict(row)
+        extra = {col.col_key: d.pop(col.col_key, None) for col in self._custom_cols}
+        return Case(**d, extra_fields=extra)
+
+    def reload_custom_columns(self) -> None:
+        self._custom_cols = self._custom_col_repo.list_all()
+
+    def update_extra_field(self, case_id: str, col_key: str, value: str | None) -> None:
+        if not _COL_KEY_RE.match(col_key):
+            raise ValueError(f"非法 col_key：{col_key!r}")
+        self._conn.execute(
+            f"UPDATE cs_cases SET {col_key} = :v WHERE case_id = :id",
+            {"v": value, "id": case_id},
+        )
+        self._conn.commit()
 
     def insert(self, case: Case) -> None:
         now = _now()
@@ -151,10 +182,11 @@ class CaseRepository:
         self._conn.commit()
 
     def get_by_id(self, case_id: str) -> Case | None:
-        row = self._conn.execute("SELECT * FROM cs_cases WHERE case_id = ?", (case_id,)).fetchone()
+        sql = self._build_select() + " WHERE case_id = ?"
+        row = self._conn.execute(sql, (case_id,)).fetchone()
         if row is None:
             return None
-        return Case(**dict(row))
+        return self._row_to_case(row)
 
     def next_case_id(self) -> str:
         year = datetime.now().strftime("%Y")
@@ -173,26 +205,26 @@ class CaseRepository:
         return f"{prefix}{next_num:03d}"
 
     def list_all(self) -> list[Case]:
-        rows = self._conn.execute("SELECT * FROM cs_cases ORDER BY sent_time DESC").fetchall()
-        return [Case(**dict(row)) for row in rows]
+        rows = self._conn.execute(self._build_select() + " ORDER BY sent_time DESC").fetchall()
+        return [self._row_to_case(r) for r in rows]
 
     def list_by_status(self, status: str) -> list[Case]:
-        rows = self._conn.execute("SELECT * FROM cs_cases WHERE status = ?", (status,)).fetchall()
-        return [Case(**dict(row)) for row in rows]
+        rows = self._conn.execute(self._build_select() + " WHERE status = ?", (status,)).fetchall()
+        return [self._row_to_case(r) for r in rows]
 
     def list_by_month(self, year: int, month: int) -> list[Case]:
         prefix = f"{year}/{month:02d}%"
-        rows = self._conn.execute("SELECT * FROM cs_cases WHERE sent_time LIKE ?", (prefix,)).fetchall()
-        return [Case(**dict(row)) for row in rows]
+        rows = self._conn.execute(self._build_select() + " WHERE sent_time LIKE ?", (prefix,)).fetchall()
+        return [self._row_to_case(r) for r in rows]
 
     def list_by_date_range(self, start: str, end: str) -> list[Case]:
         """查詢 sent_time 在 [start, end] 區間的案件（格式 YYYY/MM/DD）。"""
         end_inclusive = end + " 23:59:59"
         rows = self._conn.execute(
-            "SELECT * FROM cs_cases WHERE sent_time >= ? AND sent_time <= ?",
+            self._build_select() + " WHERE sent_time >= ? AND sent_time <= ?",
             (start, end_inclusive),
         ).fetchall()
-        return [Case(**dict(row)) for row in rows]
+        return [self._row_to_case(r) for r in rows]
 
     def update_status(self, case_id: str, status: str) -> None:
         self._conn.execute(
