@@ -151,10 +151,23 @@ class CsvImportEngine:
 
     def __init__(self, conn: sqlite3.Connection) -> None:
         from hcp_cms.data.repositories import CaseRepository, CompanyRepository
+        from hcp_cms.core.custom_column_manager import CustomColumnManager
 
         self._conn = conn
         self._case_repo = CaseRepository(conn)
         self._company_repo = CompanyRepository(conn)
+        self._custom_col_mgr = CustomColumnManager(conn)
+
+    def create_custom_columns(
+        self, requests: list[tuple[str, str]]
+    ) -> list:
+        """批次建立自訂欄位。requests = [(csv_col_name, col_label), …]"""
+        result = []
+        for _csv_col, col_label in requests:
+            col = self._custom_col_mgr.create_column(col_label)
+            result.append(col)
+        self._case_repo.reload_custom_columns()
+        return result
 
     def parse_headers(self, path: Path) -> list[str]:
         """偵測編碼並回傳 CSV 標頭清單。"""
@@ -310,9 +323,21 @@ class CsvImportEngine:
                             result.skipped += 1
                         else:  # OVERWRITE
                             self._overwrite_case(case_id, case_dict, existing["created_at"])
+                            # 寫入自訂欄（在 overwritten += 1 之前，確保例外被 except 捕捉）
+                            for csv_col, db_col in mapping.items():
+                                if db_col.startswith("cx_"):
+                                    self._case_repo.update_extra_field(
+                                        case_id, db_col, (row.get(csv_col) or "").strip() or None
+                                    )
                             result.overwritten += 1
                     else:
                         self._insert_case(case_dict)
+                        # 寫入自訂欄（在 success += 1 之前，確保例外被 except 捕捉）
+                        for csv_col, db_col in mapping.items():
+                            if db_col.startswith("cx_"):
+                                self._case_repo.update_extra_field(
+                                    case_id, db_col, (row.get(csv_col) or "").strip() or None
+                                )
                         result.success += 1
 
                 except Exception as e:
@@ -321,6 +346,7 @@ class CsvImportEngine:
 
         if progress_cb:
             progress_cb(total, total)
+        self._case_repo.reload_custom_columns()
         return result
 
     def _insert_case(self, case_dict: dict[str, object]) -> None:
