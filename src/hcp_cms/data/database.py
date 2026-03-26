@@ -136,6 +136,13 @@ CREATE TABLE IF NOT EXISTS case_logs (
     logged_at  TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS custom_columns (
+    col_key          TEXT PRIMARY KEY,
+    col_label        TEXT NOT NULL,
+    col_order        INTEGER NOT NULL,
+    visible_in_list  INTEGER NOT NULL DEFAULT 1
+);
+
 CREATE VIRTUAL TABLE IF NOT EXISTS cases_fts USING fts5(
     case_id UNINDEXED,
     subject,

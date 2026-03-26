@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 SLA_HOURS_NORMAL = 24
 SLA_HOURS_HIGH = 4
@@ -36,6 +36,7 @@ class Case:
     source: str = "email"
     created_at: str | None = None
     updated_at: str | None = None
+    extra_fields: dict[str, str | None] = field(default_factory=dict)
 
     @property
     def is_open(self) -> bool:
@@ -131,6 +132,15 @@ class Synonym:
 class CaseMantisLink:
     case_id: str
     ticket_id: str
+
+
+@dataclass
+class CustomColumn:
+    """自訂欄位中繼資料 — custom_columns table."""
+    col_key: str           # cx_1, cx_2…
+    col_label: str         # 中文顯示名稱
+    col_order: int         # 建立序號
+    visible_in_list: bool = True
 
 
 @dataclass
