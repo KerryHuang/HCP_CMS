@@ -66,6 +66,8 @@ class ReportEngine:
         self._mantis_repo = MantisRepository(conn)
         self._company_repo = CompanyRepository(conn)
         self._case_mantis_repo = CaseMantisRepository(conn)
+        from hcp_cms.core.custom_column_manager import CustomColumnManager
+        self._custom_col_mgr = CustomColumnManager(conn)
 
     def generate_tracking_table(self, start_date: str, end_date: str, output_path: Path) -> Path:
         """Generate tracking table Excel with multiple sheets.
@@ -119,6 +121,7 @@ class ReportEngine:
 
         # ── Sheet 2: 問題追蹤總表 ──────────────────────────────────────
         ws2 = wb.create_sheet("問題追蹤總表")
+        custom_cols = self._custom_col_mgr.list_columns()
         main_headers = [
             "案件編號", "聯絡方式", "問題狀態", "優先等級", "是否已回覆",
             "寄件時間", "首次回覆時效(hr)", "客戶", "客戶公司", "客戶聯絡電話",
@@ -127,6 +130,7 @@ class ReportEngine:
             "預計回覆時間", "實際回覆時間", "結案時間",
             "是否需升級", "是否有附圖", "QA文件名稱", "備註",
         ]
+        main_headers = main_headers + [col.col_label for col in custom_cols]
         self._write_header(ws2, main_headers)
         for i, case in enumerate(cases, 1):
             comp = company_map.get(case.company_id or "")
@@ -141,7 +145,7 @@ class ReportEngine:
                 "", case.impact_period, case.progress, case.handler,
                 "", case.actual_reply, closed_at,
                 "", "", "", case.notes or "",
-            ]))
+            ] + [_clean(case.extra_fields.get(col.col_key, "")) for col in custom_cols]))
             self._style_data_row(ws2, i + 1)
 
         # ── Sheet 3: QA知識庫 ──────────────────────────────────────────
@@ -166,7 +170,7 @@ class ReportEngine:
             "案件編號", "聯絡方式", "問題狀態", "優先等級",
             "寄件時間", "主旨", "系統／產品", "問題類型", "錯誤類型",
             "影響期間", "處理進度", "實際回覆時間", "結案時間", "備註",
-        ]
+        ] + [col.col_label for col in custom_cols]
 
         for comp in companies:
             comp_cases = company_cases.get(comp.company_id, [])
@@ -198,6 +202,12 @@ class ReportEngine:
                 ws_c.cell(row=row_num, column=12, value=_clean(case.actual_reply))
                 ws_c.cell(row=row_num, column=13, value=_clean(closed_at))
                 ws_c.cell(row=row_num, column=14, value=_clean(case.notes or ""))
+                for j, col in enumerate(custom_cols):
+                    ws_c.cell(
+                        row=row_num,
+                        column=15 + j,
+                        value=_clean(case.extra_fields.get(col.col_key, "")),
+                    )
                 self._style_data_row(ws_c, row_num)
 
         # ── Mantis提單追蹤 ─────────────────────────────────────────────
