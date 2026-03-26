@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re as _re
 import sqlite3
 from datetime import datetime
 
@@ -11,11 +12,14 @@ from hcp_cms.data.models import (
     CaseMantisLink,
     ClassificationRule,
     Company,
+    CustomColumn,
     MantisTicket,
     ProcessedFile,
     QAKnowledge,
     Synonym,
 )
+
+_COL_KEY_RE = _re.compile(r"^cx_\d+$")
 
 
 def _now() -> str:
@@ -723,3 +727,50 @@ class CaseLogRepository:
     def delete(self, log_id: str) -> None:
         self._conn.execute("DELETE FROM case_logs WHERE log_id = ?", (log_id,))
         self._conn.commit()
+
+
+# ---------------------------------------------------------------------------
+# CustomColumnRepository
+# ---------------------------------------------------------------------------
+
+
+class CustomColumnRepository:
+    """自訂欄位中繼資料 CRUD。"""
+
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self._conn = conn
+
+    def next_col_key(self) -> str:
+        row = self._conn.execute("SELECT COALESCE(MAX(col_order), 0) + 1 FROM custom_columns").fetchone()
+        n = row[0] if row else 1
+        return f"cx_{n}"
+
+    def insert(self, col_key: str, col_label: str, col_order: int) -> None:
+        self._conn.execute(
+            "INSERT OR IGNORE INTO custom_columns (col_key, col_label, col_order, visible_in_list)"
+            " VALUES (:k, :l, :o, 1)",
+            {"k": col_key, "l": col_label, "o": col_order},
+        )
+        self._conn.commit()
+
+    def list_all(self) -> list[CustomColumn]:
+        rows = self._conn.execute(
+            "SELECT col_key, col_label, col_order, visible_in_list FROM custom_columns ORDER BY col_order ASC"
+        ).fetchall()
+        return [
+            CustomColumn(
+                col_key=r["col_key"],
+                col_label=r["col_label"],
+                col_order=r["col_order"],
+                visible_in_list=bool(r["visible_in_list"]),
+            )
+            for r in rows
+        ]
+
+    def add_column_to_cases(self, col_key: str) -> None:
+        if not _COL_KEY_RE.match(col_key):
+            raise ValueError(f"非法 col_key：{col_key!r}")
+        existing = {row[1] for row in self._conn.execute("PRAGMA table_info(cs_cases)")}
+        if col_key not in existing:
+            self._conn.execute(f"ALTER TABLE cs_cases ADD COLUMN {col_key} TEXT")
+            self._conn.commit()
