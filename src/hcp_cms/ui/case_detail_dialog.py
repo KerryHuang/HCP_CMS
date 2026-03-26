@@ -38,6 +38,7 @@ class CaseDetailDialog(QDialog):
         self._conn = conn
         self._case_id = case_id
         self._manager = CaseDetailManager(conn)
+        self._case: Case | None = None
         self.setWindowTitle(f"案件詳情 — {case_id}")
         self.setMinimumSize(900, 650)
         self._setup_ui()
@@ -181,6 +182,8 @@ class CaseDetailDialog(QDialog):
         self._f_actual_reply.setPlainText(case.actual_reply or "")
 
     def _collect_case(self) -> Case:
+        if self._case is None:
+            raise RuntimeError("案件資料尚未載入")
         case = self._case
         case.subject = self._f_subject.text()
         case.company_id = self._f_company.text() or None
