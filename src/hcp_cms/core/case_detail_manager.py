@@ -117,3 +117,11 @@ class CaseDetailManager:
         )
         self._mantis_repo.upsert(ticket)
         return self._mantis_repo.get_by_id(ticket_id)
+
+    # ------------------------------------------------------------------
+    # 自訂欄位
+    # ------------------------------------------------------------------
+
+    def update_extra_field(self, case_id: str, col_key: str, value: str | None) -> None:
+        """更新案件自訂欄位值，委託 CaseRepository。"""
+        self._case_repo.update_extra_field(case_id, col_key, value)
