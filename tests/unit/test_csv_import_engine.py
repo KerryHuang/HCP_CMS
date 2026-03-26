@@ -142,3 +142,48 @@ class TestNextCaseId:
         base: dict[str, int] = {}
         result = engine._next_case_id("202510", base)
         assert result == "CS-202510-001"  # 不受舊格式影響
+
+
+class TestPreview:
+    def _write_csv(self, tmp_path: Path, rows: list[str]) -> Path:
+        csv_file = tmp_path / "cases.csv"
+        content = "問題狀態,寄件時間,公司,聯絡人,主旨\n" + "\n".join(rows)
+        csv_file.write_text(content, encoding="utf-8")
+        return csv_file
+
+    def test_all_new(self, db: DatabaseManager, tmp_path: Path):
+        csv_file = self._write_csv(tmp_path, [
+            "待確認,2026/03/01 09:00,達爾,王小明,測試主旨1",
+            "已回覆,2026/03/02 10:00,博大,李小花,測試主旨2",
+        ])
+        engine = CsvImportEngine(db.connection)
+        mapping = {
+            "問題狀態": "status", "寄件時間": "sent_time",
+            "公司": "company_id", "聯絡人": "contact_person", "主旨": "subject",
+        }
+        preview = engine.preview(csv_file, mapping)
+        assert preview.total == 2
+        assert preview.new_count == 2
+        assert preview.conflict_count == 0
+
+    def test_partial_conflict(self, db: DatabaseManager, tmp_path: Path):
+        # 先插入一筆相同 case_id 的資料（第一列會產生 CS-202603-001）
+        db.connection.execute(
+            "INSERT INTO cs_cases (case_id, subject, status) VALUES (?, ?, ?)",
+            ("CS-202603-001", "既有案件", "已完成")
+        )
+        db.connection.commit()
+
+        csv_file = self._write_csv(tmp_path, [
+            "待確認,2026/03/01 09:00,達爾,王小明,測試主旨1",
+            "已回覆,2026/03/02 10:00,博大,李小花,測試主旨2",
+        ])
+        engine = CsvImportEngine(db.connection)
+        mapping = {
+            "問題狀態": "status", "寄件時間": "sent_time",
+            "公司": "company_id", "聯絡人": "contact_person", "主旨": "subject",
+        }
+        preview = engine.preview(csv_file, mapping)
+        assert preview.total == 2
+        assert preview.conflict_count == 1
+        assert preview.new_count == 1

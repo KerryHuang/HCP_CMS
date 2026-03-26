@@ -193,6 +193,41 @@ class CsvImportEngine:
             return base + f"\n【技術協助2】{tech2_value}"
         return base
 
+    def preview(self, path: Path, mapping: Mapping) -> ImportPreview:
+        """計算 CSV 中新增/衝突筆數（不寫入資料庫）。
+
+        模擬從序號 1 開始依序產生 case_id，檢查每個 case_id 是否已存在於 DB。
+        """
+        enc = _detect_encoding(path)
+        result = ImportPreview()
+        # 以月份為 key，從 0 開始計數（不讀取 DB MAX，模擬全新匯入）
+        base: dict[str, int] = {}
+
+        with path.open(encoding=enc, newline="") as f:
+            reader = csv.DictReader(f)
+            sent_time_col = next(
+                (c for c, d in mapping.items() if d == "sent_time"), ""
+            )
+            for row in reader:
+                result.total += 1
+                sent_time_raw = row.get(sent_time_col, "")
+                normalized = _parse_sent_time(sent_time_raw)
+                year_month = self._extract_year_month(normalized)
+
+                # 直接累加，不查 DB MAX（預覽模式從 1 開始計）
+                base[year_month] = base.get(year_month, 0) + 1
+                case_id = f"CS-{year_month}-{base[year_month]:03d}"
+
+                existing = self._conn.execute(
+                    "SELECT 1 FROM cs_cases WHERE case_id = ?", (case_id,)
+                ).fetchone()
+                if existing:
+                    result.conflict_count += 1
+                else:
+                    result.new_count += 1
+
+        return result
+
     def _build_case_dict(
         self,
         row: dict[str, str],
