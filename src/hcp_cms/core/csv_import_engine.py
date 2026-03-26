@@ -4,6 +4,7 @@ from __future__ import annotations
 import csv
 import re
 import sqlite3
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -227,6 +228,123 @@ class CsvImportEngine:
                     result.new_count += 1
 
         return result
+
+    def _ensure_company(self, company_name: str) -> None:
+        """若公司不存在則自動建立（INSERT OR IGNORE）。"""
+        now = datetime.now().strftime("%Y/%m/%d %H:%M:%S")
+        self._conn.execute(
+            """INSERT OR IGNORE INTO companies
+               (company_id, name, domain, created_at)
+               VALUES (?, ?, ?, ?)""",
+            (company_name, company_name, company_name, now),
+        )
+
+    def execute(
+        self,
+        path: Path,
+        mapping: Mapping,
+        strategy: ConflictStrategy,
+        progress_cb: Callable[[int, int], None] | None = None,
+    ) -> ImportResult:
+        """執行匯入。"""
+        enc = _detect_encoding(path)
+        result = ImportResult()
+        base: dict[str, int] = {}
+
+        # 計算總列數（供進度條用）
+        with path.open(encoding=enc, newline="") as f:
+            total = sum(1 for _ in csv.reader(f)) - 1  # 減掉標頭
+
+        with path.open(encoding=enc, newline="") as f:
+            reader = csv.DictReader(f)
+            for line_no, row in enumerate(reader, start=2):  # 2 = 第一列資料
+                if progress_cb:
+                    progress_cb(line_no - 1, total)
+
+                # --- 解析 sent_time ---
+                sent_time_csv_col = next(
+                    (c for c, d in mapping.items() if d == "sent_time"), None
+                )
+                sent_time_raw = (row.get(sent_time_csv_col or "", "") or "") if sent_time_csv_col else ""
+                normalized_time = _parse_sent_time(sent_time_raw)
+                if normalized_time is None:
+                    result.failed += 1
+                    result.errors.append(f"第 {line_no} 列：sent_time 格式錯誤（{sent_time_raw!r}）")
+                    continue
+
+                # --- 驗證 subject ---
+                subject_csv_col = next(
+                    (c for c, d in mapping.items() if d == "subject"), None
+                )
+                subject_val = (row.get(subject_csv_col or "", "") or "").strip() if subject_csv_col else ""
+                if not subject_val:
+                    result.failed += 1
+                    result.errors.append(f"第 {line_no} 列：subject 為空")
+                    continue
+
+                # --- 產生 case_id（從 CSV 序號 1 開始，不查 DB MAX）---
+                year_month = self._extract_year_month(normalized_time)
+                base[year_month] = base.get(year_month, 0) + 1
+                case_id = f"CS-{year_month}-{base[year_month]:03d}"
+
+                # --- 公司自動建立 ---
+                company_csv_col = next(
+                    (c for c, d in mapping.items() if d == "company_id"), None
+                )
+                company_name = (row.get(company_csv_col or "", "") or "").strip() if company_csv_col else ""
+                if company_name:
+                    self._ensure_company(company_name)
+
+                # --- 建構資料列 ---
+                case_dict = self._build_case_dict(row, mapping, case_id)
+
+                # --- 寫入 ---
+                try:
+                    existing = self._conn.execute(
+                        "SELECT created_at FROM cs_cases WHERE case_id = ?", (case_id,)
+                    ).fetchone()
+
+                    if existing:
+                        if strategy == ConflictStrategy.SKIP:
+                            result.skipped += 1
+                        else:  # OVERWRITE
+                            self._overwrite_case(case_id, case_dict, existing["created_at"])
+                            result.overwritten += 1
+                    else:
+                        self._insert_case(case_dict)
+                        result.success += 1
+
+                except Exception as e:
+                    result.failed += 1
+                    result.errors.append(f"第 {line_no} 列：資料庫錯誤 {e}")
+
+        if progress_cb:
+            progress_cb(total, total)
+        return result
+
+    def _insert_case(self, case_dict: dict[str, object]) -> None:
+        cols = list(case_dict.keys())
+        vals = [case_dict[c] for c in cols]
+        placeholders = ", ".join("?" for _ in cols)
+        col_list = ", ".join(cols)
+        self._conn.execute(
+            f"INSERT INTO cs_cases ({col_list}) VALUES ({placeholders})", vals
+        )
+        self._conn.commit()
+
+    def _overwrite_case(
+        self, case_id: str, case_dict: dict[str, object], original_created_at: str
+    ) -> None:
+        now = datetime.now().strftime("%Y/%m/%d %H:%M:%S")
+        update_dict = {k: v for k, v in case_dict.items()
+                       if k not in ("case_id", "created_at", "source")}
+        update_dict["updated_at"] = now
+        set_clause = ", ".join(f"{k} = ?" for k in update_dict)
+        vals = list(update_dict.values()) + [case_id]
+        self._conn.execute(
+            f"UPDATE cs_cases SET {set_clause} WHERE case_id = ?", vals
+        )
+        self._conn.commit()
 
     def _build_case_dict(
         self,

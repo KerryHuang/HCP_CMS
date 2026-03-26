@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from hcp_cms.core.csv_import_engine import CsvImportEngine, _parse_sent_time
+from hcp_cms.core.csv_import_engine import CsvImportEngine, ConflictStrategy, _parse_sent_time
 from hcp_cms.data.database import DatabaseManager
 
 
@@ -187,3 +187,113 @@ class TestPreview:
         assert preview.total == 2
         assert preview.conflict_count == 1
         assert preview.new_count == 1
+
+
+class TestExecuteSkip:
+    def _write_csv(self, tmp_path: Path, rows: list[str]) -> Path:
+        csv_file = tmp_path / "cases.csv"
+        content = "問題狀態,寄件時間,公司,聯絡人,主旨,技術協助人員2\n" + "\n".join(rows)
+        csv_file.write_text(content, encoding="utf-8")
+        return csv_file
+
+    @pytest.fixture
+    def mapping(self):
+        return {
+            "問題狀態": "status", "寄件時間": "sent_time",
+            "公司": "company_id", "聯絡人": "contact_person",
+            "主旨": "subject", "技術協助人員2": "notes",
+        }
+
+    def test_inserts_new_cases(self, db: DatabaseManager, tmp_path: Path, mapping):
+        csv_file = self._write_csv(tmp_path, [
+            "待確認,2026/03/01 09:00,達爾,王小明,測試主旨,",
+        ])
+        engine = CsvImportEngine(db.connection)
+        result = engine.execute(csv_file, mapping, ConflictStrategy.SKIP)
+        assert result.success == 1
+        assert result.failed == 0
+        case = db.connection.execute(
+            "SELECT * FROM cs_cases WHERE case_id = 'CS-202603-001'"
+        ).fetchone()
+        assert case is not None
+        assert case["subject"] == "測試主旨"
+        assert case["source"] == "csv_import"
+
+    def test_auto_creates_company(self, db: DatabaseManager, tmp_path: Path, mapping):
+        csv_file = self._write_csv(tmp_path, [
+            "待確認,2026/03/01 09:00,新客戶,王小明,主旨,",
+        ])
+        engine = CsvImportEngine(db.connection)
+        engine.execute(csv_file, mapping, ConflictStrategy.SKIP)
+        company = db.connection.execute(
+            "SELECT * FROM companies WHERE company_id = '新客戶'"
+        ).fetchone()
+        assert company is not None
+
+    def test_company_idempotent(self, db: DatabaseManager, tmp_path: Path, mapping):
+        # 同一公司出現兩次，只建一筆
+        csv_file = self._write_csv(tmp_path, [
+            "待確認,2026/03/01 09:00,達爾,王小明,主旨1,",
+            "已回覆,2026/03/02 10:00,達爾,李小花,主旨2,",
+        ])
+        engine = CsvImportEngine(db.connection)
+        engine.execute(csv_file, mapping, ConflictStrategy.SKIP)
+        count = db.connection.execute(
+            "SELECT COUNT(*) FROM companies WHERE company_id = '達爾'"
+        ).fetchone()[0]
+        assert count == 1
+
+    def test_blank_company_no_company_record(self, db: DatabaseManager, tmp_path: Path, mapping):
+        csv_file = self._write_csv(tmp_path, [
+            "待確認,2026/03/01 09:00,,王小明,主旨,",
+        ])
+        engine = CsvImportEngine(db.connection)
+        engine.execute(csv_file, mapping, ConflictStrategy.SKIP)
+        case = db.connection.execute("SELECT company_id FROM cs_cases").fetchone()
+        assert case["company_id"] is None
+
+    def test_skips_on_conflict(self, db: DatabaseManager, tmp_path: Path, mapping):
+        db.connection.execute(
+            "INSERT INTO cs_cases (case_id, subject, status) VALUES (?, ?, ?)",
+            ("CS-202603-001", "既有", "已完成")
+        )
+        db.connection.commit()
+        csv_file = self._write_csv(tmp_path, [
+            "待確認,2026/03/01 09:00,達爾,王小明,新主旨,",
+        ])
+        engine = CsvImportEngine(db.connection)
+        result = engine.execute(csv_file, mapping, ConflictStrategy.SKIP)
+        assert result.skipped == 1
+        assert result.success == 0
+        # 原資料未被改變
+        case = db.connection.execute(
+            "SELECT subject FROM cs_cases WHERE case_id = 'CS-202603-001'"
+        ).fetchone()
+        assert case["subject"] == "既有"
+
+    def test_invalid_sent_time_skipped(self, db: DatabaseManager, tmp_path: Path, mapping):
+        csv_file = self._write_csv(tmp_path, [
+            "待確認,無效日期,達爾,王小明,主旨,",
+        ])
+        engine = CsvImportEngine(db.connection)
+        result = engine.execute(csv_file, mapping, ConflictStrategy.SKIP)
+        assert result.failed == 1
+        assert "sent_time 格式錯誤" in result.errors[0]
+
+    def test_tech2_appended_to_notes(self, db: DatabaseManager, tmp_path: Path, mapping):
+        csv_file = self._write_csv(tmp_path, [
+            "待確認,2026/03/01 09:00,達爾,王小明,主旨,技術王",
+        ])
+        engine = CsvImportEngine(db.connection)
+        engine.execute(csv_file, mapping, ConflictStrategy.SKIP)
+        case = db.connection.execute("SELECT notes FROM cs_cases").fetchone()
+        assert "【技術協助2】技術王" in (case["notes"] or "")
+
+    def test_empty_subject_skipped(self, db: DatabaseManager, tmp_path: Path, mapping):
+        csv_file = self._write_csv(tmp_path, [
+            "待確認,2026/03/01 09:00,達爾,王小明,,",  # subject 為空
+        ])
+        engine = CsvImportEngine(db.connection)
+        result = engine.execute(csv_file, mapping, ConflictStrategy.SKIP)
+        assert result.failed == 1
+        assert "subject 為空" in result.errors[0]
