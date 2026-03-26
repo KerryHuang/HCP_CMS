@@ -13,6 +13,8 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
     QTabWidget,
     QTextEdit,
     QVBoxLayout,
@@ -42,7 +44,6 @@ class CaseDetailDialog(QDialog):
         self.setWindowTitle(f"案件詳情 — {case_id}")
         self.setMinimumSize(900, 650)
         self._setup_ui()
-        self._load_case()
 
     # ------------------------------------------------------------------
     # UI 建構
@@ -55,6 +56,8 @@ class CaseDetailDialog(QDialog):
         self._tabs.addTab(self._build_tab2(), "📝 補充記錄")
         self._tabs.addTab(self._build_tab3(), "🔧 Mantis 關聯")
         layout.addWidget(self._tabs)
+        self._load_case()
+        self._tabs.currentChanged.connect(self._on_tab_changed)
 
     def _build_tab1(self) -> QWidget:
         w = QWidget()
@@ -142,8 +145,49 @@ class CaseDetailDialog(QDialog):
         return w
 
     def _build_tab2(self) -> QWidget:
-        # 實作於 Task 5
-        return QWidget()
+        w = QWidget()
+        layout = QVBoxLayout(w)
+
+        toolbar = QHBoxLayout()
+        add_btn = QPushButton("➕ 新增記錄")
+        add_btn.clicked.connect(self._on_add_log)
+        toolbar.addWidget(add_btn)
+        toolbar.addStretch()
+        layout.addLayout(toolbar)
+
+        self._log_table = QTableWidget(0, 5)
+        self._log_table.setHorizontalHeaderLabels(
+            ["時間", "方向", "記錄人", "Mantis 參照", "內容摘要"]
+        )
+        self._log_table.horizontalHeader().setStretchLastSection(True)
+        self._log_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self._log_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        layout.addWidget(self._log_table)
+
+        return w
+
+    def _refresh_log_table(self) -> None:
+        logs = self._manager.list_logs(self._case_id)
+        self._log_table.setRowCount(len(logs))
+        for i, log in enumerate(logs):
+            self._log_table.setItem(i, 0, QTableWidgetItem(log.logged_at))
+            self._log_table.setItem(i, 1, QTableWidgetItem(log.direction))
+            self._log_table.setItem(i, 2, QTableWidgetItem(log.logged_by or ""))
+            self._log_table.setItem(i, 3, QTableWidgetItem(log.mantis_ref or ""))
+            self._log_table.setItem(i, 4, QTableWidgetItem((log.content or "")[:60]))
+
+    def _on_add_log(self) -> None:
+        dlg = CaseLogAddDialog(parent=self)
+        if dlg.exec():
+            data = dlg.get_data()
+            self._manager.add_log(
+                case_id=self._case_id,
+                direction=data["direction"],
+                content=data["content"],
+                mantis_ref=data["mantis_ref"] or None,
+                logged_by=data["logged_by"] or None,
+            )
+            self._refresh_log_table()
 
     def _build_tab3(self) -> QWidget:
         # 實作於 Task 6
@@ -231,3 +275,62 @@ class CaseDetailDialog(QDialog):
             self.case_updated.emit()
         except Exception as e:
             QMessageBox.critical(self, "操作失敗", str(e))
+
+    def _on_tab_changed(self, index: int) -> None:
+        if index == 1:
+            self._refresh_log_table()
+        elif index == 2:
+            if hasattr(self, "_mantis_table"):
+                self._refresh_mantis_table()
+
+
+class CaseLogAddDialog(QDialog):
+    """新增補充記錄的小對話框。"""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("新增補充記錄")
+        self.setMinimumWidth(500)
+        self._setup_ui()
+
+    def _setup_ui(self) -> None:
+        layout = QFormLayout(self)
+
+        self._direction = QComboBox()
+        self._direction.addItems(["客戶來信", "CS 回覆", "內部討論"])
+        layout.addRow("方向：", self._direction)
+
+        self._content = QTextEdit()
+        self._content.setMinimumHeight(120)
+        self._content.textChanged.connect(self._on_content_changed)
+        layout.addRow("內容：", self._content)
+
+        self._mantis_ref = QLineEdit()
+        self._mantis_ref.setPlaceholderText("可空")
+        layout.addRow("Mantis 編號：", self._mantis_ref)
+
+        self._logged_by = QLineEdit()
+        self._logged_by.setPlaceholderText("可空")
+        layout.addRow("記錄人：", self._logged_by)
+
+        btn_row = QHBoxLayout()
+        self._save_btn = QPushButton("儲存")
+        self._save_btn.setEnabled(False)
+        self._save_btn.clicked.connect(self.accept)
+        cancel_btn = QPushButton("取消")
+        cancel_btn.clicked.connect(self.reject)
+        btn_row.addStretch()
+        btn_row.addWidget(cancel_btn)
+        btn_row.addWidget(self._save_btn)
+        layout.addRow(btn_row)
+
+    def _on_content_changed(self) -> None:
+        self._save_btn.setEnabled(bool(self._content.toPlainText().strip()))
+
+    def get_data(self) -> dict:
+        return {
+            "direction": self._direction.currentText(),
+            "content": self._content.toPlainText().strip(),
+            "mantis_ref": self._mantis_ref.text().strip(),
+            "logged_by": self._logged_by.text().strip(),
+        }
