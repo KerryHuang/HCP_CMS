@@ -24,6 +24,8 @@ from PySide6.QtWidgets import (
 from hcp_cms.core.case_manager import CaseManager
 from hcp_cms.data.repositories import CaseRepository, CompanyRepository
 
+_FIXED_COL_COUNT = 9
+
 
 class CaseView(QWidget):
     """Case management page."""
@@ -36,6 +38,8 @@ class CaseView(QWidget):
         super().__init__()
         self._conn = conn
         self._db_path = db_path
+        from hcp_cms.core.custom_column_manager import CustomColumnManager
+        self._custom_col_mgr = CustomColumnManager(conn) if conn else None
         self._setup_ui()
 
     def _setup_ui(self) -> None:
@@ -75,7 +79,7 @@ class CaseView(QWidget):
         splitter = QSplitter(Qt.Orientation.Vertical)
 
         # Case table
-        self._table = QTableWidget(0, 9)
+        self._table = QTableWidget(0, _FIXED_COL_COUNT)
         self._table.setHorizontalHeaderLabels([
             "案件編號", "狀態", "優先", "公司", "主旨", "問題類型", "回覆", "來回次數", "時間"
         ])
@@ -137,11 +141,21 @@ class CaseView(QWidget):
                 cases = repo.list_by_status(status_filter)
 
             self._cases = cases
+            # 取得自訂欄（visible_in_list=True）
+            custom_cols = self._custom_col_mgr.list_columns() if self._custom_col_mgr else []
+            visible_cols = [c for c in custom_cols if c.visible_in_list]
+
             # 預先建立 company_id → 公司名稱的對照表
             company_repo = CompanyRepository(self._conn)
             company_map: dict[str, str] = {
                 c.company_id: c.name for c in company_repo.list_all()
             }
+
+            total_cols = _FIXED_COL_COUNT + len(visible_cols)
+            self._table.setColumnCount(total_cols)
+            headers = ["案件編號", "狀態", "優先", "公司", "主旨", "問題類型", "回覆", "來回次數", "時間"]
+            headers += [col.col_label for col in visible_cols]
+            self._table.setHorizontalHeaderLabels(headers)
 
             self._table.setRowCount(len(cases))
             for i, case in enumerate(cases):
@@ -158,6 +172,9 @@ class CaseView(QWidget):
                 reply_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 self._table.setItem(i, 7, reply_item)
                 self._table.setItem(i, 8, QTableWidgetItem(case.sent_time or ""))
+                for j, col in enumerate(visible_cols):
+                    val = case.extra_fields.get(col.col_key) or ""
+                    self._table.setItem(i, _FIXED_COL_COUNT + j, QTableWidgetItem(val))
         except Exception:
             pass
 
