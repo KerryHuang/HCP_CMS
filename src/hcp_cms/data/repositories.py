@@ -7,6 +7,7 @@ from datetime import datetime
 
 from hcp_cms.data.models import (
     Case,
+    CaseLog,
     CaseMantisLink,
     ClassificationRule,
     Company,
@@ -662,3 +663,63 @@ class CaseMantisRepository:
     def get_cases_for_ticket(self, ticket_id: str) -> list[str]:
         rows = self._conn.execute("SELECT case_id FROM case_mantis WHERE ticket_id = ?", (ticket_id,)).fetchall()
         return [row[0] for row in rows]
+
+    def unlink(self, case_id: str, ticket_id: str) -> None:
+        self._conn.execute(
+            "DELETE FROM case_mantis WHERE case_id = ? AND ticket_id = ?",
+            (case_id, ticket_id),
+        )
+        self._conn.commit()
+
+
+# ---------------------------------------------------------------------------
+# CaseLogRepository
+# ---------------------------------------------------------------------------
+
+
+class CaseLogRepository:
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self._conn = conn
+
+    def next_log_id(self) -> str:
+        today = datetime.now().strftime("%Y%m%d")
+        prefix = f"LOG-{today}-"
+        row = self._conn.execute(
+            "SELECT MAX(log_id) FROM case_logs WHERE log_id LIKE ?",
+            (f"{prefix}%",),
+        ).fetchone()
+        max_id: str | None = row[0] if row else None
+        try:
+            next_num = int(max_id[-3:]) + 1 if max_id else 1
+        except (TypeError, ValueError):
+            next_num = 1
+        return f"{prefix}{next_num:03d}"
+
+    def insert(self, log: CaseLog) -> None:
+        self._conn.execute(
+            """
+            INSERT INTO case_logs (log_id, case_id, direction, content, mantis_ref, logged_by, logged_at)
+            VALUES (:log_id, :case_id, :direction, :content, :mantis_ref, :logged_by, :logged_at)
+            """,
+            {
+                "log_id": log.log_id,
+                "case_id": log.case_id,
+                "direction": log.direction,
+                "content": log.content,
+                "mantis_ref": log.mantis_ref,
+                "logged_by": log.logged_by,
+                "logged_at": log.logged_at,
+            },
+        )
+        self._conn.commit()
+
+    def list_by_case(self, case_id: str) -> list[CaseLog]:
+        rows = self._conn.execute(
+            "SELECT * FROM case_logs WHERE case_id = ? ORDER BY logged_at ASC",
+            (case_id,),
+        ).fetchall()
+        return [CaseLog(**dict(row)) for row in rows]
+
+    def delete(self, log_id: str) -> None:
+        self._conn.execute("DELETE FROM case_logs WHERE log_id = ?", (log_id,))
+        self._conn.commit()
