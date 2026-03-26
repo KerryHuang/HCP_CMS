@@ -68,6 +68,7 @@ REQUIRED_DB_COLS = {"sent_time", "subject", "company_id"}
 
 _WEEKDAY_RE = re.compile(r'\s*\(週.\)\s*')
 _AMPM_RE = re.compile(r'(上午|下午)\s*(\d{1,2}):(\d{2})')
+_TECH2_RE = re.compile(r'\n【技術協助2】.*')
 
 
 def _parse_sent_time(value: str | None) -> str | None:
@@ -162,3 +163,76 @@ class CsvImportEngine:
             reader = csv.reader(f)
             headers = next(reader, [])
         return headers
+
+    def _next_case_id(self, year_month: str, base: dict[str, int]) -> str:
+        """依月份快取產生 CS-YYYYMM-NNN 格式 case_id。"""
+        if year_month not in base:
+            row = self._conn.execute(
+                "SELECT MAX(case_id) FROM cs_cases WHERE case_id LIKE ?",
+                (f"CS-{year_month}-%",),
+            ).fetchone()
+            max_id: str | None = row[0] if row else None
+            base[year_month] = int(max_id[-3:]) if max_id else 0
+        base[year_month] += 1
+        return f"CS-{year_month}-{base[year_month]:03d}"
+
+    def _extract_year_month(self, sent_time_normalized: str | None) -> str:
+        """從標準化 sent_time 取 YYYYMM，失敗時用當下年月。"""
+        if sent_time_normalized:
+            try:
+                dt = datetime.strptime(sent_time_normalized[:7], "%Y/%m")
+                return dt.strftime("%Y%m")
+            except ValueError:
+                pass
+        return datetime.now().strftime("%Y%m")
+
+    def _append_tech2(self, existing_notes: str | None, tech2_value: str) -> str:
+        """附加技術協助人員2至 notes，移除舊值後重新附加。"""
+        base = _TECH2_RE.sub("", existing_notes or "").rstrip()
+        if tech2_value:
+            return base + f"\n【技術協助2】{tech2_value}"
+        return base
+
+    def _build_case_dict(
+        self,
+        row: dict[str, str],
+        mapping: Mapping,
+        case_id: str,
+    ) -> dict[str, object]:
+        """將一列 CSV 資料依 mapping 轉換為 cs_cases 欄位字典。"""
+        now = datetime.now().strftime("%Y/%m/%d %H:%M:%S")
+
+        result: dict[str, object] = {
+            "case_id": case_id,
+            "source": "csv_import",
+            "created_at": now,
+            "updated_at": now,
+            "contact_method": "Email",
+            "replied": "否",
+            "status": "處理中",
+            "priority": "中",
+        }
+
+        tech2_col: str | None = None
+        for csv_col, db_col in mapping.items():
+            if db_col == "skip":
+                continue
+            val = row.get(csv_col, "") or ""
+            if db_col == "notes" and csv_col == "技術協助人員2":
+                # 技術協助人員2 特殊附加格式（僅限此欄名）
+                tech2_col = csv_col
+                continue
+            if db_col == "sent_time":
+                result[db_col] = _parse_sent_time(val)
+            elif db_col == "company_id":
+                result[db_col] = val.strip() or None
+            else:
+                result[db_col] = val or None
+
+        # 技術協助人員2 附加
+        if tech2_col is not None:
+            tech2_val = (row.get(tech2_col, "") or "").strip()
+            existing = str(result.get("notes") or "")
+            result["notes"] = self._append_tech2(existing, tech2_val) or None
+
+        return result
