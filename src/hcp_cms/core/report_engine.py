@@ -90,11 +90,18 @@ class ReportEngine:
             cid = case.company_id or "unknown"
             company_cases.setdefault(cid, []).append(case)
 
+        # Excel 工作表名稱不可含 \ / * ? : [ ]，一律替換為 -
+        _INVALID_SHEET_CHARS = re.compile(r'[\\/*?:\[\]]')
+
+        def _safe_sheet_name(raw: str, suffix: str = "_問題") -> str:
+            sanitized = _INVALID_SHEET_CHARS.sub("-", raw)
+            return (sanitized[:28] + suffix)[:31]
+
         company_sheet_names: dict[str, str] = {}
         for comp in companies:
             if company_cases.get(comp.company_id):
                 raw = f"{comp.domain}({comp.name})" if comp.domain else comp.name
-                company_sheet_names[comp.company_id] = (raw[:28] + "_問題")[:31]
+                company_sheet_names[comp.company_id] = _safe_sheet_name(raw)
 
         # ── Sheet 1: 客戶索引 ──────────────────────────────────────────
         ws = wb.active

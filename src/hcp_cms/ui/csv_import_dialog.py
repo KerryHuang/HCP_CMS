@@ -295,6 +295,7 @@ class CsvImportDialog(QDialog):
         self._next_btn.setEnabled(True)
         self._next_btn.clicked.disconnect()
         self._next_btn.clicked.connect(self.accept)
+        self._back_btn.setEnabled(True)  # 匯入完成後允許返回上一步重新操作
 
     # ------------------------------------------------------------------
     # 導覽
@@ -333,6 +334,12 @@ class CsvImportDialog(QDialog):
             self._stack.setCurrentIndex(1)
             self._step_label.setText("步驟 2 / 3：確認欄位對應")
             self._next_btn.setText("下一步 →")
+            # 若匯入完成後返回，需將 next 按鈕重新接回 _go_next
+            try:
+                self._next_btn.clicked.disconnect()
+            except RuntimeError:
+                pass
+            self._next_btn.clicked.connect(self._go_next)
 
 
 class CsvImportWorker(QThread):

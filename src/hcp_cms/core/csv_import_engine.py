@@ -267,7 +267,8 @@ class CsvImportEngine:
                 )
                 sent_time_raw = (row.get(sent_time_csv_col or "", "") or "") if sent_time_csv_col else ""
                 normalized_time = _parse_sent_time(sent_time_raw)
-                if normalized_time is None:
+                if sent_time_raw.strip() and normalized_time is None:
+                    # 有內容但無法解析才算錯誤；空值允許通過（DB 欄位可為 NULL）
                     result.failed += 1
                     result.errors.append(f"第 {line_no} 列：sent_time 格式錯誤（{sent_time_raw!r}）")
                     continue
