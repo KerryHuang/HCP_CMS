@@ -8,6 +8,7 @@ from pathlib import Path
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QComboBox,
+    QDialog,
     QFormLayout,
     QHBoxLayout,
     QLabel,
@@ -72,6 +73,11 @@ class CaseView(QWidget):
         import_btn = QPushButton("📥 匯入 CSV")
         import_btn.clicked.connect(self._on_import_csv)
         header.addWidget(import_btn)
+
+        self._delete_btn = QPushButton("🗑 刪除案件")
+        self._delete_btn.setObjectName("dangerBtn")
+        self._delete_btn.clicked.connect(self._on_delete_cases)
+        header.addWidget(self._delete_btn)
 
         layout.addLayout(header)
 
@@ -207,6 +213,14 @@ class CaseView(QWidget):
         dialog = CsvImportDialog(self._db_path, parent=self)
         dialog.exec()
         self.refresh()
+
+    def _on_delete_cases(self) -> None:
+        if not self._conn:
+            return
+        from hcp_cms.ui.delete_cases_dialog import DeleteCasesDialog
+        dlg = DeleteCasesDialog(self._conn, parent=self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            self.refresh()
 
     def _on_mark_replied(self) -> None:
         if not self._conn or not self._detail_id.text():

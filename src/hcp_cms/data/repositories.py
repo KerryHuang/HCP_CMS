@@ -295,6 +295,36 @@ class CaseRepository:
         row = self._conn.execute("SELECT COUNT(*) FROM cs_cases WHERE sent_time LIKE ?", (prefix,)).fetchone()
         return row[0] if row else 0
 
+    def delete(self, case_id: str) -> None:
+        """刪除單一案件，含 cascade 清除。KMS 僅刪除 status='待審查' 的條目；
+        已審核條目的 source_case_id 設為 NULL 以解除 FK 約束。"""
+        self._conn.execute("DELETE FROM case_mantis WHERE case_id = :id", {"id": case_id})
+        self._conn.execute("DELETE FROM case_logs WHERE case_id = :id", {"id": case_id})
+        self._conn.execute("DELETE FROM cases_fts WHERE case_id = :id", {"id": case_id})
+        # 刪除「待審查」KMS；其餘已審核條目解除案件關聯（source_case_id → NULL）
+        self._conn.execute(
+            "DELETE FROM qa_knowledge WHERE source_case_id = :id AND status = '待審查'",
+            {"id": case_id},
+        )
+        self._conn.execute(
+            "UPDATE qa_knowledge SET source_case_id = NULL WHERE source_case_id = :id",
+            {"id": case_id},
+        )
+        self._conn.execute("DELETE FROM cs_cases WHERE case_id = :id", {"id": case_id})
+        self._conn.commit()
+
+    def delete_by_date_range(self, start: str, end: str) -> int:
+        """刪除 created_at 在 [start, end] 範圍內的所有案件，回傳刪除筆數。
+        start/end 格式為 'YYYY/MM/DD'。"""
+        rows = self._conn.execute(
+            "SELECT case_id FROM cs_cases WHERE created_at >= :s AND created_at <= :e || ' 23:59:59'",
+            {"s": start, "e": end},
+        ).fetchall()
+        case_ids = [r[0] for r in rows]
+        for cid in case_ids:
+            self.delete(cid)
+        return len(case_ids)
+
 
 # ---------------------------------------------------------------------------
 # QARepository

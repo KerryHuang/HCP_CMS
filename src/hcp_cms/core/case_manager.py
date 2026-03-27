@@ -11,7 +11,6 @@ from hcp_cms.data.fts import FTSManager
 from hcp_cms.data.models import Case
 from hcp_cms.data.repositories import CaseRepository
 
-
 _SLASH_FMT = re.compile(r"^\d{4}/\d{2}/\d{2}")
 
 
@@ -179,6 +178,14 @@ class CaseManager:
     def close_case(self, case_id: str) -> None:
         """Mark case as completed."""
         self._case_repo.update_status(case_id, "已完成")
+
+    def delete_case(self, case_id: str) -> None:
+        """刪除單一案件（含 KMS 待審查條目）。"""
+        self._case_repo.delete(case_id)
+
+    def delete_cases_by_date_range(self, start: str, end: str) -> int:
+        """刪除指定日期範圍內的案件，回傳刪除筆數。start/end 格式 'YYYY/MM/DD'。"""
+        return self._case_repo.delete_by_date_range(start, end)
 
     def get_dashboard_stats(self, year: int, month: int) -> dict:
         """Get KPI stats for a given month."""
