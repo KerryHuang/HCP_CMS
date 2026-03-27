@@ -116,6 +116,9 @@ class MainWindow(QMainWindow):
         for view in self._views.values():
             self._stack.addWidget(view)
 
+        # 案件有異動時，儀表板自動重新整理
+        self._views["cases"].cases_changed.connect(self._views["dashboard"].refresh)
+
         layout.addWidget(self._stack)
 
         # Status bar

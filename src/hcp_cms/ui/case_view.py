@@ -5,7 +5,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -13,6 +13,8 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMenu,
+    QMessageBox,
     QPushButton,
     QSplitter,
     QTableWidget,
@@ -30,6 +32,8 @@ _FIXED_COL_COUNT = 9
 
 class CaseView(QWidget):
     """Case management page."""
+
+    cases_changed = Signal()  # 案件有異動時發射，供儀表板同步
 
     def __init__(
         self,
@@ -94,6 +98,7 @@ class CaseView(QWidget):
         self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self._table.itemSelectionChanged.connect(self._on_selection_changed)
         self._table.itemDoubleClicked.connect(self._on_row_double_clicked)
+        self._setup_context_menu()
         splitter.addWidget(self._table)
 
         # Detail panel
@@ -214,6 +219,46 @@ class CaseView(QWidget):
         dialog.exec()
         self.refresh()
 
+    def _setup_context_menu(self) -> None:
+        """設定右鍵選單。"""
+        self._table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._table.customContextMenuRequested.connect(self._on_context_menu)
+
+    def _on_context_menu(self, pos) -> None:
+        """顯示右鍵選單。"""
+        row = self._table.currentRow()
+        if row < 0:
+            return
+        menu = QMenu(self)
+        delete_action = menu.addAction("🗑 刪除此案件")
+        action = menu.exec(self._table.viewport().mapToGlobal(pos))
+        if action == delete_action:
+            self._on_delete_single_case()
+
+    def _on_delete_single_case(self) -> None:
+        """單筆刪除目前選取的案件。"""
+        if not self._conn:
+            return
+        row = self._table.currentRow()
+        if row < 0:
+            return
+        item = self._table.item(row, 0)
+        if item is None:
+            return
+        case_id = item.text()
+        reply = QMessageBox.warning(
+            self,
+            "確認刪除",
+            f"確定刪除案件 {case_id}？\n此操作無法復原。",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        CaseManager(self._conn).delete_case(case_id)
+        self.refresh()
+        self.cases_changed.emit()
+
     def _on_delete_cases(self) -> None:
         if not self._conn:
             return
@@ -221,6 +266,7 @@ class CaseView(QWidget):
         dlg = DeleteCasesDialog(self._conn, parent=self)
         if dlg.exec() == QDialog.DialogCode.Accepted:
             self.refresh()
+            self.cases_changed.emit()
 
     def _on_mark_replied(self) -> None:
         if not self._conn or not self._detail_id.text():
