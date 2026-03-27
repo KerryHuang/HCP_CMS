@@ -304,6 +304,26 @@ class CaseRepository:
                 "notes": case.notes,
             },
         )
+        # 同步「待審查」KMS 條目的分類欄位
+        self._conn.execute(
+            """
+            UPDATE qa_knowledge SET
+                system_product = :system_product,
+                issue_type     = :issue_type,
+                error_type     = :error_type,
+                company_id     = :company_id,
+                updated_at     = :updated_at
+            WHERE source_case_id = :case_id AND status = '待審查'
+            """,
+            {
+                "case_id": case.case_id,
+                "system_product": case.system_product,
+                "issue_type": case.issue_type,
+                "error_type": case.error_type,
+                "company_id": case.company_id,
+                "updated_at": case.updated_at,
+            },
+        )
         self._conn.commit()
 
     def count_by_month(self, year: int, month: int) -> int:
