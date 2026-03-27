@@ -288,6 +288,22 @@ class CaseRepository:
                 "updated_at": case.updated_at,
             },
         )
+        # 同步 FTS5 索引（subject / progress / notes 為可搜尋欄位）
+        self._conn.execute(
+            """
+            UPDATE cases_fts SET
+                subject  = :subject,
+                progress = :progress,
+                notes    = :notes
+            WHERE case_id = :case_id
+            """,
+            {
+                "case_id": case.case_id,
+                "subject": case.subject,
+                "progress": case.progress,
+                "notes": case.notes,
+            },
+        )
         self._conn.commit()
 
     def count_by_month(self, year: int, month: int) -> int:
