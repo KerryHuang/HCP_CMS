@@ -101,10 +101,13 @@ class IMAPProvider(MailProvider):
                         continue
                     decoded = item.decode("utf-8", errors="replace") if isinstance(item, bytes) else item
                     if r"\Sent" in decoded:
-                        # LIST 回應格式：(\Flags) "delimiter" "FolderName"
-                        parts = decoded.rsplit(" ", 1)
-                        if parts:
-                            name = parts[-1].strip().strip('"')
+                        # LIST 回應格式：(\Flags) "delimiter" "FolderName" 或 FolderName
+                        # 用 regex 取最後一個引號內容或最後一個 token
+                        import re
+
+                        m = re.search(r'"([^"]+)"\s*$|(\S+)\s*$', decoded)
+                        if m:
+                            name = m.group(1) or m.group(2)
                             if name:
                                 return name
         except Exception:
