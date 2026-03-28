@@ -375,7 +375,7 @@ class TestIMAPProvider:
 
     def test_search_criteria_single_day(self):
         """單日查詢 BEFORE 必須 +1 天，否則 IMAP 永遠回傳 0 筆。"""
-        from datetime import datetime, timedelta
+        from datetime import datetime
         from unittest.mock import MagicMock
 
         provider = IMAPProvider("imap.example.com")

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from hcp_cms.core.sent_mail_manager import EnrichedSentMail, SentMailManager
+from hcp_cms.core.sent_mail_manager import SentMailManager
 from hcp_cms.data.database import DatabaseManager
 from hcp_cms.services.mail.base import MailProvider, RawEmail
 
