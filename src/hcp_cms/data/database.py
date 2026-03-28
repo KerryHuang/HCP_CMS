@@ -86,6 +86,8 @@ CREATE TABLE IF NOT EXISTS mantis_tickets (
 CREATE TABLE IF NOT EXISTS case_mantis (
     case_id TEXT REFERENCES cs_cases(case_id),
     ticket_id TEXT REFERENCES mantis_tickets(ticket_id),
+    summary TEXT,
+    issue_date TEXT,
     PRIMARY KEY (case_id, ticket_id)
 );
 
@@ -189,6 +191,8 @@ class DatabaseManager:
         pending: list[str] = [
             "ALTER TABLE qa_knowledge ADD COLUMN status TEXT DEFAULT '已完成'",
             "ALTER TABLE cs_cases ADD COLUMN reply_time TEXT",
+            "ALTER TABLE case_mantis ADD COLUMN summary TEXT",
+            "ALTER TABLE case_mantis ADD COLUMN issue_date TEXT",
         ]
         for sql in pending:
             try:

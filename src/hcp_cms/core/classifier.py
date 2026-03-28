@@ -8,6 +8,12 @@ from hcp_cms.data.repositories import CompanyRepository, RuleRepository
 
 OUR_DOMAIN = "ares.com.tw"
 
+# 從主旨解析 Mantis ISSUE 資訊：ISSUE_YYYYMMDD_INNNNN_
+_ISSUE_RE = re.compile(
+    r"ISSUE_(\d{8})_I(\d+)_",
+    re.IGNORECASE,
+)
+
 
 class Classifier:
     """Classifies emails by product, issue type, error type, priority, and company."""
@@ -34,6 +40,15 @@ class Classifier:
 
         company_id, company_display = self._resolve_company(sender_email, to_recipients or [])
 
+        # 解析 Mantis ISSUE 資訊（在 subject 中搜尋）
+        mantis_ticket_id: str | None = None
+        mantis_issue_date: str | None = None
+        m_issue = _ISSUE_RE.search(subject or "")
+        if m_issue:
+            raw_date = m_issue.group(1)   # "20260325"
+            mantis_ticket_id = m_issue.group(2)  # "0017475"
+            mantis_issue_date = f"{raw_date[:4]}/{raw_date[4:6]}/{raw_date[6:]}"
+
         result = {
             "system_product": self._match_rules("product", text, "HCP"),
             "issue_type": self._match_rules("issue", text, "OTH"),
@@ -46,6 +61,8 @@ class Classifier:
             "handler": tags.get("handler") or self._match_rules("handler", text, "") or None,
             "progress": tags.get("progress") or self._match_rules("progress", text, "") or None,
             "issue_number": tags.get("issue_number"),
+            "mantis_ticket_id": mantis_ticket_id,
+            "mantis_issue_date": mantis_issue_date,
         }
 
         return result

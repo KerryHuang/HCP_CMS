@@ -751,12 +751,42 @@ class CaseMantisRepository:
     def __init__(self, conn: sqlite3.Connection) -> None:
         self._conn = conn
 
-    def link(self, link: CaseMantisLink) -> None:
+    def _row_to_link(self, row: sqlite3.Row) -> CaseMantisLink:
+        d = dict(row)
+        return CaseMantisLink(
+            case_id=d["case_id"],
+            ticket_id=d["ticket_id"],
+            summary=d.get("summary"),
+            issue_date=d.get("issue_date"),
+        )
+
+    def insert(self, link: CaseMantisLink) -> None:
+        """新增 case-mantis 連結記錄（INSERT OR IGNORE，避免主鍵衝突）。"""
         self._conn.execute(
-            "INSERT OR IGNORE INTO case_mantis (case_id, ticket_id) VALUES (?, ?)",
-            (link.case_id, link.ticket_id),
+            """
+            INSERT OR IGNORE INTO case_mantis (case_id, ticket_id, summary, issue_date)
+            VALUES (:case_id, :ticket_id, :summary, :issue_date)
+            """,
+            {
+                "case_id": link.case_id,
+                "ticket_id": link.ticket_id,
+                "summary": link.summary,
+                "issue_date": link.issue_date,
+            },
         )
         self._conn.commit()
+
+    def link(self, link: CaseMantisLink) -> None:
+        """向後相容的連結方法（等同 insert，不含 summary/issue_date）。"""
+        self.insert(link)
+
+    def list_by_case_id(self, case_id: str) -> list[CaseMantisLink]:
+        """取得指定案件的所有 Mantis 連結記錄。"""
+        rows = self._conn.execute(
+            "SELECT case_id, ticket_id, summary, issue_date FROM case_mantis WHERE case_id = ?",
+            (case_id,),
+        ).fetchall()
+        return [self._row_to_link(row) for row in rows]
 
     def get_tickets_for_case(self, case_id: str) -> list[str]:
         rows = self._conn.execute("SELECT ticket_id FROM case_mantis WHERE case_id = ?", (case_id,)).fetchall()

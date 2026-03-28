@@ -132,6 +132,8 @@ class Synonym:
 class CaseMantisLink:
     case_id: str
     ticket_id: str
+    summary: str | None = None      # 連結摘要說明
+    issue_date: str | None = None   # 格式 YYYY/MM/DD，來自主旨 ISSUE_YYYYMMDD_
 
 
 @dataclass
