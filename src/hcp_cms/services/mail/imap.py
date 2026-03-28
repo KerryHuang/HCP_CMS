@@ -82,13 +82,89 @@ class IMAPProvider(MailProvider):
             return []
 
     def fetch_sent_messages(self, since: datetime | None = None) -> list[RawEmail]:
-        # Try common sent folder names
-        for folder in ('"[Gmail]/Sent Mail"', "Sent", "INBOX.Sent", '"Sent Items"'):
+        folder = self._find_sent_folder()
+        if not folder:
+            return []
+        return self.fetch_messages(since=since, folder=folder)
+
+    def _find_sent_folder(self) -> str | None:
+        """找出 IMAP 伺服器的寄件夾名稱。
+        1. LIST 找 \\Sent 旗標
+        2. LIST 解碼後名稱含「寄件」或「sent」關鍵字
+        3. 逐一嘗試常見英文名稱"""
+        if not self._conn:
+            return None
+        import re
+
+        sent_keywords = ("寄件", "sent")
+
+        def _extract_name(line: str) -> str | None:
+            m = re.search(r'"([^"]+)"\s*$|(\S+)\s*$', line)
+            return (m.group(1) or m.group(2)) if m else None
+
+        try:
+            typ, items = self._conn.list('""', "*")
+            if typ == "OK" and items:
+                keyword_candidates: list[str] = []
+                for item in items:
+                    if not item:
+                        continue
+                    decoded = item.decode("utf-8", errors="replace") if isinstance(item, bytes) else item
+                    # 優先：有 \Sent 旗標
+                    if r"\Sent" in decoded:
+                        name = _extract_name(decoded)
+                        if name:
+                            return name
+                    # 備選：解碼後名稱含寄件/sent 關鍵字
+                    name_raw = _extract_name(decoded)
+                    if name_raw:
+                        name_decoded = self._decode_imap_utf7(name_raw)
+                        folder_leaf = name_decoded.rsplit("/", 1)[-1].lower()
+                        if any(kw in folder_leaf for kw in sent_keywords):
+                            keyword_candidates.append(name_raw)
+                # 從關鍵字候選中選頂層資料夾（不含 /），優先取解碼後名稱最短者
+                top_level = [n for n in keyword_candidates if "/" not in n]
+                if top_level:
+                    return min(top_level, key=lambda n: len(self._decode_imap_utf7(n)))
+                if keyword_candidates:
+                    return keyword_candidates[0]
+        except Exception:
+            pass
+        # 3. 逐一嘗試常見英文名稱，以 select 回傳碼判斷是否存在
+        for folder in ('"[Gmail]/Sent Mail"', "Sent", "INBOX.Sent", '"Sent Items"', "Sent Messages"):
             try:
-                return self.fetch_messages(since=since, folder=folder)
+                typ, _ = self._conn.select(folder, readonly=True)
+                if typ == "OK":
+                    return folder
             except Exception:
                 continue
-        return []
+        return None
+
+    @staticmethod
+    def _decode_imap_utf7(s: str) -> str:
+        """解碼 IMAP Modified UTF-7 資料夾名稱（RFC 3501）。"""
+        import base64
+
+        res: list[str] = []
+        i = 0
+        while i < len(s):
+            if s[i] == "&":
+                try:
+                    j = s.index("-", i + 1)
+                    b64 = s[i + 1 : j].replace(",", "/")
+                    if b64 == "":
+                        res.append("&")
+                    else:
+                        pad = (4 - len(b64) % 4) % 4
+                        res.append(base64.b64decode(b64 + "=" * pad).decode("utf-16-be"))
+                    i = j + 1
+                except Exception:
+                    res.append(s[i])
+                    i += 1
+            else:
+                res.append(s[i])
+                i += 1
+        return "".join(res)
 
     def create_draft(self, to: list[str], subject: str, body: str, attachments: list[str] | None = None) -> bool:
         if not self._conn:
@@ -149,6 +225,12 @@ class IMAPProvider(MailProvider):
         raw_from = msg.get("From", "")
         sender = IMAPProvider._decode_header_value(raw_from)
 
+        # 解析收件人 To（寄件備份用）
+        from email.utils import getaddresses
+
+        raw_to = msg.get("To", "")
+        to_recipients = [addr for _, addr in getaddresses([raw_to]) if addr]
+
         # 日期格式化為 yyyy/mm/dd HH:MM:SS
         raw_date = msg.get("Date", "")
         date_str = raw_date
@@ -169,4 +251,5 @@ class IMAPProvider(MailProvider):
             message_id=msg.get("Message-ID"),
             in_reply_to=msg.get("In-Reply-To"),
             references=msg.get("References"),
+            to_recipients=to_recipients,
         )

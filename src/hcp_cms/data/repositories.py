@@ -187,6 +187,16 @@ class CaseRepository:
             return None
         return self._row_to_case(row)
 
+    def get_by_subject(self, subject: str) -> Case | None:
+        """依主旨查詢案件，回傳第一筆相符或 None。"""
+        row = self._conn.execute(
+            self._build_select() + " WHERE subject = ?",
+            (subject,),
+        ).fetchone()
+        if row is None:
+            return None
+        return self._row_to_case(row)
+
     def next_case_id(self) -> str:
         year = datetime.now().strftime("%Y")
         prefix = f"CS-{year}-"

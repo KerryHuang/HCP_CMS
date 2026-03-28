@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QSpinBox,
     QSplitter,
+    QTabWidget,
     QTableWidget,
     QTableWidgetItem,
     QTextEdit,
@@ -37,6 +38,7 @@ from hcp_cms.data.repositories import ProcessedFileRepository
 from hcp_cms.services.credential import CredentialManager
 from hcp_cms.services.mail.base import MailProvider, RawEmail
 from hcp_cms.services.mail.msg_reader import MSGReader
+from hcp_cms.ui.sent_mail_tab import SentMailTab
 
 
 class EmailView(QWidget):
@@ -97,9 +99,20 @@ class EmailView(QWidget):
         title.setStyleSheet("font-size: 18px; font-weight: bold; color: #f1f5f9;")
         layout.addWidget(title)
 
-        # Connection settings
-        conn_group = QGroupBox("連線設定")
-        conn_layout = QHBoxLayout(conn_group)
+        # 可折疊連線設定
+        self._conn_toggle_btn = QPushButton("⚙ 連線設定  ▲")
+        self._conn_toggle_btn.setStyleSheet(
+            "QPushButton { text-align: left; padding: 6px 12px;"
+            " background: #1e293b; color: #94a3b8;"
+            " border: 1px solid #334155; border-radius: 6px; font-size: 13px; }"
+            "QPushButton:hover { background: #273344; color: #cbd5e1; }"
+        )
+        self._conn_toggle_btn.clicked.connect(self._on_toggle_conn)
+        layout.addWidget(self._conn_toggle_btn)
+
+        self._conn_content = QWidget()
+        conn_layout = QHBoxLayout(self._conn_content)
+        conn_layout.setContentsMargins(0, 4, 0, 4)
 
         self._provider_combo = QComboBox()
         self._provider_combo.addItems(["IMAP", "Exchange", ".msg 手動匯入"])
@@ -110,7 +123,25 @@ class EmailView(QWidget):
         self._connect_btn.clicked.connect(self._on_connect)
         conn_layout.addWidget(self._connect_btn)
 
-        layout.addWidget(conn_group)
+        layout.addWidget(self._conn_content)
+        layout.addSpacing(4)
+
+        self._connected_proto: str = ""
+        self._connected_user: str = ""
+
+        # Tab widget：收件處理 / 寄件備份
+        self._tab_widget = QTabWidget()
+        self._tab_widget.setStyleSheet(
+            "QTabWidget::pane { border: none; background: transparent; }"
+            "QTabBar::tab { background: #1e293b; color: #94a3b8;"
+            "  padding: 6px 16px; border-bottom: 2px solid transparent; }"
+            "QTabBar::tab:selected { background: #1e293b; color: #f1f5f9;"
+            "  border-bottom: 2px solid #3b82f6; }"
+            "QTabBar::tab:hover:!selected { background: #273344; color: #cbd5e1; }"
+        )
+        inbox_widget = QWidget()
+        inbox_layout = QVBoxLayout(inbox_widget)
+        inbox_layout.setContentsMargins(0, 8, 0, 0)
 
         # Date navigator — ← [日期] →
         filter_layout = QHBoxLayout()
@@ -158,7 +189,7 @@ class EmailView(QWidget):
         import_btn.clicked.connect(self._on_import_msg)
         filter_layout.addWidget(import_btn)
 
-        layout.addLayout(filter_layout)
+        inbox_layout.addLayout(filter_layout)
 
         # Email list — 5 columns: checkbox + 寄件人 + 主旨 + 日期 + 狀態
         self._table = QTableWidget(0, 5)
@@ -183,7 +214,7 @@ class EmailView(QWidget):
         select_row.addWidget(select_all_btn)
         select_row.addWidget(select_none_btn)
         select_row.addStretch()
-        layout.addLayout(select_row)
+        inbox_layout.addLayout(select_row)
 
         self._splitter = QSplitter(Qt.Orientation.Vertical)
 
@@ -199,7 +230,7 @@ class EmailView(QWidget):
         self._splitter.setSizes([400, 300])
         self._splitter.setStretchFactor(0, 1)
         self._splitter.setStretchFactor(1, 1)
-        layout.addWidget(self._splitter, stretch=1)
+        inbox_layout.addWidget(self._splitter, stretch=1)
 
         # Actions
         action_layout = QHBoxLayout()
@@ -209,21 +240,21 @@ class EmailView(QWidget):
         self._import_all_btn = QPushButton("📥 全部匯入")
         self._import_all_btn.clicked.connect(self._on_import_all)
         action_layout.addWidget(self._import_all_btn)
-        layout.addLayout(action_layout)
+        inbox_layout.addLayout(action_layout)
 
         # Progress
         self._progress = QProgressBar()
         self._progress.setVisible(False)
-        layout.addWidget(self._progress)
+        inbox_layout.addWidget(self._progress)
 
         # Log
         self._log = QTextEdit()
         self._log.setReadOnly(True)
         self._log.setFixedHeight(120)
         self._log.setPlaceholderText("處理日誌...")
-        layout.addWidget(self._log)
+        inbox_layout.addWidget(self._log)
 
-        # Schedule settings
+        # Schedule settings（屬於收件排程，放在收件 tab 內）
         schedule_group = QGroupBox("自動排程")
         schedule_layout = QHBoxLayout(schedule_group)
         schedule_layout.addWidget(QLabel("每"))
@@ -234,7 +265,15 @@ class EmailView(QWidget):
         schedule_layout.addWidget(QLabel("分鐘自動檢查"))
         self._auto_btn = QPushButton("啟動自動處理")
         schedule_layout.addWidget(self._auto_btn)
-        layout.addWidget(schedule_group)
+        inbox_layout.addWidget(schedule_group)
+
+        self._tab_widget.addTab(inbox_widget, "📥 收件處理")
+
+        # 寄件備份 tab
+        self._sent_tab = SentMailTab(conn=self._conn)
+        self._tab_widget.addTab(self._sent_tab, "📤 寄件備份")
+
+        layout.addWidget(self._tab_widget, stretch=1)
 
     def _run_in_background(self, fn: object, on_done: object, on_error: object) -> None:
         """用 threading.Thread 在背景執行 fn，完成後透過 Signal 回到 UI 線程。"""
@@ -268,6 +307,31 @@ class EmailView(QWidget):
         self._connect_btn.setEnabled(True)
         self._fetch_btn.setEnabled(True)
 
+    def _on_toggle_conn(self) -> None:
+        """切換連線設定面板展開/收合。"""
+        self._conn_content.setVisible(not self._conn_content.isVisible())
+        self._update_conn_toggle()
+
+    def _update_conn_toggle(self) -> None:
+        """更新折疊按鈕文字與樣式。"""
+        arrow = "▲" if self._conn_content.isVisible() else "▼"
+        if self._connected_proto:
+            self._conn_toggle_btn.setText(f"✅ {self._connected_proto}  {self._connected_user}  {arrow}")
+            self._conn_toggle_btn.setStyleSheet(
+                "QPushButton { text-align: left; padding: 6px 12px;"
+                " background: #1e293b; color: #4ade80;"
+                " border: 1px solid #166534; border-radius: 6px; font-size: 13px; }"
+                "QPushButton:hover { background: #273344; }"
+            )
+        else:
+            self._conn_toggle_btn.setText(f"⚙ 連線設定  {arrow}")
+            self._conn_toggle_btn.setStyleSheet(
+                "QPushButton { text-align: left; padding: 6px 12px;"
+                " background: #1e293b; color: #94a3b8;"
+                " border: 1px solid #334155; border-radius: 6px; font-size: 13px; }"
+                "QPushButton:hover { background: #273344; color: #cbd5e1; }"
+            )
+
     def _on_connect(self) -> None:
         """根據所選協定建立信件連線。"""
         proto = self._provider_combo.currentText()
@@ -284,6 +348,7 @@ class EmailView(QWidget):
                 pass
             self._provider = None
 
+        pending_user: str = ""
         if proto == "IMAP":
             host = self._creds.retrieve("mail_imap_host")
             if not host:
@@ -293,6 +358,7 @@ class EmailView(QWidget):
             ssl_str = self._creds.retrieve("mail_imap_ssl") or "true"
             user = self._creds.retrieve("mail_imap_user") or ""
             pwd = self._creds.retrieve("mail_imap_password") or ""
+            pending_user = user
 
             from hcp_cms.services.mail.imap import IMAPProvider
 
@@ -311,6 +377,7 @@ class EmailView(QWidget):
             server = self._creds.retrieve("mail_exchange_server") or ""
             user = self._creds.retrieve("mail_exchange_user") or ""
             pwd = self._creds.retrieve("mail_exchange_password") or ""
+            pending_user = email_addr
 
             from hcp_cms.services.mail.exchange import ExchangeProvider
 
@@ -330,6 +397,11 @@ class EmailView(QWidget):
             if result["ok"]:
                 self._provider = result["provider"]
                 self._log.append(f"✅ {proto} 連線成功！")
+                self._sent_tab.set_provider(self._provider)
+                self._connected_proto = proto
+                self._connected_user = pending_user
+                self._conn_content.hide()
+                self._update_conn_toggle()
                 if self._auto_fetch_after_connect:
                     self._auto_fetch_after_connect = False
                     self._on_fetch()

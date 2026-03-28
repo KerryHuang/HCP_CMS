@@ -5,9 +5,11 @@ from __future__ import annotations
 import sqlite3
 import threading
 from datetime import datetime
+from typing import cast
 
 from PySide6.QtCore import QDate, Qt, Signal
 from PySide6.QtWidgets import (
+    QApplication,
     QDateEdit,
     QHBoxLayout,
     QHeaderView,
@@ -20,6 +22,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from hcp_cms.core.sent_mail_manager import EnrichedSentMail, SentMailManager
 from hcp_cms.services.mail.base import MailProvider
 
 
@@ -41,7 +44,7 @@ class SentMailTab(QWidget):
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setContentsMargins(0, 8, 0, 0)
 
         # --- 日期導航列（同收件分頁） ---
         filter_layout = QHBoxLayout()
@@ -173,7 +176,10 @@ class SentMailTab(QWidget):
     # --- 背景抓取 ---
 
     def _fetch(self, since: datetime, until: datetime) -> None:
-        if not self._provider or not self._conn:
+        if not self._conn:
+            self._log.append("⚠️ 資料庫未連線。")
+            return
+        if not self._provider:
             self._log.append("⚠️ 請先連線信箱。")
             return
         self._refresh_btn.setEnabled(False)
@@ -187,9 +193,7 @@ class SentMailTab(QWidget):
         conn = self._conn
         provider = self._provider
 
-        def _work() -> object:
-            from hcp_cms.core.sent_mail_manager import SentMailManager
-
+        def _work() -> list[EnrichedSentMail]:
             return SentMailManager(conn, provider).fetch_and_enrich(since, until)
 
         def _thread() -> None:
@@ -201,9 +205,7 @@ class SentMailTab(QWidget):
         threading.Thread(target=_thread, daemon=True).start()
 
     def _on_worker_done(self, results: object) -> None:
-        from hcp_cms.core.sent_mail_manager import EnrichedSentMail
-
-        mails: list[EnrichedSentMail] = results  # type: ignore[assignment]
+        mails = cast(list[EnrichedSentMail], results)
         self._refresh_btn.setEnabled(True)
         self._log.append(f"✅ 取得 {len(mails)} 封寄件備份。")
         self._populate_tables(mails)
@@ -214,7 +216,7 @@ class SentMailTab(QWidget):
 
     # --- 渲染 ---
 
-    def _populate_tables(self, mails: list) -> None:
+    def _populate_tables(self, mails: list[EnrichedSentMail]) -> None:
         # 彙總表（去重後依次數降冪）
         seen: dict[str, tuple[str, int]] = {}
         for m in mails:
@@ -245,7 +247,5 @@ class SentMailTab(QWidget):
         if col == 4:
             item = self._list_table.item(row, col)
             if item and item.text() != "—":
-                from PySide6.QtWidgets import QApplication
-
                 QApplication.clipboard().setText(item.text())
                 self._log.append(f"📋 已複製案件編號：{item.text()}")
