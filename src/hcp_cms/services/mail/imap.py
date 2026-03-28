@@ -82,13 +82,49 @@ class IMAPProvider(MailProvider):
             return []
 
     def fetch_sent_messages(self, since: datetime | None = None) -> list[RawEmail]:
-        # Try common sent folder names
-        for folder in ('"[Gmail]/Sent Mail"', "Sent", "INBOX.Sent", '"Sent Items"'):
+        folder = self._find_sent_folder()
+        if not folder:
+            return []
+        return self.fetch_messages(since=since, folder=folder)
+
+    def _find_sent_folder(self) -> str | None:
+        """找出 IMAP 伺服器的寄件夾名稱。
+        先用 LIST 找 \\Sent 旗標，找不到再逐一嘗試常見名稱。"""
+        if not self._conn:
+            return None
+        # 1. 用 LIST 找有 \\Sent 特殊旗標的資料夾
+        try:
+            typ, items = self._conn.list("", "*")
+            if typ == "OK" and items:
+                for item in items:
+                    if not item:
+                        continue
+                    decoded = item.decode("utf-8", errors="replace") if isinstance(item, bytes) else item
+                    if r"\Sent" in decoded:
+                        # LIST 回應格式：(\Flags) "delimiter" "FolderName"
+                        parts = decoded.rsplit(" ", 1)
+                        if parts:
+                            name = parts[-1].strip().strip('"')
+                            if name:
+                                return name
+        except Exception:
+            pass
+        # 2. 逐一嘗試常見名稱，以 select 回傳碼判斷是否存在
+        for folder in (
+            '"[Gmail]/Sent Mail"',
+            "Sent",
+            "INBOX.Sent",
+            '"Sent Items"',
+            "Sent Messages",
+            "已傳送",
+        ):
             try:
-                return self.fetch_messages(since=since, folder=folder)
+                typ, _ = self._conn.select(folder, readonly=True)
+                if typ == "OK":
+                    return folder
             except Exception:
                 continue
-        return []
+        return None
 
     def create_draft(self, to: list[str], subject: str, body: str, attachments: list[str] | None = None) -> bool:
         if not self._conn:
