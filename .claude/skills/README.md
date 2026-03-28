@@ -18,6 +18,7 @@
 | `/test` | 執行測試 | pytest 全部/單一/覆蓋率/關鍵字篩選 |
 | `/run` | 啟動應用程式 | 啟動 PySide6 GUI 桌面應用 |
 | `/build` | 建置執行檔 | PyInstaller 打包成 Windows .exe |
+| `/poc` | POC 驗證 | 技術可行性原型 + 需求情境列舉，正式實作前快速驗證假設 |
 
 ## 發行流程
 
@@ -52,5 +53,6 @@
 ├── building/SKILL.md       ← /build
 ├── releasing/SKILL.md      ← /release
 ├── publishing/SKILL.md     ← /publish
+├── poc/SKILL.md            ← /poc
 └── updating-docs/SKILL.md  ← /update-docs
 ```
