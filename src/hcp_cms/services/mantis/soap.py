@@ -109,5 +109,5 @@ class MantisSoapClient(MantisClient):
             if idx == -1:
                 return None
             text = text[idx:]
-        match = re.search(f"<{tag}>(.*?)</{tag}>", text, re.DOTALL)
+        match = re.search(f"<{tag}[^>]*>(.*?)</{tag}>", text, re.DOTALL)
         return match.group(1).strip() if match else None
