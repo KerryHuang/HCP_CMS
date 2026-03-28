@@ -78,9 +78,7 @@ EOF
 ```
 
 - MUST 使用 HEREDOC 格式確保換行正確
-- NEVER 使用 `--amend`（除非使用者明確要求）
-- NEVER 使用 `--no-verify`（hook 失敗應修正問題）
-- Hook 失敗後，修正問題、重新 stage、建立**新** commit
+- Hook 失敗後，修正問題、重新 stage、建立**新** commit（NEVER amend）
 
 ### 步驟 6：驗證
 

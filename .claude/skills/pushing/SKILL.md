@@ -51,10 +51,7 @@ git push origin <branch>
 git push -u origin <branch>
 ```
 
-**規則：**
-- NEVER 使用 `--force` 除非使用者明確要求
-- NEVER force push 到 `main` 或 `master`，即使使用者要求也要先警告
-- 若 push 被拒絕，說明原因並建議 pull 後重試
+**注意：** Git 安全規則（見 `.claude/rules/git-safety.md`）適用於所有 push 操作。若 push 被拒絕，說明原因並建議 pull 後重試。
 
 ### 步驟 5：驗證
 
@@ -75,6 +72,4 @@ git branch -vv
 
 | 想法 | 現實 |
 |------|------|
-| 「直接 push 不用檢查」 | 可能覆蓋遠端變更 |
-| 「force push 比較快解決」 | 可能丟失他人工作，先 pull 再 push |
-| 「push 到 main 沒關係」 | 永遠不要 force push 到 main/master |
+| 「直接 push 不用檢查」 | 可能覆蓋遠端變更，先 fetch 確認 |
