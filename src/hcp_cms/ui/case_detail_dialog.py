@@ -290,7 +290,9 @@ class CaseDetailDialog(QDialog):
         self._mantis_table.setColumnWidth(1, 90)
         self._mantis_table.setColumnWidth(3, 80)
         self._mantis_table.setColumnWidth(4, 140)
-        self._mantis_table.currentRowChanged.connect(self._on_mantis_table_row_changed)
+        self._mantis_table.itemSelectionChanged.connect(
+            lambda: self._on_mantis_table_row_changed(self._mantis_table.currentRow())
+        )
         layout.addWidget(self._mantis_table)
 
         # ── 下方詳情面板（常駐） ──
