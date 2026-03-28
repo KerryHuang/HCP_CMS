@@ -11,6 +11,7 @@ build/
 *.db-journal
 *.db-wal
 .superpowers/
+.worktrees/
 .claude/settings.local.json
 .env
 .venv/
