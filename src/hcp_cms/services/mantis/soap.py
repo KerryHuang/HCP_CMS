@@ -7,7 +7,7 @@ import re
 import requests
 import urllib3
 
-from hcp_cms.services.mantis.base import MantisClient, MantisIssue
+from hcp_cms.services.mantis.base import MantisClient, MantisIssue, MantisNote
 
 # 忽略自簽 SSL 憑證警告（內網 Mantis 伺服器常見）
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -27,7 +27,7 @@ class MantisSoapClient(MantisClient):
             resp = requests.get(
                 f"{self._base_url}/api/soap/mantisconnect.php",
                 timeout=10,
-                verify=False,  # 允許自簽憑證
+                verify=False,
             )
             self._connected = resp.status_code in (200, 400, 405, 500)
             return self._connected
@@ -57,27 +57,35 @@ class MantisSoapClient(MantisClient):
                 data=soap_body.encode("utf-8"),
                 headers={"Content-Type": "text/xml; charset=utf-8"},
                 timeout=30,
-                verify=False,  # 允許自簽憑證
+                verify=False,
             )
             if resp.status_code != 200:
                 self.last_error = f"HTTP {resp.status_code}: {resp.text[:200]}"
                 return None
 
             text = resp.text
-            # 檢查是否為 SOAP Fault（錯誤回應）
             if "<faultstring>" in text:
                 fault = self._extract_xml(text, "faultstring") or "未知錯誤"
                 self.last_error = f"SOAP 錯誤：{fault}"
                 return None
 
             summary = self._extract_xml(text, "summary") or ""
-            status = self._extract_xml(text, "name", after="status") or ""
-            priority = self._extract_xml(text, "name", after="priority") or ""
-            handler = self._extract_xml(text, "name", after="handler") or ""
-
             if not summary:
                 self.last_error = "回應內容解析失敗（summary 為空）"
                 return None
+
+            status = self._extract_xml(text, "name", after="status") or ""
+            priority = self._extract_xml(text, "name", after="priority") or ""
+            handler = self._extract_xml(text, "name", after="handler") or ""
+            severity = self._extract_xml(text, "name", after="severity") or ""
+            reporter = self._extract_xml(text, "name", after="reporter") or ""
+            date_submitted = self._extract_xml(text, "date_submitted") or ""
+            last_updated = self._extract_xml(text, "last_updated") or ""
+            target_version = self._extract_xml(text, "target_version") or ""
+            fixed_in_version = self._extract_xml(text, "fixed_in_version") or ""
+            description = self._extract_xml(text, "description") or ""
+
+            notes_list, notes_count = self._parse_notes(text, max_count=5)
 
             return MantisIssue(
                 id=issue_id,
@@ -85,6 +93,15 @@ class MantisSoapClient(MantisClient):
                 status=status,
                 priority=priority,
                 handler=handler,
+                severity=severity,
+                reporter=reporter,
+                date_submitted=date_submitted,
+                last_updated=last_updated,
+                target_version=target_version,
+                fixed_in_version=fixed_in_version,
+                description=description,
+                notes_list=notes_list,
+                notes_count=notes_count,
             )
         except requests.exceptions.SSLError as e:
             self.last_error = f"SSL 憑證錯誤：{e}"
@@ -105,9 +122,45 @@ class MantisSoapClient(MantisClient):
     @staticmethod
     def _extract_xml(text: str, tag: str, after: str | None = None) -> str | None:
         if after:
-            idx = text.find(f"<{after}>")
-            if idx == -1:
+            m = re.search(f"<{after}[^>]*>", text)
+            if m is None:
                 return None
-            text = text[idx:]
+            text = text[m.start() :]
         match = re.search(f"<{tag}[^>]*>(.*?)</{tag}>", text, re.DOTALL)
         return match.group(1).strip() if match else None
+
+    @staticmethod
+    def _parse_notes(text: str, max_count: int = 5) -> tuple[list[MantisNote], int]:
+        """解析 SOAP 回應中的所有 <item>（Bug 筆記），返回最後 max_count 條（降序）與總數。"""
+        notes_match = re.search(r"<notes[^>]*>(.*?)</notes>", text, re.DOTALL)
+        if not notes_match:
+            return [], 0
+
+        notes_block = notes_match.group(1)
+        items = re.findall(r"<item[^>]*>(.*?)</item>", notes_block, re.DOTALL)
+        total = len(items)
+
+        def _extract(block: str, tag: str, after: str | None = None) -> str:
+            if after:
+                m = re.search(f"<{after}[^>]*>", block)
+                if m is None:
+                    return ""
+                block = block[m.start() :]
+            m2 = re.search(f"<{tag}[^>]*>(.*?)</{tag}>", block, re.DOTALL)
+            return m2.group(1).strip() if m2 else ""
+
+        notes: list[MantisNote] = []
+        for item in items:
+            notes.append(
+                MantisNote(
+                    note_id=_extract(item, "id"),
+                    reporter=_extract(item, "name", after="reporter"),
+                    text=_extract(item, "text"),
+                    date_submitted=_extract(item, "date_submitted"),
+                )
+            )
+
+        # 取最後 max_count 條，依 date_submitted 降序（最新在前）
+        tail = notes[-max_count:] if len(notes) > max_count else notes
+        tail_sorted = sorted(tail, key=lambda n: n.date_submitted, reverse=True)
+        return tail_sorted, total
