@@ -132,8 +132,8 @@ class TestSyncMantisTicket:
         from hcp_cms.services.mantis.base import MantisIssue
         mock_client.get_issue.return_value = MantisIssue(
             id="0001", summary="遠端摘要", status="已修復", priority="高",
-            handler="工程師", notes="",
-            created="2026/03/01",
+            handler="工程師", notes_list=[],
+            date_submitted="2026/03/01",
         )
         manager = CaseDetailManager(db.connection)
         ticket = manager.sync_mantis_ticket("0001", client=mock_client)

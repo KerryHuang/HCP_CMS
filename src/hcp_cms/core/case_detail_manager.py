@@ -113,7 +113,6 @@ class CaseDetailManager:
             status=issue.status,
             priority=issue.priority,
             handler=issue.handler,
-            notes=issue.notes,
         )
         self._mantis_repo.upsert(ticket)
         return self._mantis_repo.get_by_id(ticket_id)
