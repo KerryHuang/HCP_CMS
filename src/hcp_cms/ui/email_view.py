@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QSpinBox,
     QSplitter,
+    QTabWidget,
     QTableWidget,
     QTableWidgetItem,
     QTextEdit,
@@ -37,7 +38,6 @@ from hcp_cms.data.repositories import ProcessedFileRepository
 from hcp_cms.services.credential import CredentialManager
 from hcp_cms.services.mail.base import MailProvider, RawEmail
 from hcp_cms.services.mail.msg_reader import MSGReader
-from PySide6.QtWidgets import QTabWidget
 from hcp_cms.ui.sent_mail_tab import SentMailTab
 
 
