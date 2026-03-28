@@ -193,6 +193,12 @@ class DatabaseManager:
             "ALTER TABLE case_mantis ADD COLUMN summary TEXT",
             "ALTER TABLE case_mantis ADD COLUMN issue_date TEXT",
             "ALTER TABLE cs_cases DROP COLUMN replied",
+            "ALTER TABLE mantis_tickets ADD COLUMN severity TEXT",
+            "ALTER TABLE mantis_tickets ADD COLUMN reporter TEXT",
+            "ALTER TABLE mantis_tickets ADD COLUMN description TEXT",
+            "ALTER TABLE mantis_tickets ADD COLUMN notes_json TEXT",
+            "ALTER TABLE mantis_tickets ADD COLUMN last_updated TEXT",
+            "ALTER TABLE mantis_tickets ADD COLUMN notes_count INTEGER",
         ]
         for sql in pending:
             try:

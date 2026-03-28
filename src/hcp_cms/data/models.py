@@ -98,6 +98,13 @@ class MantisTicket:
     progress: str | None = None
     notes: str | None = None
     synced_at: str | None = None
+    # ── 新增欄位 ──
+    severity: str | None = None
+    reporter: str | None = None
+    last_updated: str | None = None  # Mantis 最後更新時間
+    description: str | None = None
+    notes_json: str | None = None
+    notes_count: int | None = None
 
 
 @dataclass

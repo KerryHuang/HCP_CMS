@@ -505,11 +505,13 @@ class MantisRepository:
             INSERT INTO mantis_tickets (
                 ticket_id, created_time, company_id, summary, priority, status,
                 issue_type, module, handler, planned_fix, actual_fix,
-                progress, notes, synced_at
+                progress, notes, synced_at,
+                severity, reporter, last_updated, description, notes_json, notes_count
             ) VALUES (
                 :ticket_id, :created_time, :company_id, :summary, :priority, :status,
                 :issue_type, :module, :handler, :planned_fix, :actual_fix,
-                :progress, :notes, :synced_at
+                :progress, :notes, :synced_at,
+                :severity, :reporter, :last_updated, :description, :notes_json, :notes_count
             )
             ON CONFLICT(ticket_id) DO UPDATE SET
                 created_time = excluded.created_time,
@@ -524,7 +526,13 @@ class MantisRepository:
                 actual_fix = excluded.actual_fix,
                 progress = excluded.progress,
                 notes = excluded.notes,
-                synced_at = excluded.synced_at
+                synced_at = excluded.synced_at,
+                severity = excluded.severity,
+                reporter = excluded.reporter,
+                last_updated = excluded.last_updated,
+                description = excluded.description,
+                notes_json = excluded.notes_json,
+                notes_count = excluded.notes_count
             """,
             {
                 "ticket_id": ticket.ticket_id,
@@ -541,6 +549,12 @@ class MantisRepository:
                 "progress": ticket.progress,
                 "notes": ticket.notes,
                 "synced_at": ticket.synced_at,
+                "severity": ticket.severity,
+                "reporter": ticket.reporter,
+                "last_updated": ticket.last_updated,
+                "description": ticket.description,
+                "notes_json": ticket.notes_json,
+                "notes_count": ticket.notes_count,
             },
         )
         self._conn.commit()
