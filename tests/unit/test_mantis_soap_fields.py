@@ -133,5 +133,5 @@ def test_parse_notes_max_5():
     )
     xml = _SAMPLE_SOAP.replace("<notes>", f"<notes>{items}")
     notes, count = MantisSoapClient._parse_notes(xml, max_count=5)
-    assert count >= 5
+    assert count == 9
     assert len(notes) == 5

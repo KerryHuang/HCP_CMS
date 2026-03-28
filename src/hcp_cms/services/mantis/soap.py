@@ -141,13 +141,7 @@ class MantisSoapClient(MantisClient):
         total = len(items)
 
         def _extract(block: str, tag: str, after: str | None = None) -> str:
-            if after:
-                m = re.search(f"<{after}[^>]*>", block)
-                if m is None:
-                    return ""
-                block = block[m.start() :]
-            m2 = re.search(f"<{tag}[^>]*>(.*?)</{tag}>", block, re.DOTALL)
-            return m2.group(1).strip() if m2 else ""
+            return MantisSoapClient._extract_xml(block, tag, after) or ""
 
         notes: list[MantisNote] = []
         for item in items:
