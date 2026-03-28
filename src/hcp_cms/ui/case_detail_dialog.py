@@ -279,15 +279,36 @@ class CaseDetailDialog(QDialog):
         ticket_id = self._ticket_input.text().strip()
         if not ticket_id:
             return
+        # 先嘗試直接連結（本地已有此 Ticket）
+        ok = self._manager.link_mantis(self._case_id, ticket_id)
+        if ok:
+            self._ticket_input.clear()
+            self._refresh_mantis_table()
+            return
+        # 本地沒有 → 嘗試從 Mantis SOAP 自動抓取再連結
+        client = self._build_mantis_client()
+        if client is None:
+            QMessageBox.warning(
+                self, "找不到 Ticket",
+                f"Ticket {ticket_id} 不在本地資料庫，且尚未設定 Mantis 連線。\n"
+                "請至「系統設定」→「Mantis SOAP 連線設定」填寫帳密後重試。"
+            )
+            return
+        result = self._manager.sync_mantis_ticket(ticket_id, client=client)
+        if result is None:
+            err = getattr(client, "last_error", "") or "請確認票號是否正確。"
+            QMessageBox.warning(
+                self, "同步失敗",
+                f"Ticket {ticket_id} 無法從 Mantis 取得。\n{err}"
+            )
+            return
+        # 同步成功後再連結
         ok = self._manager.link_mantis(self._case_id, ticket_id)
         if ok:
             self._ticket_input.clear()
             self._refresh_mantis_table()
         else:
-            QMessageBox.warning(
-                self, "找不到 Ticket",
-                f"Ticket {ticket_id} 不在本地資料庫。\n請先使用『同步選取』或前往 Mantis 同步頁面同步後再連結。"
-            )
+            QMessageBox.warning(self, "連結失敗", f"Ticket {ticket_id} 同步成功但連結失敗，請重試。")
 
     def _on_unlink_mantis(self) -> None:
         rows = self._mantis_table.selectionModel().selectedRows()
@@ -297,29 +318,39 @@ class CaseDetailDialog(QDialog):
         self._manager.unlink_mantis(self._case_id, ticket_id)
         self._refresh_mantis_table()
 
+    def _build_mantis_client(self):  # type: ignore[return]
+        """從 keyring 讀取憑證並建立 MantisSoapClient，失敗時回傳 None。"""
+        try:
+            from urllib.parse import urlparse
+
+            from hcp_cms.services.credential import CredentialManager
+            from hcp_cms.services.mantis.soap import MantisSoapClient
+
+            creds = CredentialManager()
+            url = creds.retrieve("mantis_url") or ""
+            user = creds.retrieve("mantis_user") or ""
+            pwd = creds.retrieve("mantis_password") or ""
+            if not url:
+                return None
+            # 自動萃取 base URL
+            parsed = urlparse(url)
+            path = parsed.path
+            if ".php" in path:
+                path = path[:path.rfind("/")]
+            base_url = f"{parsed.scheme}://{parsed.netloc}{path}".rstrip("/")
+            client = MantisSoapClient(base_url, user, pwd)
+            client.connect()
+            return client
+        except Exception:
+            return None
+
     def _on_sync_mantis(self) -> None:
         rows = self._mantis_table.selectionModel().selectedRows()
         if not rows:
             QMessageBox.information(self, "提示", "請先選取要同步的 Ticket。")
             return
         ticket_id = self._mantis_table.item(rows[0].row(), 0).text()
-        # 嘗試從 MantisView 取得 client（無 client 時提示）
-        try:
-            from hcp_cms.services.credential import CredentialManager
-            from hcp_cms.services.mantis.soap import MantisSoapClient
-            creds = CredentialManager()
-            url = creds.retrieve("mantis_url") or ""
-            user = creds.retrieve("mantis_user") or ""
-            pwd = creds.retrieve("mantis_password") or ""
-            if url:
-                client = MantisSoapClient(url, user, pwd)
-                if not client.connect():
-                    client = None
-            else:
-                client = None
-        except Exception:
-            client = None
-
+        client = self._build_mantis_client()
         result = self._manager.sync_mantis_ticket(ticket_id, client=client)
         if result is None:
             QMessageBox.warning(self, "同步失敗", "無法連線至 Mantis，或 Mantis 設定未完成。")
