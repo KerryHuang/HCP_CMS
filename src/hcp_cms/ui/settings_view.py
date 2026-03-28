@@ -12,11 +12,14 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QPushButton,
     QSpinBox,
     QVBoxLayout,
     QWidget,
 )
+
+from hcp_cms.services.credential import CredentialManager
 
 
 class SettingsView(QWidget):
@@ -25,7 +28,9 @@ class SettingsView(QWidget):
     def __init__(self, conn: sqlite3.Connection | None = None) -> None:
         super().__init__()
         self._conn = conn
+        self._creds = CredentialManager()
         self._setup_ui()
+        self._load_mantis_creds()
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
@@ -87,6 +92,50 @@ class SettingsView(QWidget):
         backup_layout.addRow(btn_layout)
         layout.addWidget(backup_group)
 
+        # Mantis SOAP settings
+        mantis_group = QGroupBox("🔧 Mantis SOAP 連線設定")
+        mantis_layout = QFormLayout(mantis_group)
+
+        # URL 欄位 + 清除按鈕
+        url_row = QHBoxLayout()
+        self._mantis_url = QLineEdit()
+        self._mantis_url.setPlaceholderText("https://118.163.30.33/mantis/")
+        self._mantis_url.setMinimumWidth(400)
+        url_row.addWidget(self._mantis_url)
+        clear_url_btn = QPushButton("✕ 清除")
+        clear_url_btn.setFixedWidth(60)
+        clear_url_btn.clicked.connect(lambda: self._mantis_url.clear())
+        url_row.addWidget(clear_url_btn)
+        mantis_layout.addRow("Mantis URL：", url_row)
+
+        url_hint = QLabel(
+            "⚠ 請只填基本網址，例如：https://118.163.30.33/mantis/\n"
+            "   不要包含 login_page.php 或 view.php 等頁面路徑"
+        )
+        url_hint.setStyleSheet("color: #94a3b8; font-size: 11px;")
+        mantis_layout.addRow("", url_hint)
+
+        self._mantis_user = QLineEdit()
+        self._mantis_user.setPlaceholderText("帳號（登入用戶名稱）")
+        mantis_layout.addRow("帳號：", self._mantis_user)
+
+        self._mantis_pwd = QLineEdit()
+        self._mantis_pwd.setPlaceholderText("密碼")
+        self._mantis_pwd.setEchoMode(QLineEdit.EchoMode.Password)
+        mantis_layout.addRow("密碼：", self._mantis_pwd)
+
+        mantis_btn_row = QHBoxLayout()
+        test_btn = QPushButton("🔌 測試連線")
+        test_btn.clicked.connect(self._on_test_mantis)
+        mantis_btn_row.addWidget(test_btn)
+        save_mantis_btn = QPushButton("💾 儲存 Mantis 設定")
+        save_mantis_btn.clicked.connect(self._on_save_mantis)
+        mantis_btn_row.addWidget(save_mantis_btn)
+        mantis_btn_row.addStretch()
+        mantis_layout.addRow(mantis_btn_row)
+
+        layout.addWidget(mantis_group)
+
         # Save button
         save_btn = QPushButton("💾 儲存設定")
         layout.addWidget(save_btn)
@@ -118,3 +167,43 @@ class SettingsView(QWidget):
         path, _ = QFileDialog.getOpenFileName(self, "選擇資料庫", "", "SQLite (*.db)")
         if path:
             self._db_path.setText(path)
+
+    # ── Mantis 憑證 ────────────────────────────────────────────────────
+
+    def _load_mantis_creds(self) -> None:
+        """從 keyring 載入已儲存的 Mantis 設定。"""
+        self._mantis_url.setText(self._creds.retrieve("mantis_url") or "")
+        self._mantis_user.setText(self._creds.retrieve("mantis_user") or "")
+        self._mantis_pwd.setText(self._creds.retrieve("mantis_password") or "")
+
+    def _on_save_mantis(self) -> None:
+        """將 Mantis 設定儲存至 OS keyring。"""
+        url = self._mantis_url.text().strip()
+        user = self._mantis_user.text().strip()
+        pwd = self._mantis_pwd.text()
+        if not url:
+            QMessageBox.warning(self, "欄位不完整", "請填寫 Mantis URL。")
+            return
+        self._creds.store("mantis_url", url)
+        self._creds.store("mantis_user", user)
+        self._creds.store("mantis_password", pwd)
+        QMessageBox.information(self, "已儲存", "Mantis 連線設定已儲存至系統憑證庫。")
+
+    def _on_test_mantis(self) -> None:
+        """測試 SOAP 連線是否成功。"""
+        from hcp_cms.services.mantis.soap import MantisSoapClient
+        url = self._mantis_url.text().strip()
+        user = self._mantis_user.text().strip()
+        pwd = self._mantis_pwd.text()
+        if not url:
+            QMessageBox.warning(self, "欄位不完整", "請先填寫 Mantis URL。")
+            return
+        try:
+            client = MantisSoapClient(url, user, pwd)
+            ok = client.connect()
+            if ok:
+                QMessageBox.information(self, "連線成功", f"✅ 成功連線至 Mantis！\n{url}")
+            else:
+                QMessageBox.warning(self, "連線失敗", "❌ 無法連線至 Mantis，請確認 URL 與帳密是否正確。")
+        except Exception as e:
+            QMessageBox.critical(self, "連線錯誤", f"❌ 發生例外：\n{e}")
