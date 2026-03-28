@@ -61,7 +61,7 @@ class SentMailManager:
 
     def _enrich_mail(self, subject: str, recipients: list[str]) -> tuple[str | None, str | None, str | None]:
         """一次查詢回傳 (company_id, company_name, linked_case_id)。"""
-        case = self._case_repo.get_by_subject(subject)
+        case = self._case_repo.get_by_subject(_strip_reply_prefix(subject))
         linked_case_id = case.case_id if case else None
 
         if case and case.company_id:
@@ -81,6 +81,18 @@ class SentMailManager:
         """回傳 (company_id, company_name)。先查 cs_cases，再查 email domain。"""
         company_id, company_name, _ = self._enrich_mail(subject, recipients)
         return company_id, company_name
+
+
+_REPLY_PREFIX = re.compile(r"^(RE|FW|回覆|轉寄)\s*:\s*", re.IGNORECASE)
+
+
+def _strip_reply_prefix(subject: str) -> str:
+    """遞迴剝除 RE: / FW: / 回覆: 等回覆前綴。"""
+    while True:
+        stripped = _REPLY_PREFIX.sub("", subject).strip()
+        if stripped == subject:
+            return subject
+        subject = stripped
 
 
 def _extract_domain(email: str) -> str | None:

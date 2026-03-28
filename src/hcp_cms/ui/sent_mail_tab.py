@@ -44,7 +44,7 @@ class SentMailTab(QWidget):
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setContentsMargins(0, 8, 0, 0)
 
         # --- 日期導航列（同收件分頁） ---
         filter_layout = QHBoxLayout()

@@ -225,6 +225,12 @@ class IMAPProvider(MailProvider):
         raw_from = msg.get("From", "")
         sender = IMAPProvider._decode_header_value(raw_from)
 
+        # 解析收件人 To（寄件備份用）
+        from email.utils import getaddresses
+
+        raw_to = msg.get("To", "")
+        to_recipients = [addr for _, addr in getaddresses([raw_to]) if addr]
+
         # 日期格式化為 yyyy/mm/dd HH:MM:SS
         raw_date = msg.get("Date", "")
         date_str = raw_date
@@ -245,4 +251,5 @@ class IMAPProvider(MailProvider):
             message_id=msg.get("Message-ID"),
             in_reply_to=msg.get("In-Reply-To"),
             references=msg.get("References"),
+            to_recipients=to_recipients,
         )
