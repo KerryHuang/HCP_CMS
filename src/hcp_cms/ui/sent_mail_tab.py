@@ -9,6 +9,7 @@ from typing import cast
 
 from PySide6.QtCore import QDate, Qt, Signal
 from PySide6.QtWidgets import (
+    QApplication,
     QDateEdit,
     QHBoxLayout,
     QHeaderView,
@@ -246,7 +247,5 @@ class SentMailTab(QWidget):
         if col == 4:
             item = self._list_table.item(row, col)
             if item and item.text() != "—":
-                from PySide6.QtWidgets import QApplication
-
                 QApplication.clipboard().setText(item.text())
                 self._log.append(f"📋 已複製案件編號：{item.text()}")
