@@ -1,19 +1,24 @@
 """案件詳情維護對話框 — 3 分頁 QDialog。"""
 from __future__ import annotations
 
+import json
 import sqlite3
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, QUrl, Signal
+from PySide6.QtGui import QBrush, QColor, QDesktopServices
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
     QFormLayout,
+    QFrame,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QMessageBox,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QTableWidget,
     QTableWidgetItem,
     QTabWidget,
@@ -230,11 +235,28 @@ class CaseDetailDialog(QDialog):
         except Exception as e:
             QMessageBox.critical(self, "刪除記錄失敗", str(e))
 
+    @staticmethod
+    def _status_colors(status: str) -> tuple[str, str]:
+        """依 Mantis 狀態字串回傳 (背景色, 文字色)。"""
+        s = status.lower()
+        if "resolved" in s or "已解決" in s:
+            return "#166534", "#bbf7d0"
+        if "closed" in s or "已關閉" in s:
+            return "#1f2937", "#9ca3af"
+        if "assigned" in s or "in progress" in s or "處理中" in s:
+            return "#7c2d12", "#fed7aa"
+        if "acknowledged" in s or "confirmed" in s or "已確認" in s:
+            return "#78350f", "#fde68a"
+        if "feedback" in s or "回饋" in s:
+            return "#3730a3", "#c7d2fe"
+        # new / 其他
+        return "#1e3a5f", "#93c5fd"
+
     def _build_tab3(self) -> QWidget:
         w = QWidget()
         layout = QVBoxLayout(w)
 
-        # 工具列
+        # ── 工具列 ──
         toolbar = QHBoxLayout()
         self._ticket_input = QLineEdit()
         self._ticket_input.setPlaceholderText("輸入 Ticket 編號")
@@ -252,15 +274,103 @@ class CaseDetailDialog(QDialog):
         toolbar.addStretch()
         layout.addLayout(toolbar)
 
-        self._mantis_table = QTableWidget(0, 7)
+        # ── 上方表格（5欄） ──
+        self._mantis_table = QTableWidget(0, 5)
         self._mantis_table.setHorizontalHeaderLabels(
-            ["票號", "摘要", "狀態", "優先", "處理人", "預計修復", "最後同步"]
+            ["票號", "狀態", "摘要", "處理人", "最後同步"]
         )
         self._mantis_table.horizontalHeader().setStretchLastSection(True)
         self._mantis_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._mantis_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self._mantis_table.setColumnWidth(0, 70)
+        self._mantis_table.setColumnWidth(1, 90)
+        self._mantis_table.setColumnWidth(3, 80)
+        self._mantis_table.setColumnWidth(4, 140)
+        self._mantis_table.currentRowChanged.connect(self._on_mantis_table_row_changed)
         layout.addWidget(self._mantis_table)
 
+        # ── 下方詳情面板（常駐） ──
+        detail_frame = QFrame()
+        detail_frame.setStyleSheet(
+            "QFrame { background-color: #1e293b; border: 1px solid #334155; border-radius: 6px; }"
+        )
+        detail_layout = QVBoxLayout(detail_frame)
+        detail_layout.setContentsMargins(12, 10, 12, 10)
+
+        # 標題列
+        self._detail_title = QLabel("請點選上方 Ticket 查看詳情")
+        self._detail_title.setStyleSheet("color: #475569; font-size: 12px;")
+        detail_layout.addWidget(self._detail_title)
+
+        # 8格 Grid（3欄×3行，最後一行 2 格）
+        self._detail_grid_widget = QWidget()
+        grid = QGridLayout(self._detail_grid_widget)
+        grid.setContentsMargins(0, 6, 0, 6)
+        grid.setHorizontalSpacing(20)
+        self._detail_grid_widget.setVisible(False)
+
+        self._detail_labels: dict[str, QLabel] = {}
+        fields = [
+            ("嚴重性", "severity"), ("優先", "priority"), ("回報者", "reporter"),
+            ("建立時間", "created_time"), ("🎯 目標版本", "planned_fix"), ("✅ 修復版本", "actual_fix"),
+            ("🕐 最後更新", "last_updated"), ("處理人", "handler"),
+        ]
+        for idx, (label_text, key) in enumerate(fields):
+            row, col = divmod(idx, 3)  # 每行 3 欄
+            lbl = QLabel(label_text)
+            lbl.setStyleSheet("color: #64748b; font-size: 10px;")
+            val = QLabel("—")
+            val.setStyleSheet("color: #e2e8f0; font-size: 11px;")
+            self._detail_labels[key] = val
+            cell = QVBoxLayout()
+            cell.addWidget(lbl)
+            cell.addWidget(val)
+            cell.setSpacing(1)
+            container = QWidget()
+            container.setLayout(cell)
+            grid.addWidget(container, row, col)
+
+        detail_layout.addWidget(self._detail_grid_widget)
+
+        # 問題描述
+        self._detail_desc_label = QLabel("📝 問題描述")
+        self._detail_desc_label.setStyleSheet("color: #64748b; font-size: 10px;")
+        self._detail_desc_label.setVisible(False)
+        detail_layout.addWidget(self._detail_desc_label)
+
+        self._detail_desc = QTextEdit()
+        self._detail_desc.setReadOnly(True)
+        self._detail_desc.setMaximumHeight(90)
+        self._detail_desc.setStyleSheet(
+            "QTextEdit { background: #0f172a; color: #94a3b8; border: none; font-size: 11px; }"
+        )
+        self._detail_desc.setVisible(False)
+        detail_layout.addWidget(self._detail_desc)
+
+        # Bug 筆記
+        self._detail_notes_label = QLabel("💬 最後 5 條 Bug 筆記")
+        self._detail_notes_label.setStyleSheet("color: #64748b; font-size: 10px;")
+        self._detail_notes_label.setVisible(False)
+        detail_layout.addWidget(self._detail_notes_label)
+
+        self._detail_notes = QTextEdit()
+        self._detail_notes.setReadOnly(True)
+        self._detail_notes.setMaximumHeight(110)
+        self._detail_notes.setStyleSheet(
+            "QTextEdit { background: #0f172a; color: #94a3b8; border: none; font-size: 11px; }"
+        )
+        self._detail_notes.setVisible(False)
+        detail_layout.addWidget(self._detail_notes)
+
+        # 「查看更多」連結
+        self._detail_more_link = QLabel()
+        self._detail_more_link.setStyleSheet("color: #60a5fa; font-size: 11px;")
+        self._detail_more_link.setOpenExternalLinks(False)
+        self._detail_more_link.linkActivated.connect(self._on_open_mantis_url)
+        self._detail_more_link.setVisible(False)
+        detail_layout.addWidget(self._detail_more_link)
+
+        layout.addWidget(detail_frame)
         return w
 
     def _refresh_mantis_table(self) -> None:
@@ -268,12 +378,106 @@ class CaseDetailDialog(QDialog):
         self._mantis_table.setRowCount(len(tickets))
         for i, t in enumerate(tickets):
             self._mantis_table.setItem(i, 0, QTableWidgetItem(t.ticket_id))
-            self._mantis_table.setItem(i, 1, QTableWidgetItem(t.summary or ""))
-            self._mantis_table.setItem(i, 2, QTableWidgetItem(t.status or ""))
-            self._mantis_table.setItem(i, 3, QTableWidgetItem(t.priority or ""))
-            self._mantis_table.setItem(i, 4, QTableWidgetItem(t.handler or ""))
-            self._mantis_table.setItem(i, 5, QTableWidgetItem(t.planned_fix or ""))
-            self._mantis_table.setItem(i, 6, QTableWidgetItem(t.synced_at or ""))
+
+            # 狀態（帶背景色）
+            status_item = QTableWidgetItem(t.status or "")
+            bg, fg = self._status_colors(t.status or "")
+            status_item.setBackground(QBrush(QColor(bg)))
+            status_item.setForeground(QBrush(QColor(fg)))
+            self._mantis_table.setItem(i, 1, status_item)
+
+            self._mantis_table.setItem(i, 2, QTableWidgetItem(t.summary or ""))
+            self._mantis_table.setItem(i, 3, QTableWidgetItem(t.handler or ""))
+            self._mantis_table.setItem(i, 4, QTableWidgetItem(t.synced_at or ""))
+        # 重設詳情面板
+        self._refresh_detail_panel(None)
+
+    def _on_mantis_table_row_changed(self, row: int) -> None:
+        if row < 0:
+            self._refresh_detail_panel(None)
+            return
+        ticket_id_item = self._mantis_table.item(row, 0)
+        if ticket_id_item is None:
+            self._refresh_detail_panel(None)
+            return
+        ticket_id = ticket_id_item.text()
+        ticket = self._manager.get_mantis_ticket(ticket_id)
+        self._refresh_detail_panel(ticket)
+
+    def _refresh_detail_panel(self, ticket) -> None:
+        """填入詳情面板資料；ticket=None 時還原為提示狀態。"""
+        no_data = ticket is None
+        self._detail_grid_widget.setVisible(not no_data)
+        self._detail_desc_label.setVisible(not no_data)
+        self._detail_desc.setVisible(not no_data)
+        self._detail_notes_label.setVisible(not no_data)
+        self._detail_notes.setVisible(not no_data)
+        self._detail_more_link.setVisible(False)
+
+        if no_data:
+            self._detail_title.setText("請點選上方 Ticket 查看詳情")
+            self._detail_title.setStyleSheet("color: #475569; font-size: 12px;")
+            return
+
+        # 標題
+        status_text = ticket.status or ""
+        self._detail_title.setText(
+            f"#{ticket.ticket_id}　{status_text}　{ticket.summary or ''}"
+        )
+        self._detail_title.setStyleSheet("color: #93c5fd; font-weight: bold; font-size: 12px;")
+
+        # 8格資訊
+        values = {
+            "severity": ticket.severity or "—",
+            "priority": ticket.priority or "—",
+            "reporter": ticket.reporter or "—",
+            "created_time": ticket.created_time or "—",
+            "planned_fix": ticket.planned_fix or "—",
+            "actual_fix": ticket.actual_fix or "—",
+            "last_updated": ticket.last_updated or "—",
+            "handler": ticket.handler or "—",
+        }
+        for key, val in values.items():
+            lbl = self._detail_labels.get(key)
+            if lbl:
+                lbl.setText(val)
+
+        # 描述
+        self._detail_desc.setPlainText(ticket.description or "（無描述）")
+
+        # Bug 筆記
+        notes_html = ""
+        if ticket.notes_json:
+            try:
+                notes = json.loads(ticket.notes_json)
+                for n in notes:
+                    reporter = n.get("reporter", "")
+                    date = n.get("date_submitted", "")
+                    text = n.get("text", "")[:200]
+                    notes_html += f"[{date}] {reporter}：{text}\n\n"
+            except (json.JSONDecodeError, AttributeError):
+                notes_html = "（筆記解析失敗）"
+        self._detail_notes.setPlainText(notes_html or "（無筆記）")
+
+        # 「查看更多」連結
+        count = ticket.notes_count or 0
+        if count > 5:
+            self._detail_more_link.setVisible(True)
+            self._detail_more_link.setText(
+                f'<a href="{ticket.ticket_id}">📎 尚有更多筆記（共 {count} 條），點此在 Mantis 查看完整記錄</a>'
+            )
+
+    def _on_open_mantis_url(self, ticket_id: str) -> None:
+        """開啟 Mantis 原始 Ticket 頁面。"""
+        from hcp_cms.services.credential import CredentialManager
+        creds = CredentialManager()
+        base = creds.retrieve("mantis_url") or ""
+        if not base:
+            QMessageBox.warning(self, "未設定", "請先在系統設定填寫 Mantis URL。")
+            return
+        base = base.rstrip("/")
+        url = f"{base}/view.php?id={ticket_id}"
+        QDesktopServices.openUrl(QUrl(url))
 
     def _on_link_mantis(self) -> None:
         ticket_id = self._ticket_input.text().strip()
