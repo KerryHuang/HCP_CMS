@@ -7,8 +7,9 @@
 | 指令 | 用途 | 說明 |
 |------|------|------|
 | `/commit` | 提交變更 | 繁體中文 commit 訊息、逐一 stage 檔案、自動附加 Co-Authored-By |
-| `/push` | 推送到遠端 | 推送前安全檢查、禁止 force push main/master |
+| `/push` | 推送到遠端 | 推送前安全檢查、禁止 force push main/master、推送後提醒回顧 |
 | `/pull` | 拉取遠端變更 | 檢查本地狀態、衝突處理引導 |
+| `/reflect` | Session 回顧 | 分析技能/規則/CLAUDE.md 缺口，委託 RCC 技能執行補強 |
 
 ## 開發工具
 
@@ -45,6 +46,7 @@
 ├── committing/SKILL.md     ← /commit
 ├── pushing/SKILL.md        ← /push
 ├── pulling/SKILL.md        ← /pull
+├── reflecting/SKILL.md     ← /reflect
 ├── testing/SKILL.md        ← /test
 ├── running/SKILL.md        ← /run
 ├── building/SKILL.md       ← /build
