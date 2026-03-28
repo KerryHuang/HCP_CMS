@@ -23,15 +23,22 @@ class _MockProvider(MailProvider):
         pass
 
     def fetch_messages(
-        self, since=None, until=None, folder: str = "INBOX"
+        self,
+        since: datetime | None = None,
+        until: datetime | None = None,
+        folder: str = "INBOX",
     ) -> list[RawEmail]:
         return []
 
-    def fetch_sent_messages(self, since=None) -> list[RawEmail]:
+    def fetch_sent_messages(self, since: datetime | None = None) -> list[RawEmail]:
         return self._sent
 
     def create_draft(
-        self, to: list[str], subject: str, body: str, attachments=None
+        self,
+        to: list[str],
+        subject: str,
+        body: str,
+        attachments: list[str] | None = None,
     ) -> bool:
         return False
 
