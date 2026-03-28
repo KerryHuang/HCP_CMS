@@ -5,6 +5,7 @@ from __future__ import annotations
 import sqlite3
 
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QFileDialog,
     QFormLayout,
@@ -15,6 +16,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QSpinBox,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -31,6 +33,7 @@ class SettingsView(QWidget):
         self._creds = CredentialManager()
         self._setup_ui()
         self._load_mantis_creds()
+        self._load_mail_creds()
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
@@ -136,6 +139,107 @@ class SettingsView(QWidget):
 
         layout.addWidget(mantis_group)
 
+        # ── 信件連線設定 ────────────────────────────────────────────────────
+        mail_group = QGroupBox("📧 信件連線設定")
+        mail_outer = QVBoxLayout(mail_group)
+
+        # 協定切換列
+        proto_row = QHBoxLayout()
+        self._btn_imap = QPushButton("IMAP")
+        self._btn_imap.setCheckable(True)
+        self._btn_imap.setChecked(True)
+        self._btn_imap.setObjectName("protoBtn")
+        self._btn_exchange = QPushButton("Exchange")
+        self._btn_exchange.setCheckable(True)
+        self._btn_exchange.setObjectName("protoBtn")
+        self._btn_imap.setStyleSheet(
+            "QPushButton[objectName='protoBtn']:checked { background:#1d4ed8; color:white; font-weight:bold; }"
+            "QPushButton[objectName='protoBtn'] { padding:4px 18px; border-radius:4px; }"
+        )
+        self._btn_exchange.setStyleSheet(self._btn_imap.styleSheet())
+        self._btn_imap.clicked.connect(lambda: self._on_toggle_protocol("imap"))
+        self._btn_exchange.clicked.connect(lambda: self._on_toggle_protocol("exchange"))
+        proto_row.addWidget(self._btn_imap)
+        proto_row.addWidget(self._btn_exchange)
+        proto_row.addStretch()
+        mail_outer.addLayout(proto_row)
+
+        # StackedWidget — 0: IMAP, 1: Exchange
+        self._mail_stack = QStackedWidget()
+
+        # ── IMAP 頁 ──
+        imap_widget = QWidget()
+        imap_form = QFormLayout(imap_widget)
+        self._imap_host = QLineEdit()
+        self._imap_host.setPlaceholderText("imap.example.com")
+        imap_form.addRow("主機：", self._imap_host)
+
+        port_row = QHBoxLayout()
+        self._imap_port = QSpinBox()
+        self._imap_port.setRange(1, 65535)
+        self._imap_port.setValue(993)
+        self._imap_port.setFixedWidth(70)
+        self._imap_ssl = QCheckBox("使用 SSL")
+        self._imap_ssl.setChecked(True)
+        self._imap_ssl.stateChanged.connect(self._on_ssl_toggle)
+        port_row.addWidget(self._imap_port)
+        port_row.addWidget(self._imap_ssl)
+        port_row.addStretch()
+        imap_form.addRow("Port：", port_row)
+
+        self._imap_user = QLineEdit()
+        self._imap_user.setPlaceholderText("user@example.com")
+        imap_form.addRow("帳號：", self._imap_user)
+
+        self._imap_pwd = QLineEdit()
+        self._imap_pwd.setEchoMode(QLineEdit.EchoMode.Password)
+        self._imap_pwd.setPlaceholderText("密碼")
+        imap_form.addRow("密碼：", self._imap_pwd)
+
+        self._mail_stack.addWidget(imap_widget)   # index 0
+
+        # ── Exchange 頁 ──
+        exch_widget = QWidget()
+        exch_form = QFormLayout(exch_widget)
+
+        self._exch_server = QLineEdit()
+        self._exch_server.setPlaceholderText("mail.company.com（選填）")
+        exch_form.addRow("Server：", self._exch_server)
+
+        exch_server_hint = QLabel("⚠ Server 留空時使用 autodiscover 自動探索")
+        exch_server_hint.setStyleSheet("color:#94a3b8; font-size:11px;")
+        exch_form.addRow("", exch_server_hint)
+
+        self._exch_email = QLineEdit()
+        self._exch_email.setPlaceholderText("user@company.com")
+        exch_form.addRow("Email：", self._exch_email)
+
+        self._exch_user = QLineEdit()
+        self._exch_user.setPlaceholderText("DOMAIN\\user")
+        exch_form.addRow("帳號：", self._exch_user)
+
+        self._exch_pwd = QLineEdit()
+        self._exch_pwd.setEchoMode(QLineEdit.EchoMode.Password)
+        self._exch_pwd.setPlaceholderText("密碼")
+        exch_form.addRow("密碼：", self._exch_pwd)
+
+        self._mail_stack.addWidget(exch_widget)   # index 1
+
+        mail_outer.addWidget(self._mail_stack)
+
+        # 操作按鈕列
+        mail_btn_row = QHBoxLayout()
+        mail_test_btn = QPushButton("🔌 測試連線")
+        mail_test_btn.clicked.connect(self._on_test_mail)
+        mail_btn_row.addWidget(mail_test_btn)
+        mail_save_btn = QPushButton("💾 儲存設定")
+        mail_save_btn.clicked.connect(self._on_save_mail)
+        mail_btn_row.addWidget(mail_save_btn)
+        mail_btn_row.addStretch()
+        mail_outer.addLayout(mail_btn_row)
+
+        layout.addWidget(mail_group)
+
         # Save button
         save_btn = QPushButton("💾 儲存設定")
         layout.addWidget(save_btn)
@@ -188,6 +292,108 @@ class SettingsView(QWidget):
         self._creds.store("mantis_user", user)
         self._creds.store("mantis_password", pwd)
         QMessageBox.information(self, "已儲存", "Mantis 連線設定已儲存至系統憑證庫。")
+
+    # ── 信件連線設定 ─────────────────────────────────────────────────────────
+
+    def _on_toggle_protocol(self, proto: str) -> None:
+        """切換 IMAP / Exchange 頁面。"""
+        is_imap = proto == "imap"
+        self._btn_imap.setChecked(is_imap)
+        self._btn_exchange.setChecked(not is_imap)
+        self._mail_stack.setCurrentIndex(0 if is_imap else 1)
+
+    def _on_ssl_toggle(self, state: int) -> None:
+        """SSL 勾選時預設 port 993，取消時預設 143。"""
+        self._imap_port.setValue(993 if state else 143)
+
+    def _load_mail_creds(self) -> None:
+        """從 keyring 載入已儲存的信件連線設定。"""
+        # IMAP
+        self._imap_host.setText(self._creds.retrieve("mail_imap_host") or "")
+        port_val = self._creds.retrieve("mail_imap_port")
+        if port_val and port_val.isdigit():
+            self._imap_port.setValue(int(port_val))
+        ssl_val = self._creds.retrieve("mail_imap_ssl")
+        if ssl_val is not None:
+            self._imap_ssl.setChecked(ssl_val.lower() == "true")
+        self._imap_user.setText(self._creds.retrieve("mail_imap_user") or "")
+        self._imap_pwd.setText(self._creds.retrieve("mail_imap_password") or "")
+        # Exchange
+        self._exch_server.setText(self._creds.retrieve("mail_exchange_server") or "")
+        self._exch_email.setText(self._creds.retrieve("mail_exchange_email") or "")
+        self._exch_user.setText(self._creds.retrieve("mail_exchange_user") or "")
+        self._exch_pwd.setText(self._creds.retrieve("mail_exchange_password") or "")
+        # 若 Exchange 有 email 設定，切換至 Exchange 頁
+        if self._creds.retrieve("mail_exchange_email"):
+            self._on_toggle_protocol("exchange")
+
+    def _on_save_mail(self) -> None:
+        """將目前協定的連線設定儲存至 OS keyring。"""
+        is_imap = self._mail_stack.currentIndex() == 0
+        if is_imap:
+            host = self._imap_host.text().strip()
+            if not host:
+                QMessageBox.warning(self, "欄位不完整", "請填寫 IMAP 主機位址。")
+                return
+            self._creds.store("mail_imap_host", host)
+            self._creds.store("mail_imap_port", str(self._imap_port.value()))
+            self._creds.store("mail_imap_ssl", "true" if self._imap_ssl.isChecked() else "false")
+            self._creds.store("mail_imap_user", self._imap_user.text().strip())
+            self._creds.store("mail_imap_password", self._imap_pwd.text())
+        else:
+            email_addr = self._exch_email.text().strip()
+            if not email_addr:
+                QMessageBox.warning(self, "欄位不完整", "請填寫 Exchange Email 帳號。")
+                return
+            self._creds.store("mail_exchange_server", self._exch_server.text().strip())
+            self._creds.store("mail_exchange_email", email_addr)
+            self._creds.store("mail_exchange_user", self._exch_user.text().strip())
+            self._creds.store("mail_exchange_password", self._exch_pwd.text())
+        proto = "IMAP" if is_imap else "Exchange"
+        QMessageBox.information(self, "已儲存", f"📧 {proto} 連線設定已儲存至系統憑證庫。")
+
+    def _on_test_mail(self) -> None:
+        """測試信件連線是否成功。"""
+        is_imap = self._mail_stack.currentIndex() == 0
+        try:
+            if is_imap:
+                from hcp_cms.services.mail.imap import IMAPProvider
+                host = self._imap_host.text().strip()
+                if not host:
+                    QMessageBox.warning(self, "欄位不完整", "請先填寫 IMAP 主機位址。")
+                    return
+                provider = IMAPProvider(
+                    host=host,
+                    port=self._imap_port.value(),
+                    use_ssl=self._imap_ssl.isChecked(),
+                )
+                provider.set_credentials(
+                    self._imap_user.text().strip(),
+                    self._imap_pwd.text(),
+                )
+            else:
+                from hcp_cms.services.mail.exchange import ExchangeProvider
+                email_addr = self._exch_email.text().strip()
+                if not email_addr:
+                    QMessageBox.warning(self, "欄位不完整", "請先填寫 Exchange Email 帳號。")
+                    return
+                provider = ExchangeProvider(
+                    server=self._exch_server.text().strip(),
+                    email_address=email_addr,
+                )
+                provider.set_credentials(
+                    self._exch_user.text().strip(),
+                    self._exch_pwd.text(),
+                )
+            ok = provider.connect()
+            proto = "IMAP" if is_imap else "Exchange"
+            if ok:
+                provider.disconnect()
+                QMessageBox.information(self, "連線成功", f"✅ 成功連線至 {proto} 信箱！")
+            else:
+                QMessageBox.warning(self, "連線失敗", f"❌ 無法連線至 {proto}，請確認主機與帳密是否正確。")
+        except Exception as e:
+            QMessageBox.critical(self, "連線錯誤", f"❌ 發生例外：\n{e}")
 
     def _on_test_mantis(self) -> None:
         """測試 SOAP 連線是否成功。"""
