@@ -3,8 +3,13 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from typing import TYPE_CHECKING
 
-from PySide6.QtCore import Qt, QUrl, Signal
+if TYPE_CHECKING:
+    from hcp_cms.data.models import MantisTicket
+    from hcp_cms.services.mantis.soap import MantisSoapClient
+
+from PySide6.QtCore import QUrl, Signal
 from PySide6.QtGui import QBrush, QColor, QDesktopServices
 from PySide6.QtWidgets import (
     QComboBox,
@@ -18,7 +23,6 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QScrollArea,
-    QSizePolicy,
     QTableWidget,
     QTableWidgetItem,
     QTabWidget,
@@ -404,7 +408,7 @@ class CaseDetailDialog(QDialog):
         ticket = self._manager.get_mantis_ticket(ticket_id)
         self._refresh_detail_panel(ticket)
 
-    def _refresh_detail_panel(self, ticket) -> None:
+    def _refresh_detail_panel(self, ticket: MantisTicket | None) -> None:
         """填入詳情面板資料；ticket=None 時還原為提示狀態。"""
         no_data = ticket is None
         self._detail_grid_widget.setVisible(not no_data)
@@ -522,7 +526,7 @@ class CaseDetailDialog(QDialog):
         self._manager.unlink_mantis(self._case_id, ticket_id)
         self._refresh_mantis_table()
 
-    def _build_mantis_client(self):  # type: ignore[return]
+    def _build_mantis_client(self) -> MantisSoapClient | None:
         """從 keyring 讀取憑證並建立 MantisSoapClient，失敗時回傳 None。"""
         try:
             from urllib.parse import urlparse
