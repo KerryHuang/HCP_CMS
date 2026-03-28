@@ -99,9 +99,20 @@ class EmailView(QWidget):
         title.setStyleSheet("font-size: 18px; font-weight: bold; color: #f1f5f9;")
         layout.addWidget(title)
 
-        # Connection settings
-        conn_group = QGroupBox("連線設定")
-        conn_layout = QHBoxLayout(conn_group)
+        # 可折疊連線設定
+        self._conn_toggle_btn = QPushButton("⚙ 連線設定  ▲")
+        self._conn_toggle_btn.setStyleSheet(
+            "QPushButton { text-align: left; padding: 6px 12px;"
+            " background: #1e293b; color: #94a3b8;"
+            " border: 1px solid #334155; border-radius: 6px; font-size: 13px; }"
+            "QPushButton:hover { background: #273344; color: #cbd5e1; }"
+        )
+        self._conn_toggle_btn.clicked.connect(self._on_toggle_conn)
+        layout.addWidget(self._conn_toggle_btn)
+
+        self._conn_content = QWidget()
+        conn_layout = QHBoxLayout(self._conn_content)
+        conn_layout.setContentsMargins(0, 4, 0, 4)
 
         self._provider_combo = QComboBox()
         self._provider_combo.addItems(["IMAP", "Exchange", ".msg 手動匯入"])
@@ -112,8 +123,11 @@ class EmailView(QWidget):
         self._connect_btn.clicked.connect(self._on_connect)
         conn_layout.addWidget(self._connect_btn)
 
-        layout.addWidget(conn_group)
+        layout.addWidget(self._conn_content)
         layout.addSpacing(4)
+
+        self._connected_proto: str = ""
+        self._connected_user: str = ""
 
         # Tab widget：收件處理 / 寄件備份
         self._tab_widget = QTabWidget()
@@ -293,6 +307,31 @@ class EmailView(QWidget):
         self._connect_btn.setEnabled(True)
         self._fetch_btn.setEnabled(True)
 
+    def _on_toggle_conn(self) -> None:
+        """切換連線設定面板展開/收合。"""
+        self._conn_content.setVisible(not self._conn_content.isVisible())
+        self._update_conn_toggle()
+
+    def _update_conn_toggle(self) -> None:
+        """更新折疊按鈕文字與樣式。"""
+        arrow = "▲" if self._conn_content.isVisible() else "▼"
+        if self._connected_proto:
+            self._conn_toggle_btn.setText(f"✅ {self._connected_proto}  {self._connected_user}  {arrow}")
+            self._conn_toggle_btn.setStyleSheet(
+                "QPushButton { text-align: left; padding: 6px 12px;"
+                " background: #1e293b; color: #4ade80;"
+                " border: 1px solid #166534; border-radius: 6px; font-size: 13px; }"
+                "QPushButton:hover { background: #273344; }"
+            )
+        else:
+            self._conn_toggle_btn.setText(f"⚙ 連線設定  {arrow}")
+            self._conn_toggle_btn.setStyleSheet(
+                "QPushButton { text-align: left; padding: 6px 12px;"
+                " background: #1e293b; color: #94a3b8;"
+                " border: 1px solid #334155; border-radius: 6px; font-size: 13px; }"
+                "QPushButton:hover { background: #273344; color: #cbd5e1; }"
+            )
+
     def _on_connect(self) -> None:
         """根據所選協定建立信件連線。"""
         proto = self._provider_combo.currentText()
@@ -309,6 +348,7 @@ class EmailView(QWidget):
                 pass
             self._provider = None
 
+        pending_user: str = ""
         if proto == "IMAP":
             host = self._creds.retrieve("mail_imap_host")
             if not host:
@@ -318,6 +358,7 @@ class EmailView(QWidget):
             ssl_str = self._creds.retrieve("mail_imap_ssl") or "true"
             user = self._creds.retrieve("mail_imap_user") or ""
             pwd = self._creds.retrieve("mail_imap_password") or ""
+            pending_user = user
 
             from hcp_cms.services.mail.imap import IMAPProvider
 
@@ -336,6 +377,7 @@ class EmailView(QWidget):
             server = self._creds.retrieve("mail_exchange_server") or ""
             user = self._creds.retrieve("mail_exchange_user") or ""
             pwd = self._creds.retrieve("mail_exchange_password") or ""
+            pending_user = email_addr
 
             from hcp_cms.services.mail.exchange import ExchangeProvider
 
@@ -356,6 +398,10 @@ class EmailView(QWidget):
                 self._provider = result["provider"]
                 self._log.append(f"✅ {proto} 連線成功！")
                 self._sent_tab.set_provider(self._provider)
+                self._connected_proto = proto
+                self._connected_user = pending_user
+                self._conn_content.hide()
+                self._update_conn_toggle()
                 if self._auto_fetch_after_connect:
                     self._auto_fetch_after_connect = False
                     self._on_fetch()
