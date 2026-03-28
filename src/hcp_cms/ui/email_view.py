@@ -113,9 +113,18 @@ class EmailView(QWidget):
         conn_layout.addWidget(self._connect_btn)
 
         layout.addWidget(conn_group)
+        layout.addSpacing(4)
 
         # Tab widget：收件處理 / 寄件備份
         self._tab_widget = QTabWidget()
+        self._tab_widget.setStyleSheet(
+            "QTabWidget::pane { border: none; background: transparent; }"
+            "QTabBar::tab { background: #1e293b; color: #94a3b8;"
+            "  padding: 6px 16px; border-bottom: 2px solid transparent; }"
+            "QTabBar::tab:selected { background: #1e293b; color: #f1f5f9;"
+            "  border-bottom: 2px solid #3b82f6; }"
+            "QTabBar::tab:hover:!selected { background: #273344; color: #cbd5e1; }"
+        )
         inbox_widget = QWidget()
         inbox_layout = QVBoxLayout(inbox_widget)
         inbox_layout.setContentsMargins(0, 8, 0, 0)
@@ -231,15 +240,7 @@ class EmailView(QWidget):
         self._log.setPlaceholderText("處理日誌...")
         inbox_layout.addWidget(self._log)
 
-        self._tab_widget.addTab(inbox_widget, "📥 收件處理")
-
-        # 寄件備份 tab
-        self._sent_tab = SentMailTab(conn=self._conn)
-        self._tab_widget.addTab(self._sent_tab, "📤 寄件備份")
-
-        layout.addWidget(self._tab_widget, stretch=1)
-
-        # Schedule settings
+        # Schedule settings（屬於收件排程，放在收件 tab 內）
         schedule_group = QGroupBox("自動排程")
         schedule_layout = QHBoxLayout(schedule_group)
         schedule_layout.addWidget(QLabel("每"))
@@ -250,7 +251,15 @@ class EmailView(QWidget):
         schedule_layout.addWidget(QLabel("分鐘自動檢查"))
         self._auto_btn = QPushButton("啟動自動處理")
         schedule_layout.addWidget(self._auto_btn)
-        layout.addWidget(schedule_group)
+        inbox_layout.addWidget(schedule_group)
+
+        self._tab_widget.addTab(inbox_widget, "📥 收件處理")
+
+        # 寄件備份 tab
+        self._sent_tab = SentMailTab(conn=self._conn)
+        self._tab_widget.addTab(self._sent_tab, "📤 寄件備份")
+
+        layout.addWidget(self._tab_widget, stretch=1)
 
     def _run_in_background(self, fn: object, on_done: object, on_error: object) -> None:
         """用 threading.Thread 在背景執行 fn，完成後透過 Signal 回到 UI 線程。"""
