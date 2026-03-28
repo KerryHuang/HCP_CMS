@@ -89,15 +89,21 @@ src/hcp_cms/
 │   ├── mantis_view.py      #   Mantis 同步
 │   ├── report_view.py      #   報表中心
 │   ├── rules_view.py       #   規則設定
+│   ├── case_detail_dialog.py #  案件詳情對話框
+│   ├── csv_import_dialog.py #  CSV 匯入精靈
+│   ├── delete_cases_dialog.py # 批次刪除案件對話框
 │   ├── settings_view.py    #   系統設定
 │   └── widgets/            #   共用元件
 ├── core/                   # 業務邏輯層
-│   ├── classifier.py       #   多維分類引擎
 │   ├── anonymizer.py       #   PII 匿名化（16 條規則）
+│   ├── case_detail_manager.py #  案件詳情管理
 │   ├── case_manager.py     #   案件管理 + 狀態流轉
+│   ├── classifier.py       #   多維分類引擎
+│   ├── csv_import_engine.py #  CSV 匯入引擎
+│   ├── custom_column_manager.py # 自定義欄位管理
 │   ├── kms_engine.py       #   KMS 搜尋 + CRUD + Excel 匯入匯出
-│   ├── thread_tracker.py   #   對話串追蹤
-│   └── report_engine.py    #   Excel 報表產生
+│   ├── report_engine.py    #   Excel 報表產生
+│   └── thread_tracker.py   #   對話串追蹤
 ├── services/               # 外部整合層
 │   ├── mail/               #   信件提供者（IMAP/Exchange/MSG）
 │   ├── mantis/             #   Mantis 客戶端（REST/SOAP）
@@ -110,12 +116,13 @@ src/hcp_cms/
 │   └── report_job.py       #   報表定時產生
 ├── data/                   # 資料存取層
 │   ├── database.py         #   SQLite 連線管理（WAL 模式）
-│   ├── models.py           #   資料模型（8 個 dataclass）
-│   ├── repositories.py     #   Repository CRUD（8 個 Repository）
+│   ├── models.py           #   資料模型（10 個 dataclass）
+│   ├── repositories.py     #   Repository CRUD（10 個 Repository）
 │   ├── fts.py              #   FTS5 全文搜尋
 │   ├── backup.py           #   備份/還原
 │   ├── merge.py            #   多人 DB 合併匯入
-│   └── migration.py        #   舊 DB 遷移工具
+│   ├── migration.py        #   舊 DB 遷移工具
+│   └── seed_rules.py       #   預設分類規則種子資料
 └── i18n/                   # 多語系
     ├── translator.py       #   翻譯引擎
     ├── zh_TW.json          #   繁體中文
@@ -135,6 +142,8 @@ SQLite WAL 模式，支援 3 人透過網路磁碟共用。
 | case_mantis | 案件-Mantis 多對多關聯 |
 | processed_files | 已處理信件（SHA256 防重複） |
 | classification_rules | 分類規則（DB 驅動） |
+| case_logs | 案件操作日誌 |
+| custom_columns | 自定義欄位定義 |
 | synonyms | 同義詞（搜尋擴展用） |
 | db_meta | Schema 版本管理 |
 | qa_fts / cases_fts | FTS5 全文搜尋虛擬表 |

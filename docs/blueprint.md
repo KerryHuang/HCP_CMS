@@ -59,6 +59,9 @@ D:\cms\
 │       │   ├── main_window.py  #   主視窗（左側導覽 + 深色主題）
 │       │   ├── dashboard_view.py
 │       │   ├── case_view.py
+│       │   ├── case_detail_dialog.py #  案件詳情對話框
+│       │   ├── csv_import_dialog.py  #  CSV 匯入精靈
+│       │   ├── delete_cases_dialog.py # 批次刪除案件對話框
 │       │   ├── kms_view.py
 │       │   ├── email_view.py
 │       │   ├── mantis_view.py
@@ -68,12 +71,15 @@ D:\cms\
 │       │   └── widgets/        #   共用元件（status_bar）
 │       │
 │       ├── core/               # Core 層 — 業務邏輯
-│       │   ├── case_manager.py #   案件管理 + 狀態流轉
-│       │   ├── kms_engine.py   #   KMS 搜尋 + CRUD + Excel
-│       │   ├── classifier.py   #   多維分類引擎
 │       │   ├── anonymizer.py   #   PII 匿名化
-│       │   ├── thread_tracker.py #  對話串追蹤
-│       │   └── report_engine.py #  Excel 報表產生
+│       │   ├── case_detail_manager.py # 案件詳情管理
+│       │   ├── case_manager.py #   案件管理 + 狀態流轉
+│       │   ├── classifier.py   #   多維分類引擎
+│       │   ├── csv_import_engine.py # CSV 匯入引擎
+│       │   ├── custom_column_manager.py # 自定義欄位管理
+│       │   ├── kms_engine.py   #   KMS 搜尋 + CRUD + Excel
+│       │   ├── report_engine.py #  Excel 報表產生
+│       │   └── thread_tracker.py #  對話串追蹤
 │       │
 │       ├── services/           # Services 層 — 外部服務介面
 │       │   ├── credential.py   #   密鑰管理（keyring）
@@ -94,7 +100,8 @@ D:\cms\
 │       │   ├── fts.py          #   FTS5 全文搜尋 + jieba
 │       │   ├── backup.py       #   備份/還原
 │       │   ├── merge.py        #   多人 DB 合併匯入
-│       │   └── migration.py    #   舊 DB 遷移工具
+│       │   ├── migration.py    #   舊 DB 遷移工具
+│       │   └── seed_rules.py   #   預設分類規則種子資料
 │       │
 │       └── i18n/               # 國際化
 │           ├── translator.py
@@ -126,7 +133,7 @@ SQLite
 
 ## 資料庫 Schema
 
-### 主表（7 張）
+### 主表（9 張）
 | 表名 | 用途 |
 |------|------|
 | cs_cases | 客服案件（含 `reply_time TEXT`：從 progress 解析的回覆時間，供統計報表使用） |
@@ -136,6 +143,8 @@ SQLite
 | case_mantis | 案件-Mantis 多對多關聯 |
 | processed_files | 已處理檔案（SHA256 去重） |
 | classification_rules | 分類規則（DB 驅動，支援 handler/progress） |
+| case_logs | 案件操作日誌 |
+| custom_columns | 自定義欄位定義 |
 
 ### 虛擬表（2 張 FTS5 + 1 張同義詞）
 | 表名 | 用途 |
