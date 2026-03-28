@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from datetime import datetime
 
@@ -107,14 +108,41 @@ class CaseDetailManager:
         issue = client.get_issue(ticket_id)
         if issue is None:
             return None
+
+        synced_at = datetime.now().strftime("%Y/%m/%d %H:%M:%S")
+
         ticket = MantisTicket(
             ticket_id=issue.id,
             summary=issue.summary,
             status=issue.status,
             priority=issue.priority,
             handler=issue.handler,
+            severity=issue.severity,
+            reporter=issue.reporter,
+            created_time=issue.date_submitted,
+            planned_fix=issue.target_version,
+            actual_fix=issue.fixed_in_version,
+            description=issue.description,
+            last_updated=issue.last_updated,
+            notes_json=json.dumps(
+                [
+                    {
+                        "reporter": n.reporter,
+                        "text": n.text,
+                        "date_submitted": n.date_submitted,
+                    }
+                    for n in issue.notes_list
+                ],
+                ensure_ascii=False,
+            ),
+            notes_count=issue.notes_count,
+            synced_at=synced_at,
         )
         self._mantis_repo.upsert(ticket)
+        return self._mantis_repo.get_by_id(ticket_id)
+
+    def get_mantis_ticket(self, ticket_id: str) -> MantisTicket | None:
+        """依 ticket_id 取得本地快取的 Ticket 資料。"""
         return self._mantis_repo.get_by_id(ticket_id)
 
     # ------------------------------------------------------------------
