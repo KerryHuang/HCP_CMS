@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+
 from hcp_cms.data.database import DatabaseManager
 from hcp_cms.data.models import CaseMantisLink
 from hcp_cms.data.repositories import CaseMantisRepository

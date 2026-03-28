@@ -17,7 +17,6 @@ class Case:
     contact_method: str = "Email"
     status: str = "處理中"
     priority: str = "中"
-    replied: str = "否"
     sent_time: str | None = None
     company_id: str | None = None
     contact_person: str | None = None

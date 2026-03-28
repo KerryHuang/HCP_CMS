@@ -16,8 +16,8 @@ def db(tmp_db_path: Path) -> DatabaseManager:
     db = DatabaseManager(tmp_db_path)
     db.initialize()
     db.connection.execute(
-        "INSERT INTO cs_cases (case_id, subject, status, priority, replied, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-        ("CS-202603-001", "測試主旨", "處理中", "中", "否", "2026/01/01 00:00:00"),
+        "INSERT INTO cs_cases (case_id, subject, status, priority, created_at) VALUES (?, ?, ?, ?, ?)",
+        ("CS-202603-001", "測試主旨", "處理中", "中", "2026/01/01 00:00:00"),
     )
     db.connection.commit()
     yield db

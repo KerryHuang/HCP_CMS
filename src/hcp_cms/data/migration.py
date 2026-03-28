@@ -125,12 +125,12 @@ class MigrationManager:
 
             self._new.execute(
                 """INSERT OR IGNORE INTO cs_cases (
-                    case_id, contact_method, status, priority, replied,
+                    case_id, contact_method, status, priority,
                     sent_time, company_id, contact_person, subject,
                     system_product, issue_type, error_type, impact_period,
                     progress, actual_reply, notes, rd_assignee, handler
                 ) VALUES (
-                    :case_id, :contact_method, :status, :priority, :replied,
+                    :case_id, :contact_method, :status, :priority,
                     :sent_time, :company_id, :contact_person, :subject,
                     :system_product, :issue_type, :error_type, :impact_period,
                     :progress, :actual_reply, :notes, :rd_assignee, :handler
@@ -140,7 +140,6 @@ class MigrationManager:
                     "contact_method": row_dict.get("contact_method"),
                     "status": row_dict.get("status"),
                     "priority": row_dict.get("priority"),
-                    "replied": row_dict.get("replied"),
                     "sent_time": row_dict.get("sent_time"),
                     "company_id": case_company_id,
                     "contact_person": row_dict.get("contact_person"),

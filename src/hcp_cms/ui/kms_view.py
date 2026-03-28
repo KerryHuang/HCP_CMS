@@ -596,6 +596,7 @@ class KMSView(QWidget):
         if not self._kms:
             return
         from PySide6.QtWidgets import QMessageBox, QProgressDialog
+
         from hcp_cms.services.mail.msg_reader import MSGReader
 
         files, _ = QFileDialog.getOpenFileNames(
@@ -640,9 +641,12 @@ class KMSView(QWidget):
         """選擇資料夾，自動遞迴讀取所有 .msg / .xlsx / .xls / .csv 並建立 KMS QA。"""
         if not self._kms:
             return
+        import csv
+
+        import openpyxl
         from PySide6.QtWidgets import QMessageBox, QProgressDialog
+
         from hcp_cms.services.mail.msg_reader import MSGReader
-        import csv, openpyxl
 
         folder = QFileDialog.getExistingDirectory(
             self, "選擇資料夾（含子資料夾，支援 .msg / .xlsx / .xls / .csv）", ""
@@ -754,9 +758,10 @@ class KMSView(QWidget):
         """從 Excel / CSV 批次匯入 QA（直接建立為「已完成」）。"""
         if not self._kms:
             return
-        from PySide6.QtWidgets import QMessageBox
         import csv
+
         import openpyxl
+        from PySide6.QtWidgets import QMessageBox
 
         path, _ = QFileDialog.getOpenFileName(
             self, "選擇 Excel 或 CSV 檔案", "",

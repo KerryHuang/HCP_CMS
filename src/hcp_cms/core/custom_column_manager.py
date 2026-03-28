@@ -11,7 +11,6 @@ STATIC_COL_LABELS: dict[str, str] = {
     "subject":        "主旨",
     "status":         "狀態",
     "priority":       "優先等級",
-    "replied":        "是否已回覆",
     "sent_time":      "寄件時間",
     "contact_person": "聯絡人",
     "contact_method": "聯絡方式",

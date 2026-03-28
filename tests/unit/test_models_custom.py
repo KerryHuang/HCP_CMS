@@ -12,12 +12,12 @@ class TestCaseExtraFields:
     def test_extra_fields_default_empty(self):
         case = Case(
             case_id="CS-2026-001", subject="主旨", status="處理中",
-            priority="中", replied="否",
+            priority="中",
         )
         assert case.extra_fields == {}
 
     def test_extra_fields_independent_per_instance(self):
-        c1 = Case(case_id="A", subject="s", status="s", priority="中", replied="否")
-        c2 = Case(case_id="B", subject="s", status="s", priority="中", replied="否")
+        c1 = Case(case_id="A", subject="s", status="s", priority="中")
+        c2 = Case(case_id="B", subject="s", status="s", priority="中")
         c1.extra_fields["cx_1"] = "v1"
         assert "cx_1" not in c2.extra_fields

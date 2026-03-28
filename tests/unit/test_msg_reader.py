@@ -1,10 +1,10 @@
 """Tests for MSGReader helper functions."""
-import pytest
 from unittest.mock import MagicMock, patch
+
 from hcp_cms.services.mail.msg_reader import (
+    MSGReader,
     _clean_qa_text,
     _strip_leading_headers,
-    MSGReader,
 )
 
 

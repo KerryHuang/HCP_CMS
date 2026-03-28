@@ -105,7 +105,7 @@ class CaseRepository:
 
     def _build_select(self) -> str:
         static = (
-            "case_id, company_id, subject, status, priority, replied, sent_time, "
+            "case_id, company_id, subject, status, priority, sent_time, "
             "contact_person, contact_method, system_product, issue_type, error_type, "
             "impact_period, progress, handler, actual_reply, reply_time, notes, "
             "rd_assignee, reply_count, linked_case_id, source, created_at, updated_at"
@@ -139,13 +139,13 @@ class CaseRepository:
         self._conn.execute(
             """
             INSERT INTO cs_cases (
-                case_id, contact_method, status, priority, replied, sent_time,
+                case_id, contact_method, status, priority, sent_time,
                 company_id, contact_person, subject, system_product, issue_type,
                 error_type, impact_period, progress, actual_reply, reply_time, notes,
                 rd_assignee, handler, reply_count, linked_case_id, source,
                 created_at, updated_at
             ) VALUES (
-                :case_id, :contact_method, :status, :priority, :replied, :sent_time,
+                :case_id, :contact_method, :status, :priority, :sent_time,
                 :company_id, :contact_person, :subject, :system_product, :issue_type,
                 :error_type, :impact_period, :progress, :actual_reply, :reply_time, :notes,
                 :rd_assignee, :handler, :reply_count, :linked_case_id, :source,
@@ -157,7 +157,6 @@ class CaseRepository:
                 "contact_method": case.contact_method,
                 "status": case.status,
                 "priority": case.priority,
-                "replied": case.replied,
                 "sent_time": case.sent_time,
                 "company_id": case.company_id,
                 "contact_person": case.contact_person,
@@ -241,7 +240,6 @@ class CaseRepository:
                 contact_method = :contact_method,
                 status = :status,
                 priority = :priority,
-                replied = :replied,
                 sent_time = :sent_time,
                 company_id = :company_id,
                 contact_person = :contact_person,
@@ -267,7 +265,6 @@ class CaseRepository:
                 "contact_method": case.contact_method,
                 "status": case.status,
                 "priority": case.priority,
-                "replied": case.replied,
                 "sent_time": case.sent_time,
                 "company_id": case.company_id,
                 "contact_person": case.contact_person,

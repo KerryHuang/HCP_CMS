@@ -1,13 +1,12 @@
 """CsvImportEngine 自訂欄位功能測試。"""
 import csv
-import tempfile
 from pathlib import Path
 
 import pytest
 
+from hcp_cms.core.csv_import_engine import ConflictStrategy, CsvImportEngine
 from hcp_cms.data.database import DatabaseManager
-from hcp_cms.data.repositories import CaseRepository, CustomColumnRepository
-from hcp_cms.core.csv_import_engine import CsvImportEngine, ConflictStrategy
+from hcp_cms.data.repositories import CaseRepository
 
 
 @pytest.fixture

@@ -30,13 +30,13 @@ def seeded_db(db: DatabaseManager) -> DatabaseManager:
 
     case_repo.insert(Case(case_id="CS-2026-001", subject="薪資問題", company_id="C1",
                           status="處理中", priority="高", sent_time="2026/03/10 09:00",
-                          system_product="HCP", issue_type="BUG", replied="否"))
+                          system_product="HCP", issue_type="BUG"))
     case_repo.insert(Case(case_id="CS-2026-002", subject="請假設定", company_id="C1",
-                          status="已回覆", replied="是", sent_time="2026/03/15 10:00",
+                          status="已回覆", sent_time="2026/03/15 10:00",
                           actual_reply="2026/03/15 14:00", system_product="HCP", issue_type="操作異常"))
     case_repo.insert(Case(case_id="CS-2026-003", subject="客製化需求", company_id="C2",
                           status="處理中", sent_time="2026/03/20 11:00",
-                          issue_type="客制需求", system_product="HCP", replied="否"))
+                          issue_type="客制需求", system_product="HCP"))
 
     qa_repo.insert(QAKnowledge(qa_id="QA-202603-001", question="如何計算", answer="進入模組"))
 

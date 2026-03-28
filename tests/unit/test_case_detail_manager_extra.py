@@ -23,11 +23,11 @@ def _setup(db: DatabaseManager) -> None:
     ccr.add_column_to_cases("cx_1")
     ccr.insert("cx_1", "客製欄", 1)
     db.connection.execute(
-        "INSERT INTO cs_cases (case_id, subject, status, priority, replied,"
+        "INSERT INTO cs_cases (case_id, subject, status, priority,"
         " sent_time, created_at, updated_at)"
-        " VALUES (?,?,?,?,?,?,?,?)",
+        " VALUES (?,?,?,?,?,?,?)",
         (
-            "CS-2026-001", "主旨", "處理中", "中", "否",
+            "CS-2026-001", "主旨", "處理中", "中",
             "2026/03/26 10:00:00", "2026/03/26 10:00:00", "2026/03/26 10:00:00",
         ),
     )

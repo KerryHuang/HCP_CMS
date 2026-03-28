@@ -18,7 +18,6 @@ class TestCase:
         assert case.case_id == "CS-2026-001"
         assert case.status == "處理中"
         assert case.priority == "中"
-        assert case.replied == "否"
         assert case.reply_count == 0
         assert case.source == "email"
 
@@ -36,7 +35,6 @@ class TestCase:
             subject="Test",
             priority="高",
             sent_time="2026/03/20 09:00",
-            replied="否",
         )
         assert case.sla_hours == 4
 

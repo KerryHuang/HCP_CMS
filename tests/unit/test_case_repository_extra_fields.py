@@ -19,10 +19,10 @@ def db(tmp_db_path: Path):
 
 def _insert_case(conn, case_id="CS-2026-001"):
     conn.execute(
-        "INSERT INTO cs_cases (case_id, subject, status, priority, replied,"
+        "INSERT INTO cs_cases (case_id, subject, status, priority,"
         " sent_time, created_at, updated_at)"
-        " VALUES (?,?,?,?,?,?,?,?)",
-        (case_id, "測試主旨", "處理中", "中", "否",
+        " VALUES (?,?,?,?,?,?,?)",
+        (case_id, "測試主旨", "處理中", "中",
          "2026/03/26 10:00:00", "2026/03/26 10:00:00", "2026/03/26 10:00:00"),
     )
     conn.commit()

@@ -123,7 +123,7 @@ class ReportEngine:
         ws2 = wb.create_sheet("問題追蹤總表")
         custom_cols = self._custom_col_mgr.list_columns()
         main_headers = [
-            "案件編號", "聯絡方式", "問題狀態", "優先等級", "是否已回覆",
+            "案件編號", "聯絡方式", "問題狀態", "優先等級",
             "寄件時間", "首次回覆時效(hr)", "客戶", "客戶公司", "客戶聯絡電話",
             "主旨", "系統／產品", "問題類型", "錯誤類型",
             "受影響員工人數", "影響期間", "處理進度", "負責人",
@@ -138,7 +138,7 @@ class ReportEngine:
             company_phone = comp.contact_info if comp else ""
             closed_at = case.updated_at if case.status in ("已完成", "Closed") else ""
             ws2.append(_clean_row([
-                case.case_id, case.contact_method, case.status, case.priority, case.replied,
+                case.case_id, case.contact_method, case.status, case.priority,
                 case.sent_time, _reply_hours(case.sent_time, case.actual_reply),
                 case.contact_person, company_name, company_phone or "",
                 case.subject, case.system_product, case.issue_type, case.error_type,
@@ -265,7 +265,7 @@ class ReportEngine:
 
         closed_statuses = {"已完成", "Closed", "已回覆"}
         total = len(cases)
-        replied = sum(1 for c in cases if c.replied == "是")
+        replied = sum(1 for c in cases if c.status == "已回覆")
         pending = sum(1 for c in cases if c.status not in closed_statuses)
         reply_rate = (replied / total * 100) if total > 0 else 0.0
 
@@ -301,7 +301,7 @@ class ReportEngine:
         # ── Sheet 2: 案件明細 ──────────────────────────────────────────
         ws2 = wb.create_sheet("📋 案件明細")
         detail_headers = [
-            "案件編號", "聯絡方式", "狀態", "優先", "已回覆", "寄送時間",
+            "案件編號", "聯絡方式", "狀態", "優先", "寄送時間",
             "客戶", "聯絡人", "主旨", "系統/產品", "問題類型", "錯誤類型",
             "影響期間", "進度", "實際回覆時間", "備註",
             "RD 負責人", "處理人", "回覆次數", "關聯案件",
@@ -312,7 +312,7 @@ class ReportEngine:
             company_name = comp.name if comp else (case.company_id or "")
             ws2.append(_clean_row([
                 case.case_id, case.contact_method, case.status, case.priority,
-                case.replied, case.sent_time,
+                case.sent_time,
                 company_name, case.contact_person, case.subject,
                 case.system_product, case.issue_type, case.error_type,
                 case.impact_period, case.progress, case.actual_reply,
@@ -331,7 +331,7 @@ class ReportEngine:
             cname = comp.name if comp else (case.company_id or "（未知）")
             if cname not in company_stats:
                 company_stats[cname] = {"replied": 0, "pending": 0}
-            if case.replied == "是":
+            if case.status == "已回覆":
                 company_stats[cname]["replied"] += 1
             if case.status not in closed_statuses:
                 company_stats[cname]["pending"] += 1

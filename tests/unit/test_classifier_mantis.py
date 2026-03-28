@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import sqlite3
 import pytest
-from hcp_cms.data.database import DatabaseManager
+
 from hcp_cms.core.classifier import Classifier
+from hcp_cms.data.database import DatabaseManager
 
 
 @pytest.fixture()

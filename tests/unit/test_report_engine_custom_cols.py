@@ -21,11 +21,11 @@ def db(tmp_db_path: Path) -> DatabaseManager:
 
 def _insert_case(db: DatabaseManager, case_id: str = "CS-2026-001", cx_1_val: str | None = None) -> None:
     db.connection.execute(
-        "INSERT INTO cs_cases (case_id, subject, status, priority, replied,"
+        "INSERT INTO cs_cases (case_id, subject, status, priority,"
         " sent_time, created_at, updated_at)"
-        " VALUES (?,?,?,?,?,?,?,?)",
+        " VALUES (?,?,?,?,?,?,?)",
         (
-            case_id, "測試主旨", "處理中", "中", "否",
+            case_id, "測試主旨", "處理中", "中",
             "2026/03/26 10:00:00", "2026/03/26 10:00:00", "2026/03/26 10:00:00",
         ),
     )

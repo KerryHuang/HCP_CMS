@@ -155,7 +155,6 @@ class CaseManager:
         case = self._case_repo.get_by_id(case_id)
         if case:
             case.status = "已回覆"
-            case.replied = "是"
             case.actual_reply = reply_time or datetime.now().strftime("%Y/%m/%d %H:%M")
             case.reply_count += 1
             self._case_repo.update(case)
@@ -191,7 +190,7 @@ class CaseManager:
         """Get KPI stats for a given month."""
         cases = self._case_repo.list_by_month(year, month)
         total = len(cases)
-        replied = sum(1 for c in cases if c.replied == "是")
+        replied = sum(1 for c in cases if c.status == "已回覆")
         pending = sum(1 for c in cases if c.status == "處理中")
         reply_rate = (replied / total * 100) if total > 0 else 0.0
 

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from hcp_cms.core.csv_import_engine import CsvImportEngine, ConflictStrategy, _parse_sent_time
+from hcp_cms.core.csv_import_engine import ConflictStrategy, CsvImportEngine, _parse_sent_time
 from hcp_cms.data.database import DatabaseManager
 
 
@@ -65,7 +65,7 @@ class TestParseHeaders:
     def test_utf8_bom_csv(self, tmp_path: Path):
         csv_file = tmp_path / "test_bom.csv"
         csv_file.write_bytes(
-            "問題狀態,主旨\n".encode("utf-8-sig") + "待確認,測試\n".encode("utf-8")
+            "問題狀態,主旨\n".encode("utf-8-sig") + "待確認,測試\n".encode()
         )
         engine = CsvImportEngine.__new__(CsvImportEngine)
         headers = engine.parse_headers(csv_file)

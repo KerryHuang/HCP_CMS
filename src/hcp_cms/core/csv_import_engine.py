@@ -388,7 +388,6 @@ class CsvImportEngine:
             "created_at": now,
             "updated_at": now,
             "contact_method": "Email",
-            "replied": "否",
             "status": "處理中",
             "priority": "中",
         }

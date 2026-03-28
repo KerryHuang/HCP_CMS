@@ -6,8 +6,8 @@ import sqlite3
 import pytest
 
 from hcp_cms.data.database import DatabaseManager
-from hcp_cms.data.models import Case, QAKnowledge
-from hcp_cms.data.repositories import CaseRepository, QARepository
+from hcp_cms.data.models import Case
+from hcp_cms.data.repositories import CaseRepository
 
 
 @pytest.fixture()

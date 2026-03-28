@@ -179,7 +179,7 @@ class EmailView(QWidget):
             self._progress.repaint()
 
         self._progress.setVisible(False)
-        self._log.append(f"解析完成，依日期排序中...")
+        self._log.append("解析完成，依日期排序中...")
         parsed.sort(key=lambda t: (t[1] is None, str(t[1].date) if t[1] and t[1].date else ""))
 
         self._pending_files = [t[0] for t in parsed]

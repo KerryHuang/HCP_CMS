@@ -178,7 +178,7 @@ class CaseView(QWidget):
                 self._table.setItem(i, 3, QTableWidgetItem(company_display))
                 self._table.setItem(i, 4, QTableWidgetItem(case.subject or ""))
                 self._table.setItem(i, 5, QTableWidgetItem(case.issue_type or ""))
-                self._table.setItem(i, 6, QTableWidgetItem(case.replied))
+                self._table.setItem(i, 6, QTableWidgetItem("是" if case.status == "已回覆" else "否"))
                 reply_item = QTableWidgetItem(str(case.reply_count) if case.reply_count else "")
                 reply_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 self._table.setItem(i, 7, reply_item)

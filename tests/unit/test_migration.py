@@ -133,6 +133,7 @@ class TestMigration:
 class TestQAStatusMigration:
     def test_alter_table_冪等(self, tmp_path):
         import sqlite3
+
         from hcp_cms.data.migration import _add_qa_status_column
         conn = sqlite3.connect(str(tmp_path / "test.db"))
         conn.execute(

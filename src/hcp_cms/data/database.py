@@ -23,7 +23,6 @@ CREATE TABLE IF NOT EXISTS cs_cases (
     contact_method TEXT DEFAULT 'Email',
     status TEXT DEFAULT '處理中',
     priority TEXT DEFAULT '中',
-    replied TEXT DEFAULT '否',
     sent_time TEXT,
     company_id TEXT REFERENCES companies(company_id),
     contact_person TEXT,
@@ -193,12 +192,13 @@ class DatabaseManager:
             "ALTER TABLE cs_cases ADD COLUMN reply_time TEXT",
             "ALTER TABLE case_mantis ADD COLUMN summary TEXT",
             "ALTER TABLE case_mantis ADD COLUMN issue_date TEXT",
+            "ALTER TABLE cs_cases DROP COLUMN replied",
         ]
         for sql in pending:
             try:
                 self._conn.execute(sql)
             except sqlite3.OperationalError:
-                pass  # 欄位已存在，略過
+                pass  # 欄位已存在或不存在，略過
 
     def close(self) -> None:
         if self._conn:

@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QTableWidget,
     QTableWidgetItem,
     QTabWidget,
@@ -62,6 +63,16 @@ class CaseDetailDialog(QDialog):
     def _build_tab1(self) -> QWidget:
         w = QWidget()
         outer = QVBoxLayout(w)
+        outer.setContentsMargins(0, 0, 0, 0)
+
+        # ── 捲動區域（含所有表單欄位）──────────────────────────────
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+
+        content = QWidget()
+        content_layout = QVBoxLayout(content)
+        content_layout.setContentsMargins(8, 8, 8, 8)
 
         # 兩欄式表單
         cols = QHBoxLayout()
@@ -113,35 +124,41 @@ class CaseDetailDialog(QDialog):
         cols.addLayout(left)
         cols.addSpacing(20)
         cols.addLayout(right)
-        outer.addLayout(cols)
+        content_layout.addLayout(cols)
 
         # 下方全寬
         self._f_progress = QTextEdit()
-        self._f_progress.setMaximumHeight(80)
+        self._f_progress.setMinimumHeight(60)
+        self._f_progress.setMaximumHeight(90)
         self._f_notes = QTextEdit()
-        self._f_notes.setMaximumHeight(80)
+        self._f_notes.setMinimumHeight(60)
+        self._f_notes.setMaximumHeight(90)
         self._f_actual_reply = QTextEdit()
-        self._f_actual_reply.setMaximumHeight(80)
+        self._f_actual_reply.setMinimumHeight(60)
+        self._f_actual_reply.setMaximumHeight(90)
 
         pf = QFormLayout()
+        pf.setVerticalSpacing(8)
         pf.addRow("處理進度：", self._f_progress)
         pf.addRow("備註：", self._f_notes)
         pf.addRow("實際回覆：", self._f_actual_reply)
         self._extra_form = pf
         self._extra_field_widgets: dict[str, QLineEdit] = {}
-        outer.addLayout(pf)
+        content_layout.addLayout(pf)
+        content_layout.addStretch()
 
-        # 按鈕列
+        scroll.setWidget(content)
+        outer.addWidget(scroll, stretch=1)
+
+        # 按鈕列（固定在底部，不捲動）
         btn_row = QHBoxLayout()
+        btn_row.setContentsMargins(8, 4, 8, 4)
         save_btn = QPushButton("💾 儲存")
         save_btn.clicked.connect(self._on_save)
-        replied_btn = QPushButton("✅ 標記已回覆")
-        replied_btn.clicked.connect(self._on_mark_replied)
         close_btn = QPushButton("🔒 結案")
         close_btn.clicked.connect(self._on_close_case)
         btn_row.addStretch()
         btn_row.addWidget(save_btn)
-        btn_row.addWidget(replied_btn)
         btn_row.addWidget(close_btn)
         outer.addLayout(btn_row)
 
@@ -357,6 +374,7 @@ class CaseDetailDialog(QDialog):
         custom_cols = CustomColumnManager(self._conn).list_columns()
         for col in custom_cols:
             le = QLineEdit(self._case.extra_fields.get(col.col_key) or "")
+            le.setMinimumHeight(30)
             self._extra_form.addRow(f"{col.col_label}：", le)
             self._extra_field_widgets[col.col_key] = le
 
@@ -398,14 +416,6 @@ class CaseDetailDialog(QDialog):
             self.case_updated.emit()
         except Exception as e:
             QMessageBox.critical(self, "儲存失敗", str(e))
-
-    def _on_mark_replied(self) -> None:
-        try:
-            self._manager.mark_replied(self._case_id)
-            self._load_case()
-            self.case_updated.emit()
-        except Exception as e:
-            QMessageBox.critical(self, "操作失敗", str(e))
 
     def _on_close_case(self) -> None:
         try:

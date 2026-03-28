@@ -52,7 +52,6 @@ class TestCaseManager:
 
         updated = CaseRepository(seeded_db.connection).get_by_id(case.case_id)
         assert updated.status == "已回覆"
-        assert updated.replied == "是"
         assert updated.actual_reply == "2026/03/20 12:00"
 
     def test_mark_replied_increments_reply_count(self, seeded_db):
