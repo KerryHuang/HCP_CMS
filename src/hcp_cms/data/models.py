@@ -96,15 +96,15 @@ class MantisTicket:
     planned_fix: str | None = None
     actual_fix: str | None = None
     progress: str | None = None
-    notes: str | None = None
+    notes: str | None = None           # 原始備註欄位（舊版相容，不再從 SOAP 寫入）
     synced_at: str | None = None
     # ── 新增欄位 ──
     severity: str | None = None
     reporter: str | None = None
-    last_updated: str | None = None  # Mantis 最後更新時間
+    last_updated: str | None = None    # Mantis 最後更新時間
     description: str | None = None
-    notes_json: str | None = None
-    notes_count: int | None = None
+    notes_json: str | None = None      # Mantis Bug 筆記 JSON 陣列（最後 5 條）
+    notes_count: int | None = None     # Mantis 筆記總數（用於判斷是否顯示「查看更多」）
 
 
 @dataclass
