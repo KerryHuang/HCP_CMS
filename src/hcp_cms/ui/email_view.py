@@ -37,6 +37,8 @@ from hcp_cms.data.repositories import ProcessedFileRepository
 from hcp_cms.services.credential import CredentialManager
 from hcp_cms.services.mail.base import MailProvider, RawEmail
 from hcp_cms.services.mail.msg_reader import MSGReader
+from PySide6.QtWidgets import QTabWidget
+from hcp_cms.ui.sent_mail_tab import SentMailTab
 
 
 class EmailView(QWidget):
@@ -112,6 +114,12 @@ class EmailView(QWidget):
 
         layout.addWidget(conn_group)
 
+        # Tab widget：收件處理 / 寄件備份
+        self._tab_widget = QTabWidget()
+        inbox_widget = QWidget()
+        inbox_layout = QVBoxLayout(inbox_widget)
+        inbox_layout.setContentsMargins(0, 8, 0, 0)
+
         # Date navigator — ← [日期] →
         filter_layout = QHBoxLayout()
         filter_layout.addWidget(QLabel("日期:"))
@@ -158,7 +166,7 @@ class EmailView(QWidget):
         import_btn.clicked.connect(self._on_import_msg)
         filter_layout.addWidget(import_btn)
 
-        layout.addLayout(filter_layout)
+        inbox_layout.addLayout(filter_layout)
 
         # Email list — 5 columns: checkbox + 寄件人 + 主旨 + 日期 + 狀態
         self._table = QTableWidget(0, 5)
@@ -183,7 +191,7 @@ class EmailView(QWidget):
         select_row.addWidget(select_all_btn)
         select_row.addWidget(select_none_btn)
         select_row.addStretch()
-        layout.addLayout(select_row)
+        inbox_layout.addLayout(select_row)
 
         self._splitter = QSplitter(Qt.Orientation.Vertical)
 
@@ -199,7 +207,7 @@ class EmailView(QWidget):
         self._splitter.setSizes([400, 300])
         self._splitter.setStretchFactor(0, 1)
         self._splitter.setStretchFactor(1, 1)
-        layout.addWidget(self._splitter, stretch=1)
+        inbox_layout.addWidget(self._splitter, stretch=1)
 
         # Actions
         action_layout = QHBoxLayout()
@@ -209,19 +217,27 @@ class EmailView(QWidget):
         self._import_all_btn = QPushButton("📥 全部匯入")
         self._import_all_btn.clicked.connect(self._on_import_all)
         action_layout.addWidget(self._import_all_btn)
-        layout.addLayout(action_layout)
+        inbox_layout.addLayout(action_layout)
 
         # Progress
         self._progress = QProgressBar()
         self._progress.setVisible(False)
-        layout.addWidget(self._progress)
+        inbox_layout.addWidget(self._progress)
 
         # Log
         self._log = QTextEdit()
         self._log.setReadOnly(True)
         self._log.setFixedHeight(120)
         self._log.setPlaceholderText("處理日誌...")
-        layout.addWidget(self._log)
+        inbox_layout.addWidget(self._log)
+
+        self._tab_widget.addTab(inbox_widget, "📥 收件處理")
+
+        # 寄件備份 tab
+        self._sent_tab = SentMailTab(conn=self._conn)
+        self._tab_widget.addTab(self._sent_tab, "📤 寄件備份")
+
+        layout.addWidget(self._tab_widget, stretch=1)
 
         # Schedule settings
         schedule_group = QGroupBox("自動排程")
@@ -330,6 +346,7 @@ class EmailView(QWidget):
             if result["ok"]:
                 self._provider = result["provider"]
                 self._log.append(f"✅ {proto} 連線成功！")
+                self._sent_tab.set_provider(self._provider)
                 if self._auto_fetch_after_connect:
                     self._auto_fetch_after_connect = False
                     self._on_fetch()
