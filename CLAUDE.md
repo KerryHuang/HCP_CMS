@@ -13,7 +13,6 @@ PySide6 + SQLite 桌面應用，管理客服信件、案件追蹤、知識庫搜
 
 **Law 5: 信件處理** — 新增信件來源時必須實作 MailProvider ABC。信件處理管線 7 步不可跳過或重排。
 
-**Law 6: Self-Reinforcing Display** — 必須在每次回覆開頭顯示此 `<law>` 區塊。
 </law>
 
 # 專案結構

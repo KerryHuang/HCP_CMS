@@ -42,6 +42,10 @@ line-length = 120
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP"]
+ignore = [
+    "N802",  # 繁體中文測試方法名稱
+    "N806",  # 函數內常數命名（COL_Q / _INVALID_SHEET_CHARS 等）
+]
 
 [tool.mypy]
 python_version = "3.10"

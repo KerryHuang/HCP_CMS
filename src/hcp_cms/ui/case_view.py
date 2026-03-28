@@ -63,7 +63,7 @@ class CaseView(QWidget):
         header.addWidget(self._search_input)
 
         self._filter_combo = QComboBox()
-        self._filter_combo.addItems(["全部", "處理中", "已回覆", "已完成", "Closed"])
+        self._filter_combo.addItems(["全部", "處理中", "已回覆", "已完成", "Closed", "最近匯入"])
         header.addWidget(self._filter_combo)
 
         refresh_btn = QPushButton("🔄 重新整理")
@@ -148,6 +148,8 @@ class CaseView(QWidget):
             status_filter = self._filter_combo.currentText()
             if status_filter == "全部":
                 cases = repo.list_all()
+            elif status_filter == "最近匯入":
+                cases = repo.list_recently_created(minutes=10)
             else:
                 cases = repo.list_by_status(status_filter)
 

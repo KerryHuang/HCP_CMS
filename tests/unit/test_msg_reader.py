@@ -282,7 +282,7 @@ class TestExtractImages:
         existing = dest / "image.png"
         existing.write_bytes(b"original")
         # 模擬：若 msg_path 不存在，直接回傳 []（冪等驗證的前提是目的地已有檔案）
-        result = MSGReader.extract_images(tmp_path / "fake.msg", dest)
+        MSGReader.extract_images(tmp_path / "fake.msg", dest)
         assert existing.read_bytes() == b"original"  # 未被覆蓋
 
     def test_corrupt_msg_returns_empty(self, tmp_path):

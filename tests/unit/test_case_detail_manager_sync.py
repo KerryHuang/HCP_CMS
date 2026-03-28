@@ -1,10 +1,13 @@
 """測試 CaseDetailManager.sync_mantis_ticket() 新欄位映射。"""
 from __future__ import annotations
+
 import json
-import pytest
 from unittest.mock import MagicMock
-from hcp_cms.data.database import DatabaseManager
+
+import pytest
+
 from hcp_cms.core.case_detail_manager import CaseDetailManager
+from hcp_cms.data.database import DatabaseManager
 from hcp_cms.services.mantis.base import MantisIssue, MantisNote
 
 

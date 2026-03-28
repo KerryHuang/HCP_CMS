@@ -1,7 +1,8 @@
 """測試 MantisRepository 新欄位儲存與取回。"""
 from __future__ import annotations
-import sqlite3
+
 import pytest
+
 from hcp_cms.data.database import DatabaseManager
 from hcp_cms.data.models import MantisTicket
 from hcp_cms.data.repositories import MantisRepository

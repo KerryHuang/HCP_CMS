@@ -6,6 +6,10 @@ import re
 import sqlite3
 from datetime import date
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from hcp_cms.data.models import QAKnowledge
 
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QPixmap
@@ -732,13 +736,15 @@ class KMSView(QWidget):
                         rows.append(dict(zip(headers, [str(v or "").strip() for v in row])))
                     wb.close()
                     o, f = _import_excel_rows(rows)
-                    ok += o; fail += f
+                    ok += o
+                    fail += f
                 else:  # .csv
                     with open(path, newline="", encoding="utf-8-sig") as f_csv:
                         rows = [{k.strip(): (v or "").strip() for k, v in r.items()}
                                 for r in csv.DictReader(f_csv)]
                     o, f = _import_excel_rows(rows)
-                    ok += o; fail += f
+                    ok += o
+                    fail += f
             except Exception:
                 fail += 1
         progress.setValue(len(all_paths))
@@ -841,7 +847,7 @@ class KMSView(QWidget):
         if not query:
             return
 
-        from PySide6.QtWidgets import QTableWidgetItem as TWI
+        from PySide6.QtWidgets import QTableWidgetItem
         results = self._kms.search(query)
         self._smart_results = results[:10]
         self._smart_result_table.setRowCount(0)
@@ -855,10 +861,10 @@ class KMSView(QWidget):
             row = self._smart_result_table.rowCount()
             self._smart_result_table.insertRow(row)
             pct = max(0, 100 - (rank - 1) * 8)
-            self._smart_result_table.setItem(row, 0, TWI(f"{pct}%"))
-            self._smart_result_table.setItem(row, 1, TWI(qa.qa_id))
-            self._smart_result_table.setItem(row, 2, TWI(qa.question[:80] if qa.question else ""))
-            self._smart_result_table.setItem(row, 3, TWI(qa.system_product or ""))
+            self._smart_result_table.setItem(row, 0, QTableWidgetItem(f"{pct}%"))
+            self._smart_result_table.setItem(row, 1, QTableWidgetItem(qa.qa_id))
+            self._smart_result_table.setItem(row, 2, QTableWidgetItem(qa.question[:80] if qa.question else ""))
+            self._smart_result_table.setItem(row, 3, QTableWidgetItem(qa.system_product or ""))
 
         # 預設選第一筆
         self._smart_result_table.selectRow(0)

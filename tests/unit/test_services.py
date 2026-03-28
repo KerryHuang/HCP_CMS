@@ -373,6 +373,75 @@ class TestIMAPProvider:
         provider = IMAPProvider("imap.example.com")
         provider.disconnect()  # Should not raise
 
+    def test_search_criteria_single_day(self):
+        """單日查詢 BEFORE 必須 +1 天，否則 IMAP 永遠回傳 0 筆。"""
+        from datetime import datetime, timedelta
+        from unittest.mock import MagicMock
+
+        provider = IMAPProvider("imap.example.com")
+        mock_conn = MagicMock()
+        mock_conn.select.return_value = ("OK", [b"10"])
+        mock_conn.search.return_value = ("OK", [b""])
+        provider._conn = mock_conn
+
+        since = datetime(2026, 3, 27)
+        until = datetime(2026, 3, 27, 23, 59, 59)
+        provider.fetch_messages(since=since, until=until)
+
+        # 驗證 BEFORE 日期為隔天（28-Mar-2026）
+        call_args = mock_conn.search.call_args
+        criteria = call_args[0][1]
+        assert "28-Mar-2026" in criteria, f"BEFORE 應為隔天，實際: {criteria}"
+        assert "27-Mar-2026" in criteria, f"SINCE 應為當天，實際: {criteria}"
+
+    def test_parse_email_subject_with_bad_encoding(self):
+        """subject 宣稱 gb2312 但含非法位元組時不應拋出例外。"""
+        import email as email_mod
+
+        raw = (
+            "Subject: =?gb2312?B?u9i4tKdEIGlyZW5leWU=?=\r\n"
+            "From: test@example.com\r\n"
+            "Date: Fri, 27 Mar 2026 10:00:00 +0800\r\n"
+            "\r\n"
+            "body text"
+        )
+        msg = email_mod.message_from_string(raw)
+        result = IMAPProvider._parse_email(msg)
+        assert result.sender is not None
+        assert result.body == "body text"
+
+    def test_parse_email_date_format(self):
+        """日期應格式化為 yyyy/mm/dd HH:MM:SS。"""
+        import email as email_mod
+
+        raw = (
+            "Subject: test\r\n"
+            "From: test@example.com\r\n"
+            "Date: Wed, 25 Mar 2026 09:30:00 +0800\r\n"
+            "\r\n"
+            "body"
+        )
+        msg = email_mod.message_from_string(raw)
+        result = IMAPProvider._parse_email(msg)
+        assert result.date == "2026/03/25 09:30:00"
+
+    def test_parse_email_sender_decoded(self):
+        """RFC 2047 編碼的寄件人應正確解碼。"""
+        import email as email_mod
+
+        raw = (
+            "Subject: test\r\n"
+            "From: =?utf-8?B?5byB6ZuF5b6u?= <test@example.com>\r\n"
+            "Date: Wed, 25 Mar 2026 09:30:00 +0800\r\n"
+            "\r\n"
+            "body"
+        )
+        msg = email_mod.message_from_string(raw)
+        result = IMAPProvider._parse_email(msg)
+        assert "test@example.com" in result.sender
+        # 應包含解碼後的中文名，不應保留 =?utf-8?B 格式
+        assert "=?utf-8" not in result.sender
+
 
 class TestExchangeProvider:
     def test_create(self):

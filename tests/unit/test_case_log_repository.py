@@ -104,7 +104,9 @@ class TestCaseMantisRepositoryUnlink:
     def test_unlink_removes_association(self, db: DatabaseManager):
         # 插入 mantis ticket
         db.connection.execute(
-            "INSERT INTO mantis_tickets (ticket_id, summary, priority, status, issue_type, module, handler, progress) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO mantis_tickets "
+            "(ticket_id, summary, priority, status, issue_type, module, handler, progress) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             ("1234", "測試 ticket", "中", "開放中", "Bug", "系統", "工程師", "進行中"),
         )
         db.connection.execute(

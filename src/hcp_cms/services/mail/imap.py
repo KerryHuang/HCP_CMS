@@ -46,7 +46,11 @@ class IMAPProvider(MailProvider):
             self._conn = None
 
     def fetch_messages(
-        self, since: datetime | None = None, until: datetime | None = None, folder: str = "INBOX"
+        self,
+        since: datetime | None = None,
+        until: datetime | None = None,
+        folder: str = "INBOX",
+        on_message: object = None,
     ) -> list[RawEmail]:
         if not self._conn:
             return []
@@ -56,7 +60,11 @@ class IMAPProvider(MailProvider):
             if since:
                 criteria = f'(SINCE "{since.strftime("%d-%b-%Y")}")'
             if until:
-                criteria = f'(SINCE "{since.strftime("%d-%b-%Y")}" BEFORE "{until.strftime("%d-%b-%Y")}")'
+                # IMAP BEFORE 不含當天，需 +1 天
+                from datetime import timedelta
+
+                before_date = until + timedelta(days=1)
+                criteria = f'(SINCE "{since.strftime("%d-%b-%Y")}" BEFORE "{before_date.strftime("%d-%b-%Y")}")'
 
             _, msg_nums = self._conn.search(None, criteria)
             results = []
@@ -65,7 +73,10 @@ class IMAPProvider(MailProvider):
                 if data[0] is None:
                     continue
                 msg = email.message_from_bytes(data[0][1])
-                results.append(self._parse_email(msg))
+                parsed = self._parse_email(msg)
+                results.append(parsed)
+                if on_message:
+                    on_message(parsed)
             return results
         except Exception:
             return []
@@ -79,9 +90,7 @@ class IMAPProvider(MailProvider):
                 continue
         return []
 
-    def create_draft(
-        self, to: list[str], subject: str, body: str, attachments: list[str] | None = None
-    ) -> bool:
+    def create_draft(self, to: list[str], subject: str, body: str, attachments: list[str] | None = None) -> bool:
         if not self._conn:
             return False
         try:
@@ -102,15 +111,26 @@ class IMAPProvider(MailProvider):
             return False
 
     @staticmethod
+    def _decode_header_value(raw: str) -> str:
+        """解碼 RFC 2047 編碼的 header 值（Subject / From 等）。"""
+        if not raw:
+            return ""
+        decoded = decode_header(raw)
+        parts = []
+        for part, enc in decoded:
+            if isinstance(part, bytes):
+                charset = enc or "utf-8"
+                try:
+                    parts.append(part.decode(charset))
+                except (UnicodeDecodeError, LookupError):
+                    parts.append(part.decode(charset, errors="replace"))
+            else:
+                parts.append(part)
+        return "".join(parts)
+
+    @staticmethod
     def _parse_email(msg: email.message.Message) -> RawEmail:
-        subject = ""
-        raw_subject = msg.get("Subject", "")
-        if raw_subject:
-            decoded = decode_header(raw_subject)
-            subject = "".join(
-                part.decode(enc or "utf-8") if isinstance(part, bytes) else part
-                for part, enc in decoded
-            )
+        subject = IMAPProvider._decode_header_value(msg.get("Subject", ""))
 
         body = ""
         if msg.is_multipart():
@@ -125,11 +145,27 @@ class IMAPProvider(MailProvider):
             if payload:
                 body = payload.decode(msg.get_content_charset() or "utf-8", errors="replace")
 
+        # 解碼寄件人（處理 RFC 2047 編碼）
+        raw_from = msg.get("From", "")
+        sender = IMAPProvider._decode_header_value(raw_from)
+
+        # 日期格式化為 yyyy/mm/dd HH:MM:SS
+        raw_date = msg.get("Date", "")
+        date_str = raw_date
+        if raw_date:
+            try:
+                from email.utils import parsedate_to_datetime
+
+                dt = parsedate_to_datetime(raw_date)
+                date_str = dt.strftime("%Y/%m/%d %H:%M:%S")
+            except Exception:
+                pass
+
         return RawEmail(
-            sender=msg.get("From", ""),
+            sender=sender,
             subject=subject,
             body=body,
-            date=msg.get("Date"),
+            date=date_str,
             message_id=msg.get("Message-ID"),
             in_reply_to=msg.get("In-Reply-To"),
             references=msg.get("References"),

@@ -225,6 +225,17 @@ class CaseRepository:
         ).fetchall()
         return [self._row_to_case(r) for r in rows]
 
+    def list_recently_created(self, minutes: int = 10) -> list[Case]:
+        """查詢 created_at 在近 N 分鐘內的案件。"""
+        from datetime import datetime, timedelta
+
+        cutoff = (datetime.now() - timedelta(minutes=minutes)).strftime("%Y/%m/%d %H:%M:%S")
+        rows = self._conn.execute(
+            self._build_select() + " WHERE created_at >= ? ORDER BY created_at DESC",
+            (cutoff,),
+        ).fetchall()
+        return [self._row_to_case(r) for r in rows]
+
     def update_status(self, case_id: str, status: str) -> None:
         self._conn.execute(
             "UPDATE cs_cases SET status = ?, updated_at = ? WHERE case_id = ?",
@@ -710,6 +721,13 @@ class ProcessedFileRepository:
     def exists(self, file_hash: str) -> bool:
         row = self._conn.execute("SELECT 1 FROM processed_files WHERE file_hash = ?", (file_hash,)).fetchone()
         return row is not None
+
+    def exists_by_message_id(self, message_id: str) -> bool:
+        """以 message_id 的 SHA256 hash 檢查是否已處理。"""
+        import hashlib
+
+        h = hashlib.sha256(message_id.encode()).hexdigest()
+        return self.exists(h)
 
 
 # ---------------------------------------------------------------------------

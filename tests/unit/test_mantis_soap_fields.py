@@ -1,7 +1,11 @@
 """測試 MantisSoapClient 新欄位解析。"""
 
 from __future__ import annotations
+
+from unittest.mock import MagicMock, patch
+
 from hcp_cms.services.mantis.base import MantisIssue, MantisNote
+from hcp_cms.services.mantis.soap import MantisSoapClient
 
 
 def test_mantis_issue_has_new_fields():
@@ -22,10 +26,6 @@ def test_mantis_note_fields():
     assert note.reporter == ""
     assert note.text == ""
     assert note.date_submitted == ""
-
-
-from unittest.mock import patch, MagicMock
-from hcp_cms.services.mantis.soap import MantisSoapClient
 
 
 _SAMPLE_SOAP = """<?xml version="1.0" encoding="UTF-8"?>

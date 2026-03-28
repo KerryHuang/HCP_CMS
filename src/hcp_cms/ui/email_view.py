@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import contextlib
 import sqlite3
+import threading
 import traceback
 from html import escape
 from pathlib import Path
 
-from PySide6.QtCore import QDate, Qt
+from PySide6.QtCore import QDate, Qt, Signal
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWidgets import (
     QComboBox,
@@ -15,7 +17,9 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QGroupBox,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
+    QMessageBox,
     QProgressBar,
     QPushButton,
     QSpinBox,
@@ -29,12 +33,19 @@ from PySide6.QtWidgets import (
 
 from hcp_cms.core.case_manager import CaseManager
 from hcp_cms.core.kms_engine import KMSEngine
-from hcp_cms.services.mail.base import RawEmail
+from hcp_cms.data.repositories import ProcessedFileRepository
+from hcp_cms.services.credential import CredentialManager
+from hcp_cms.services.mail.base import MailProvider, RawEmail
 from hcp_cms.services.mail.msg_reader import MSGReader
 
 
 class EmailView(QWidget):
     """Email processing page."""
+
+    navigate_to_cases = Signal()   # 匯入完成後請求跳轉至案件管理
+    _worker_done = Signal(object)  # 背景工作完成（跨線程安全）
+    _worker_error = Signal(str)    # 背景工作失敗
+    _mail_arrived = Signal(object) # 逐封信件串流顯示
 
     _BASE_STYLE = (
         "body{margin:16px;font-family:'Segoe UI',Arial,sans-serif;"
@@ -49,9 +60,34 @@ class EmailView(QWidget):
         super().__init__()
         self._conn = conn
         self._kms = kms
+        self._creds = CredentialManager()
+        self._provider: MailProvider | None = None
         self._pending_files: list[Path] = []
         self._emails: list[RawEmail | None] = []   # 與 _pending_files 平行
+        self._auto_connected = False
+        self._auto_fetch_after_connect = False
         self._setup_ui()
+
+    def try_auto_connect(self) -> None:
+        """由外部（如 MainWindow）呼叫，首次進入頁面時自動連線。"""
+        if self._auto_connected:
+            return
+        self._auto_connected = True
+        from PySide6.QtCore import QTimer
+
+        QTimer.singleShot(300, self._auto_connect_if_configured)
+
+    def _auto_connect_if_configured(self) -> None:
+        """若有設定帳密，自動觸發連線。"""
+        has_imap = bool(self._creds.retrieve("mail_imap_host"))
+        has_exchange = bool(self._creds.retrieve("mail_exchange_email"))
+        if has_imap or has_exchange:
+            if has_imap:
+                self._provider_combo.setCurrentText("IMAP")
+            else:
+                self._provider_combo.setCurrentText("Exchange")
+            self._auto_fetch_after_connect = True
+            self._on_connect()
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
@@ -71,23 +107,52 @@ class EmailView(QWidget):
         conn_layout.addWidget(self._provider_combo)
 
         self._connect_btn = QPushButton("🔗 連線")
+        self._connect_btn.clicked.connect(self._on_connect)
         conn_layout.addWidget(self._connect_btn)
 
         layout.addWidget(conn_group)
 
-        # Date filter
+        # Date navigator — ← [日期] →
         filter_layout = QHBoxLayout()
-        filter_layout.addWidget(QLabel("日期範圍:"))
-        self._date_from = QDateEdit(QDate.currentDate().addMonths(-1))
-        self._date_from.setCalendarPopup(True)
-        self._date_to = QDateEdit(QDate.currentDate())
-        self._date_to.setCalendarPopup(True)
-        filter_layout.addWidget(self._date_from)
-        filter_layout.addWidget(QLabel("~"))
-        filter_layout.addWidget(self._date_to)
+        filter_layout.addWidget(QLabel("日期:"))
 
-        fetch_btn = QPushButton("📥 取得信件列表")
-        filter_layout.addWidget(fetch_btn)
+        prev_week_btn = QPushButton("◀◀")
+        prev_week_btn.setFixedWidth(42)
+        prev_week_btn.setToolTip("前一週")
+        prev_week_btn.clicked.connect(self._on_prev_week)
+        filter_layout.addWidget(prev_week_btn)
+
+        prev_btn = QPushButton("◀")
+        prev_btn.setFixedWidth(36)
+        prev_btn.setToolTip("前一天")
+        prev_btn.clicked.connect(self._on_prev_day)
+        filter_layout.addWidget(prev_btn)
+
+        self._date_edit = QDateEdit(QDate.currentDate())
+        self._date_edit.setCalendarPopup(True)
+        self._date_edit.setDisplayFormat("yyyy/MM/dd")
+        filter_layout.addWidget(self._date_edit)
+
+        next_btn = QPushButton("▶")
+        next_btn.setFixedWidth(36)
+        next_btn.setToolTip("後一天")
+        next_btn.clicked.connect(self._on_next_day)
+        filter_layout.addWidget(next_btn)
+
+        next_week_btn = QPushButton("▶▶")
+        next_week_btn.setFixedWidth(42)
+        next_week_btn.setToolTip("後一週")
+        next_week_btn.clicked.connect(self._on_next_week)
+        filter_layout.addWidget(next_week_btn)
+
+        today_btn = QPushButton("今天")
+        today_btn.setFixedWidth(50)
+        today_btn.clicked.connect(self._on_today)
+        filter_layout.addWidget(today_btn)
+
+        self._fetch_btn = QPushButton("📥 取得信件列表")
+        self._fetch_btn.clicked.connect(self._on_fetch)
+        filter_layout.addWidget(self._fetch_btn)
 
         import_btn = QPushButton("📁 匯入 .msg 檔案")
         import_btn.clicked.connect(self._on_import_msg)
@@ -98,8 +163,27 @@ class EmailView(QWidget):
         # Email list — 5 columns: checkbox + 寄件人 + 主旨 + 日期 + 狀態
         self._table = QTableWidget(0, 5)
         self._table.setHorizontalHeaderLabels(["✓", "寄件人", "主旨", "日期", "狀態"])
-        self._table.horizontalHeader().setStretchLastSection(True)
-        self._table.setColumnWidth(0, 30)
+        header = self._table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+        header.resizeSection(0, 30)
+        header.setStretchLastSection(False)
+        # 1~4 欄用 Stretch，透過 resizeEvent 設定比例
+        for col in range(1, 5):
+            header.setSectionResizeMode(col, QHeaderView.ResizeMode.Interactive)
+        self._table.resizeEvent = self._on_table_resize
+
+        # 全選 / 全不選
+        select_row = QHBoxLayout()
+        select_all_btn = QPushButton("☑ 全選")
+        select_all_btn.setFixedWidth(80)
+        select_all_btn.clicked.connect(lambda: self._toggle_all_checks(True))
+        select_none_btn = QPushButton("☐ 全不選")
+        select_none_btn.setFixedWidth(80)
+        select_none_btn.clicked.connect(lambda: self._toggle_all_checks(False))
+        select_row.addWidget(select_all_btn)
+        select_row.addWidget(select_none_btn)
+        select_row.addStretch()
+        layout.addLayout(select_row)
 
         self._splitter = QSplitter(Qt.Orientation.Vertical)
 
@@ -151,6 +235,257 @@ class EmailView(QWidget):
         self._auto_btn = QPushButton("啟動自動處理")
         schedule_layout.addWidget(self._auto_btn)
         layout.addWidget(schedule_group)
+
+    def _run_in_background(self, fn: object, on_done: object, on_error: object) -> None:
+        """用 threading.Thread 在背景執行 fn，完成後透過 Signal 回到 UI 線程。"""
+        self._connect_btn.setEnabled(False)
+        self._fetch_btn.setEnabled(False)
+        self._progress.setMaximum(0)
+        self._progress.setVisible(True)
+
+        # 先斷開舊 slot 再建新連線（首次無連線時靜默跳過）
+        with contextlib.suppress(RuntimeError):
+            self._worker_done.disconnect()
+        with contextlib.suppress(RuntimeError):
+            self._worker_error.disconnect()
+        self._worker_done.connect(on_done, Qt.ConnectionType.QueuedConnection)
+        self._worker_error.connect(on_error, Qt.ConnectionType.QueuedConnection)
+
+        def _thread_target() -> None:
+            try:
+                result = fn()
+                self._worker_done.emit(result)
+            except Exception as e:
+                self._worker_error.emit(str(e))
+
+        t = threading.Thread(target=_thread_target, daemon=True)
+        t.start()
+
+    def _restore_ui(self) -> None:
+        """恢復 UI 狀態。"""
+        self._progress.setVisible(False)
+        self._progress.setMaximum(100)
+        self._connect_btn.setEnabled(True)
+        self._fetch_btn.setEnabled(True)
+
+    def _on_connect(self) -> None:
+        """根據所選協定建立信件連線。"""
+        proto = self._provider_combo.currentText()
+
+        if proto == ".msg 手動匯入":
+            self._log.append("📁 .msg 模式不需連線，請直接使用「匯入 .msg 檔案」按鈕。")
+            return
+
+        # 斷開舊連線
+        if self._provider:
+            try:
+                self._provider.disconnect()
+            except Exception:
+                pass
+            self._provider = None
+
+        if proto == "IMAP":
+            host = self._creds.retrieve("mail_imap_host")
+            if not host:
+                self._log.append("❌ 尚未設定 IMAP 帳密，請先至「系統設定」頁面填寫。")
+                return
+            port_str = self._creds.retrieve("mail_imap_port") or "993"
+            ssl_str = self._creds.retrieve("mail_imap_ssl") or "true"
+            user = self._creds.retrieve("mail_imap_user") or ""
+            pwd = self._creds.retrieve("mail_imap_password") or ""
+
+            from hcp_cms.services.mail.imap import IMAPProvider
+
+            provider = IMAPProvider(
+                host=host,
+                port=int(port_str),
+                use_ssl=ssl_str.lower() == "true",
+            )
+            provider.set_credentials(user, pwd)
+            self._log.append(f"正在連線 IMAP {host}:{port_str} ...")
+        else:  # Exchange
+            email_addr = self._creds.retrieve("mail_exchange_email")
+            if not email_addr:
+                self._log.append("❌ 尚未設定 Exchange 帳密，請先至「系統設定」頁面填寫。")
+                return
+            server = self._creds.retrieve("mail_exchange_server") or ""
+            user = self._creds.retrieve("mail_exchange_user") or ""
+            pwd = self._creds.retrieve("mail_exchange_password") or ""
+
+            from hcp_cms.services.mail.exchange import ExchangeProvider
+
+            provider = ExchangeProvider(server=server, email_address=email_addr)
+            provider.set_credentials(user, pwd)
+            self._log.append(f"正在連線 Exchange {email_addr} ...")
+
+        self._connect_btn.setText("⏳ 連線中...")
+
+        def do_connect() -> dict:
+            ok = provider.connect()
+            return {"ok": ok, "provider": provider}
+
+        def on_done(result: object) -> None:
+            self._restore_ui()
+            self._connect_btn.setText("🔗 連線")
+            if result["ok"]:
+                self._provider = result["provider"]
+                self._log.append(f"✅ {proto} 連線成功！")
+                if self._auto_fetch_after_connect:
+                    self._auto_fetch_after_connect = False
+                    self._on_fetch()
+            else:
+                self._auto_fetch_after_connect = False
+                self._log.append(f"❌ {proto} 連線失敗，請確認帳密是否正確。")
+
+        def on_error(msg: str) -> None:
+            self._restore_ui()
+            self._connect_btn.setText("🔗 連線")
+            self._auto_fetch_after_connect = False
+            self._log.append(f"❌ 連線發生例外：{msg}")
+
+        self._run_in_background(do_connect, on_done, on_error)
+
+    def _on_prev_week(self) -> None:
+        """查詢當前日期起往前 7 天的範圍，並將日期移到起始日。"""
+        if self._provider and self._fetch_btn.isEnabled():
+            from datetime import datetime
+
+            d = self._date_edit.date()
+            until = datetime(d.year(), d.month(), d.day(), 23, 59, 59)
+            start = d.addDays(-6)
+            since = datetime(start.year(), start.month(), start.day())
+            self._date_edit.setDate(start)
+            self._on_fetch(since=since, until=until)
+
+    def _on_prev_day(self) -> None:
+        """切到前一天並自動取得列表。"""
+        if not self._fetch_btn.isEnabled():
+            return
+        self._date_edit.setDate(self._date_edit.date().addDays(-1))
+        if self._provider:
+            self._on_fetch()
+
+    def _on_next_day(self) -> None:
+        """切到後一天並自動取得列表。"""
+        if not self._fetch_btn.isEnabled():
+            return
+        self._date_edit.setDate(self._date_edit.date().addDays(1))
+        if self._provider:
+            self._on_fetch()
+
+    def _on_next_week(self) -> None:
+        """查詢當前日期起往後 7 天的範圍，並將日期移到結束日。"""
+        if self._provider and self._fetch_btn.isEnabled():
+            from datetime import datetime
+
+            d = self._date_edit.date()
+            since = datetime(d.year(), d.month(), d.day())
+            end = d.addDays(6)
+            until = datetime(end.year(), end.month(), end.day(), 23, 59, 59)
+            self._date_edit.setDate(end)
+            self._on_fetch(since=since, until=until)
+
+    def _on_today(self) -> None:
+        """回到今天並自動取得列表。"""
+        self._date_edit.setDate(QDate.currentDate())
+        if self._provider:
+            self._on_fetch()
+
+    def _on_fetch(
+        self,
+        since: object = None,
+        until: object = None,
+    ) -> None:
+        """透過已連線的 provider 取得信件列表。"""
+        if not self._provider:
+            self._log.append("❌ 請先點「連線」建立連線。")
+            return
+
+        from datetime import datetime
+
+        if since is None or until is None:
+            d = self._date_edit.date()
+            since = datetime(d.year(), d.month(), d.day())
+            until = datetime(d.year(), d.month(), d.day(), 23, 59, 59)
+
+        if since.date() == until.date():
+            self._log.append(f"正在取得 {since.strftime('%Y/%m/%d')} 的信件...")
+        else:
+            self._log.append(f"正在取得 {since.strftime('%Y/%m/%d')} ~ {until.strftime('%Y/%m/%d')} 的信件...")
+        self._fetch_btn.setText("⏳ 取得中...")
+
+        # 清空表格，準備串流接收
+        self._pending_files = []
+        self._emails = []
+        self._table.setRowCount(0)
+        self._fetch_imported_count = 0
+
+        provider = self._provider
+        processed_repo = ProcessedFileRepository(self._conn) if self._conn else None
+
+        def on_mail(mail: object) -> None:
+            """每收到一封信就即時加入表格。"""
+            self._emails.append(mail)
+            row = self._table.rowCount()
+            self._table.insertRow(row)
+
+            already = False
+            if processed_repo and mail.message_id:
+                already = processed_repo.exists_by_message_id(mail.message_id)
+
+            chk_item = QTableWidgetItem()
+            chk_item.setFlags(Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled)
+            chk_item.setCheckState(Qt.CheckState.Unchecked if already else Qt.CheckState.Checked)
+            self._table.setItem(row, 0, chk_item)
+
+            self._table.setItem(row, 1, QTableWidgetItem(mail.sender))
+            self._table.setItem(row, 2, QTableWidgetItem(mail.subject))
+            self._table.setItem(row, 3, QTableWidgetItem(str(mail.date) if mail.date else ""))
+            self._table.setItem(row, 4, QTableWidgetItem("已匯入" if already else "待匯入"))
+            if already:
+                self._fetch_imported_count += 1
+
+        # 連接串流 signal
+        with contextlib.suppress(RuntimeError):
+            self._mail_arrived.disconnect()
+        self._mail_arrived.connect(on_mail, Qt.ConnectionType.QueuedConnection)
+
+        def do_fetch() -> dict:
+            emails = provider.fetch_messages(since=since, until=until, on_message=self._mail_arrived.emit)
+            return {"count": len(emails)}
+
+        def on_done(result: object) -> None:
+            self._restore_ui()
+            self._fetch_btn.setText("📥 取得信件列表")
+            total = self._table.rowCount()
+            imported = self._fetch_imported_count
+            new_count = total - imported
+            self._log.append(f"📥 取得 {total} 封信件（{new_count} 封待匯入，{imported} 封已匯入）")
+
+        def on_error(msg: str) -> None:
+            self._restore_ui()
+            self._fetch_btn.setText("📥 取得信件列表")
+            self._log.append(f"❌ 取得信件失敗：{msg}")
+
+        self._run_in_background(do_fetch, on_done, on_error)
+
+    def _on_table_resize(self, event: object) -> None:
+        """依 35:35:15:15 比例調整欄寬。"""
+        w = self._table.viewport().width() - 30  # 扣除 ✓ 欄
+        if w > 0:
+            self._table.setColumnWidth(1, int(w * 0.35))
+            self._table.setColumnWidth(2, int(w * 0.35))
+            self._table.setColumnWidth(3, int(w * 0.15))
+            self._table.setColumnWidth(4, int(w * 0.15))
+        QTableWidget.resizeEvent(self._table, event)
+
+    def _toggle_all_checks(self, checked: bool) -> None:
+        """全選或全不選所有列的勾選框。"""
+        state = Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked
+        for row in range(self._table.rowCount()):
+            item = self._table.item(row, 0)
+            if item:
+                item.setCheckState(state)
 
     def _on_import_msg(self) -> None:
         files, _ = QFileDialog.getOpenFileNames(
@@ -304,6 +639,14 @@ class EmailView(QWidget):
                     )
                     label = label_map.get(action, "已匯入")
                     self._table.setItem(row, 4, QTableWidgetItem(label))
+                    # 取消勾選已匯入的
+                    chk = self._table.item(row, 0)
+                    if chk:
+                        chk.setCheckState(Qt.CheckState.Unchecked)
+                    case_id = case.case_id if case else "?"
+                    self._log.append(f"  ✅ {case_id} {label}：{email.subject[:40]}")
+                    # 記錄到 processed_files 避免重複匯入
+                    self._record_processed(email)
                     if email.thread_question and self._kms:
                         self._kms.extract_qa_from_email(email, case.case_id if case else None)
                     success += 1
@@ -321,3 +664,32 @@ class EmailView(QWidget):
 
         self._progress.setVisible(False)
         self._log.append(f"✅ 完成：成功 {success} 件，失敗 {fail} 件")
+
+        if success > 0:
+            reply = QMessageBox.question(
+                self,
+                "匯入完成",
+                f"成功匯入 {success} 件案件，是否跳轉至案件管理查看？",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            if reply == QMessageBox.StandardButton.Yes:
+                self.navigate_to_cases.emit()
+
+    def _record_processed(self, email: RawEmail) -> None:
+        """將信件記錄到 processed_files，避免重複匯入。"""
+        if not self._conn:
+            return
+        import hashlib
+
+        from hcp_cms.data.models import ProcessedFile
+
+        key = email.message_id or (email.subject + email.sender)
+        file_hash = hashlib.sha256(key.encode()).hexdigest()
+        repo = ProcessedFileRepository(self._conn)
+        repo.insert(
+            ProcessedFile(
+                file_hash=file_hash,
+                filename=email.source_file or "",
+                message_id=email.message_id,
+            )
+        )

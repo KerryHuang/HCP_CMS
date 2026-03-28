@@ -11,7 +11,6 @@ def build() -> None:
         "--windowed",
         "--onedir",
         "--add-data", "src/hcp_cms/i18n:hcp_cms/i18n",
-        "--add-data", "resources:resources",
         "src/hcp_cms/__main__.py",
     ]
     subprocess.run(cmd, check=True)

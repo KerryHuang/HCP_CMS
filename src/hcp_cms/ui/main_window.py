@@ -119,6 +119,9 @@ class MainWindow(QMainWindow):
         # 案件有異動時，儀表板自動重新整理
         self._views["cases"].cases_changed.connect(self._views["dashboard"].refresh)
 
+        # 信件匯入完成後跳轉至案件管理（選「最近匯入」篩選）
+        self._views["email"].navigate_to_cases.connect(self._on_navigate_to_recent_cases)
+
         layout.addWidget(self._stack)
 
         # Status bar
@@ -160,6 +163,19 @@ class MainWindow(QMainWindow):
                 label = widget.findChild(QLabel, "navItemLabel")
                 if label:
                     label.setStyleSheet("color: #60a5fa;" if i == index else "color: #94a3b8;")
+        # 切到信件處理頁時自動連線
+        if index == 3:  # 信件處理 = index 3
+            self._views["email"].try_auto_connect()
+
+    def _on_navigate_to_recent_cases(self) -> None:
+        """切換至案件管理頁並自動選「最近匯入」篩選。"""
+        self._nav_list.setCurrentRow(1)  # 案件管理 = index 1
+        case_view = self._views["cases"]
+        # 設定篩選為「最近匯入」並刷新
+        idx = case_view._filter_combo.findText("最近匯入")
+        if idx >= 0:
+            case_view._filter_combo.setCurrentIndex(idx)
+        case_view.refresh()
 
     def _setup_shortcuts(self) -> None:
         """Set up global keyboard shortcuts for page navigation."""
