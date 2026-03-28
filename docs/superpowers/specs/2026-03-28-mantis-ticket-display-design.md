@@ -46,6 +46,7 @@
      - 建立時間 / 🎯 目標版本 / ✅ 修復版本
   3. 問題描述（`QTextEdit` ReadOnly，可捲動，最大高度 100px）
   4. 最後 5 條 Bug 筆記（時間降序，每條顯示：時間、回報者、內容節錄前 200 字）
+  5. **若筆記總數 > 5**：面板底部顯示提示連結「📎 尚有更多筆記，點此在 Mantis 查看完整記錄」，點擊後用 `QDesktopServices.openUrl()` 開啟 `{base_url}/view.php?id={ticket_id}`
 
 ### UI Slot 命名（遵循 `_on_<widget>_<action>` 慣例）
 
@@ -142,6 +143,8 @@ notes_json: str | None = None   # JSON 序列化的 list[dict]，存最後 5 條
 
 `notes` 欄位語意澄清：**保留 `notes` 欄位但不再從 SOAP 寫入**（舊版相容），Bug 筆記改存至 `notes_json`（新欄位）。
 
+新增 `notes_count: int | None = None` 欄位：記錄 SOAP 回傳的筆記總數（不受 max_count=5 限制），UI 依此判斷是否顯示「查看完整記錄」提示連結。
+
 ### 4. `data/database.py` — Migration
 
 在 `_MIGRATIONS` list 末尾新增（使用 try/except 防呆，相容 SQLite 3.37 之前版本）：
@@ -153,6 +156,7 @@ lambda conn: _safe_add_column(conn, "mantis_tickets", "severity", "TEXT"),
 lambda conn: _safe_add_column(conn, "mantis_tickets", "reporter", "TEXT"),
 lambda conn: _safe_add_column(conn, "mantis_tickets", "description", "TEXT"),
 lambda conn: _safe_add_column(conn, "mantis_tickets", "notes_json", "TEXT"),
+lambda conn: _safe_add_column(conn, "mantis_tickets", "notes_count", "INTEGER"),
 ```
 
 新增輔助函數 `_safe_add_column(conn, table, column, col_type)`：
@@ -227,7 +231,7 @@ self._mantis_table.currentRowChanged.connect(self._on_mantis_table_row_changed)
 
 - `scheduler/sync_job.py` SyncJob：批次背景同步暫不更新新欄位（記錄為後續 issue）
 - `ui/mantis_view.py` Worker：同上，留待後續
-- 新增「開啟 Mantis 網頁」超連結
+- 主動在 Mantis 主頁面新增超連結按鈕（筆記超過 5 條時的提示連結不在此限，已納入本次範圍）
 - 修改 case_mantis 關聯表結構
 
 ---
