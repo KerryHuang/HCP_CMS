@@ -167,7 +167,7 @@ class DatabaseManager:
         return self._conn
 
     def initialize(self) -> None:
-        self._conn = sqlite3.connect(str(self._db_path))
+        self._conn = sqlite3.connect(str(self._db_path), check_same_thread=False)
         self._conn.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA foreign_keys=ON")
