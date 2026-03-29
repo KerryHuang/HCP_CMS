@@ -232,7 +232,7 @@ class SentMailTab(QWidget):
 
         # 寄件清單
         self._list_table.setRowCount(len(mails))
-        company_counters: dict[str, int] = {}
+        thread_counters: dict[tuple[str, str], int] = {}
         for row, m in enumerate(mails):
             self._list_table.setItem(row, 0, QTableWidgetItem(m.date if m.date else ""))
             self._list_table.setItem(row, 1, QTableWidgetItem(", ".join(m.recipients)))
@@ -244,8 +244,9 @@ class SentMailTab(QWidget):
                 case_item.setToolTip("雙擊複製案件編號")
             self._list_table.setItem(row, 4, case_item)
             if m.company_id:
-                company_counters[m.company_id] = company_counters.get(m.company_id, 0) + 1
-                count_text = str(company_counters[m.company_id])
+                key = (m.company_id, m.subject)
+                thread_counters[key] = thread_counters.get(key, 0) + 1
+                count_text = str(thread_counters[key])
             else:
                 count_text = "—"
             self._list_table.setItem(row, 5, QTableWidgetItem(count_text))

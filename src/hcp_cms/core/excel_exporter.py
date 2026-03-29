@@ -55,7 +55,7 @@ class ExcelExporter:
             cell = ws.cell(1, col, title)
             cell.font = bold
 
-        company_counters: dict[str, int] = {}
+        thread_counters: dict[tuple[str, str], int] = {}
         for row, m in enumerate(mails, start=2):
             ws.cell(row, 1, m.date if m.date else "")
             ws.cell(row, 2, ", ".join(m.recipients))
@@ -63,7 +63,8 @@ class ExcelExporter:
             ws.cell(row, 4, m.company_name or "—")
             ws.cell(row, 5, m.linked_case_id or "—")
             if m.company_id:
-                company_counters[m.company_id] = company_counters.get(m.company_id, 0) + 1
-                ws.cell(row, 6, str(company_counters[m.company_id]))
+                key = (m.company_id, m.subject)
+                thread_counters[key] = thread_counters.get(key, 0) + 1
+                ws.cell(row, 6, str(thread_counters[key]))
             else:
                 ws.cell(row, 6, "—")

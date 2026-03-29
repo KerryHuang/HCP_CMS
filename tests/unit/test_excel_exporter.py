@@ -131,19 +131,19 @@ class TestExcelExporter:
         ws = wb["寄件清單"]
         assert ws.cell(2, 1).value == "2026/03/27 14:30:00"
 
-    def test_list_sequential_counter_per_company(self, tmp_path):
-        """同公司的信件依出現順序編號（流水號）。"""
+    def test_list_sequential_counter_per_subject(self, tmp_path):
+        """同公司同主旨的信件依出現順序編號；不同主旨各自從 1 開始。"""
         mails = [
-            _make_mail(company_id="C001", company_name="甲公司"),
-            _make_mail(company_id="C002", company_name="乙公司"),
-            _make_mail(company_id="C001", company_name="甲公司"),
-            _make_mail(company_id="C001", company_name="甲公司"),
+            _make_mail(company_id="C001", company_name="甲公司", subject="RE: 薪資問題"),
+            _make_mail(company_id="C001", company_name="甲公司", subject="RE: 請假申請"),
+            _make_mail(company_id="C001", company_name="甲公司", subject="RE: 薪資問題"),
+            _make_mail(company_id="C002", company_name="乙公司", subject="RE: 薪資問題"),
         ]
         path = str(tmp_path / "output.xlsx")
         ExcelExporter().export_sent_mail(mails, path)
         wb = openpyxl.load_workbook(path)
         ws = wb["寄件清單"]
-        assert ws.cell(2, 6).value == "1"  # 甲公司第1封
-        assert ws.cell(3, 6).value == "1"  # 乙公司第1封
-        assert ws.cell(4, 6).value == "2"  # 甲公司第2封
-        assert ws.cell(5, 6).value == "3"  # 甲公司第3封
+        assert ws.cell(2, 6).value == "1"  # 甲公司「薪資問題」第1封
+        assert ws.cell(3, 6).value == "1"  # 甲公司「請假申請」第1封（不同主旨重新計）
+        assert ws.cell(4, 6).value == "2"  # 甲公司「薪資問題」第2封
+        assert ws.cell(5, 6).value == "1"  # 乙公司「薪資問題」第1封（不同公司重新計）
