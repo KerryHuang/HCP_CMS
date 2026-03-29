@@ -20,6 +20,17 @@ from hcp_cms.data.models import (
 )
 
 _COL_KEY_RE = _re.compile(r"^cx_\d+$")
+_PREFIX_RE = _re.compile(r"^(RE:|FW:|FWD:|回覆:|轉寄:|答覆:)\s*", _re.IGNORECASE)
+
+
+def _clean_subject(subject: str) -> str:
+    """遞迴去除主旨前綴（RE:/FW:/回覆: 等），供 Python 側比對使用。"""
+    result = subject
+    while True:
+        stripped = _PREFIX_RE.sub("", result).strip()
+        if stripped == result:
+            return result
+        result = stripped
 
 
 def _now() -> str:
@@ -216,6 +227,22 @@ class CaseRepository:
     def list_all(self) -> list[Case]:
         rows = self._conn.execute(self._build_select() + " ORDER BY sent_time DESC").fetchall()
         return [self._row_to_case(r) for r in rows]
+
+    def find_by_company_and_subject(self, company_id: str, clean_subject: str) -> Case | None:
+        """查詢 company_id 相同且主旨（去前綴後）相符的最早案件。
+
+        先抓該公司所有案件，Python 側逐一 _clean_subject() 比對。
+        回傳 sent_time 最早的匹配案件（若 sent_time 相同則取 case_id 字典序最小）。
+        """
+        rows = self._conn.execute(
+            self._build_select() + " WHERE company_id = ? ORDER BY sent_time ASC, case_id ASC",
+            (company_id,),
+        ).fetchall()
+        for row in rows:
+            case = self._row_to_case(row)
+            if _clean_subject(case.subject) == clean_subject:
+                return case
+        return None
 
     def list_by_status(self, status: str) -> list[Case]:
         rows = self._conn.execute(self._build_select() + " WHERE status = ?", (status,)).fetchall()

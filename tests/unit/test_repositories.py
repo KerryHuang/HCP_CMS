@@ -535,3 +535,68 @@ class TestQARepositoryStatus:
         approved = repo.list_approved()
         assert len(approved) == 1
         assert approved[0].qa_id == "QA-S07"
+
+
+# ---------------------------------------------------------------------------
+# TestCaseRepositoryFindByCompanyAndSubject
+# ---------------------------------------------------------------------------
+
+
+class TestCaseRepositoryFindByCompanyAndSubject:
+    @pytest.fixture(autouse=True)
+    def _seed_companies(self, db: DatabaseManager) -> None:
+        """預先插入測試用公司，避免 FOREIGN KEY 違反。"""
+        co_repo = CompanyRepository(db.connection)
+        co_repo.insert(Company(company_id="C001", name="公司甲", domain="c001.com"))
+        co_repo.insert(Company(company_id="C002", name="公司乙", domain="c002.com"))
+
+    def test_find_by_company_and_subject_found(self, db: DatabaseManager) -> None:
+        repo = CaseRepository(db.connection)
+        case = Case(case_id="CS-2026-001", subject="薪資計算異常", company_id="C001")
+        repo.insert(case)
+        result = repo.find_by_company_and_subject("C001", "薪資計算異常")
+        assert result is not None
+        assert result.case_id == "CS-2026-001"
+
+    def test_find_by_company_and_subject_not_found(self, db: DatabaseManager) -> None:
+        repo = CaseRepository(db.connection)
+        result = repo.find_by_company_and_subject("C001", "不存在主旨")
+        assert result is None
+
+    def test_find_by_company_and_subject_clean_subject_match(self, db: DatabaseManager) -> None:
+        """DB 中的 'RE: 薪資問題' 應能被 clean_subject '薪資問題' 查到。"""
+        repo = CaseRepository(db.connection)
+        case = Case(case_id="CS-2026-002", subject="RE: 薪資問題", company_id="C001")
+        repo.insert(case)
+        result = repo.find_by_company_and_subject("C001", "薪資問題")
+        assert result is not None
+        assert result.case_id == "CS-2026-002"
+
+    def test_find_by_company_and_subject_different_company(self, db: DatabaseManager) -> None:
+        """相同主旨但不同公司不應回傳。"""
+        repo = CaseRepository(db.connection)
+        case = Case(case_id="CS-2026-003", subject="薪資問題", company_id="C002")
+        repo.insert(case)
+        result = repo.find_by_company_and_subject("C001", "薪資問題")
+        assert result is None
+
+    def test_find_by_company_and_subject_returns_earliest(self, db: DatabaseManager) -> None:
+        """有多筆匹配時回傳 sent_time 最早的案件。"""
+        repo = CaseRepository(db.connection)
+        older = Case(
+            case_id="CS-2026-010",
+            subject="薪資問題",
+            company_id="C001",
+            sent_time="2026/01/01 08:00",
+        )
+        newer = Case(
+            case_id="CS-2026-011",
+            subject="RE: 薪資問題",
+            company_id="C001",
+            sent_time="2026/03/01 08:00",
+        )
+        repo.insert(older)
+        repo.insert(newer)
+        result = repo.find_by_company_and_subject("C001", "薪資問題")
+        assert result is not None
+        assert result.case_id == "CS-2026-010"
