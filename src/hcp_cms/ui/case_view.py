@@ -60,9 +60,8 @@ class CaseView(QWidget):
 
         # Header
         header = QHBoxLayout()
-        title = QLabel("📋 案件管理")
-        title.setStyleSheet("font-size: 18px; font-weight: bold; color: #f1f5f9;")
-        header.addWidget(title)
+        self._title = QLabel("📋 案件管理")
+        header.addWidget(self._title)
 
         self._search_input = QLineEdit()
         self._search_input.setPlaceholderText("搜尋案件...")
@@ -316,10 +315,15 @@ class CaseView(QWidget):
             return
         case_id = self._cases[row].case_id
         from hcp_cms.ui.case_detail_dialog import CaseDetailDialog
-        dlg = CaseDetailDialog(self._conn, case_id, parent=self)
+        dlg = CaseDetailDialog(
+            self._conn,
+            case_id,
+            parent=self,
+            palette=self._theme_mgr.current_palette() if self._theme_mgr else None,
+        )
         dlg.case_updated.connect(self.refresh)
         dlg.exec()
 
     def _apply_theme(self, p: ColorPalette) -> None:
         """套用主題色彩。"""
-        pass  # 後續 Task 實作
+        self._title.setStyleSheet(f"font-size: 18px; font-weight: bold; color: {p.text_primary};")

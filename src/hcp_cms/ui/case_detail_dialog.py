@@ -33,6 +33,7 @@ from PySide6.QtWidgets import (
 
 from hcp_cms.core.case_detail_manager import CaseDetailManager
 from hcp_cms.data.models import Case
+from hcp_cms.ui.theme import ColorPalette
 
 
 class CaseDetailDialog(QDialog):
@@ -45,8 +46,11 @@ class CaseDetailDialog(QDialog):
         conn: sqlite3.Connection,
         case_id: str,
         parent: QWidget | None = None,
+        palette: ColorPalette | None = None,
     ) -> None:
         super().__init__(parent)
+        from hcp_cms.ui.theme import DARK_PALETTE
+        self._palette = palette or DARK_PALETTE
         self._conn = conn
         self._case_id = case_id
         self._manager = CaseDetailManager(conn)
@@ -298,14 +302,14 @@ class CaseDetailDialog(QDialog):
         # ── 下方詳情面板（常駐） ──
         detail_frame = QFrame()
         detail_frame.setStyleSheet(
-            "QFrame { background-color: #1e293b; border: 1px solid #334155; border-radius: 6px; }"
+            f"QFrame {{ background-color: {self._palette.bg_secondary}; border: 1px solid {self._palette.border_primary}; border-radius: 6px; }}"
         )
         detail_layout = QVBoxLayout(detail_frame)
         detail_layout.setContentsMargins(12, 10, 12, 10)
 
         # 標題列
         self._detail_title = QLabel("請點選上方 Ticket 查看詳情")
-        self._detail_title.setStyleSheet("color: #475569; font-size: 12px;")
+        self._detail_title.setStyleSheet(f"color: {self._palette.text_faint}; font-size: 12px;")
         detail_layout.addWidget(self._detail_title)
 
         # 8格 Grid（3欄×3行，最後一行 2 格）
@@ -324,9 +328,9 @@ class CaseDetailDialog(QDialog):
         for idx, (label_text, key) in enumerate(fields):
             row, col = divmod(idx, 3)  # 每行 3 欄
             lbl = QLabel(label_text)
-            lbl.setStyleSheet("color: #64748b; font-size: 10px;")
+            lbl.setStyleSheet(f"color: {self._palette.text_muted}; font-size: 10px;")
             val = QLabel("—")
-            val.setStyleSheet("color: #e2e8f0; font-size: 11px;")
+            val.setStyleSheet(f"color: {self._palette.text_secondary}; font-size: 11px;")
             self._detail_labels[key] = val
             cell = QVBoxLayout()
             cell.addWidget(lbl)
@@ -340,7 +344,7 @@ class CaseDetailDialog(QDialog):
 
         # 問題描述
         self._detail_desc_label = QLabel("📝 問題描述")
-        self._detail_desc_label.setStyleSheet("color: #64748b; font-size: 10px;")
+        self._detail_desc_label.setStyleSheet(f"color: {self._palette.text_muted}; font-size: 10px;")
         self._detail_desc_label.setVisible(False)
         detail_layout.addWidget(self._detail_desc_label)
 
@@ -348,14 +352,14 @@ class CaseDetailDialog(QDialog):
         self._detail_desc.setReadOnly(True)
         self._detail_desc.setMaximumHeight(90)
         self._detail_desc.setStyleSheet(
-            "QTextEdit { background: #0f172a; color: #94a3b8; border: none; font-size: 11px; }"
+            f"QTextEdit {{ background: {self._palette.bg_code}; color: {self._palette.text_tertiary}; border: none; font-size: 11px; }}"
         )
         self._detail_desc.setVisible(False)
         detail_layout.addWidget(self._detail_desc)
 
         # Bug 筆記
         self._detail_notes_label = QLabel("💬 最後 5 條 Bug 筆記")
-        self._detail_notes_label.setStyleSheet("color: #64748b; font-size: 10px;")
+        self._detail_notes_label.setStyleSheet(f"color: {self._palette.text_muted}; font-size: 10px;")
         self._detail_notes_label.setVisible(False)
         detail_layout.addWidget(self._detail_notes_label)
 
@@ -363,14 +367,14 @@ class CaseDetailDialog(QDialog):
         self._detail_notes.setReadOnly(True)
         self._detail_notes.setMaximumHeight(110)
         self._detail_notes.setStyleSheet(
-            "QTextEdit { background: #0f172a; color: #94a3b8; border: none; font-size: 11px; }"
+            f"QTextEdit {{ background: {self._palette.bg_code}; color: {self._palette.text_tertiary}; border: none; font-size: 11px; }}"
         )
         self._detail_notes.setVisible(False)
         detail_layout.addWidget(self._detail_notes)
 
         # 「查看更多」連結
         self._detail_more_link = QLabel()
-        self._detail_more_link.setStyleSheet("color: #60a5fa; font-size: 11px;")
+        self._detail_more_link.setStyleSheet(f"color: {self._palette.accent}; font-size: 11px;")
         self._detail_more_link.setOpenExternalLinks(False)
         self._detail_more_link.linkActivated.connect(self._on_open_mantis_url)
         self._detail_more_link.setVisible(False)
@@ -422,7 +426,7 @@ class CaseDetailDialog(QDialog):
 
         if no_data:
             self._detail_title.setText("請點選上方 Ticket 查看詳情")
-            self._detail_title.setStyleSheet("color: #475569; font-size: 12px;")
+            self._detail_title.setStyleSheet(f"color: {self._palette.text_faint}; font-size: 12px;")
             return
 
         # 標題
@@ -430,7 +434,7 @@ class CaseDetailDialog(QDialog):
         self._detail_title.setText(
             f"#{ticket.ticket_id}　{status_text}　{ticket.summary or ''}"
         )
-        self._detail_title.setStyleSheet("color: #93c5fd; font-weight: bold; font-size: 12px;")
+        self._detail_title.setStyleSheet(f"color: {self._palette.accent}; font-weight: bold; font-size: 12px;")
 
         # 8格資訊
         values = {
