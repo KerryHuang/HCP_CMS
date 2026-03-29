@@ -693,7 +693,7 @@ class CaseLogAddDialog(QDialog):
         layout = QFormLayout(self)
 
         self._direction = QComboBox()
-        self._direction.addItems(["客戶來信", "CS 回覆", "內部討論"])
+        self._direction.addItems(["客戶來信", "HCP 回覆", "CS 回覆", "內部討論"])
         layout.addRow("方向：", self._direction)
 
         self._content = QTextEdit()

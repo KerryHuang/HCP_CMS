@@ -156,7 +156,7 @@ class CaseLog:
     """補充記錄 — case_logs table."""
     log_id: str               # LOG-YYYYMMDD-NNN
     case_id: str
-    direction: str            # '客戶來信' | 'CS 回覆' | '內部討論'
+    direction: str            # '客戶來信' | 'HCP 回覆' | 'CS 回覆' | '內部討論'
     content: str
     mantis_ref: str | None = None   # Mantis Issue 編號（可空）
     logged_by: str | None = None    # 記錄人
