@@ -443,3 +443,26 @@ class TestImportEmail:
         logs = CaseLogRepository(seeded_db.connection).list_by_case(first.case_id)
         assert len(logs) == 1
         assert logs[0].direction == "客戶來信"
+
+    def test_import_email_merged_log_time_format_with_seconds(self, seeded_db):
+        """sent_time 已有秒數時，logged_at 不應再拼接 :00。"""
+        from hcp_cms.data.repositories import CaseLogRepository
+
+        mgr = CaseManager(seeded_db.connection)
+        first, _ = mgr.import_email(
+            subject="薪資計算異常",
+            body="第一封",
+            sender_email="user@aseglobal.com",
+            sent_time="2026/03/01 09:00:00",
+        )
+        _, action = mgr.import_email(
+            subject="RE: 薪資計算異常",
+            body="第二封",
+            sender_email="user@aseglobal.com",
+            sent_time="2026/03/02 10:30:45",  # has seconds
+        )
+        assert action == "merged"
+        logs = CaseLogRepository(seeded_db.connection).list_by_case(first.case_id)
+        assert len(logs) == 1
+        # Should be "2026/03/02 10:30:45" NOT "2026/03/02 10:30:45:00"
+        assert logs[0].logged_at == "2026/03/02 10:30:45"

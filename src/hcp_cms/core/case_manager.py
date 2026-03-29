@@ -85,9 +85,10 @@ class CaseManager:
             if existing:
                 direction = _detect_direction(sender_email, subject)
                 _base = _normalize_sent_time(sent_time)
-                log_time = (
-                    f"{_base}:00" if _base else datetime.now().strftime("%Y/%m/%d %H:%M:%S")
-                )
+                if _base:
+                    log_time = _base if len(_base) >= 19 else f"{_base}:00"
+                else:
+                    log_time = datetime.now().strftime("%Y/%m/%d %H:%M:%S")
                 log = CaseLog(
                     log_id=self._log_repo.next_log_id(),
                     case_id=existing.case_id,
