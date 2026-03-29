@@ -922,6 +922,14 @@ class CaseLogRepository:
         self._conn.execute("DELETE FROM case_logs WHERE log_id = ?", (log_id,))
         self._conn.commit()
 
+    def transfer_logs(self, from_case_id: str, to_case_id: str) -> None:
+        """將 from_case_id 的所有 CaseLog 的 case_id 改為 to_case_id。"""
+        self._conn.execute(
+            "UPDATE case_logs SET case_id = ? WHERE case_id = ?",
+            (to_case_id, from_case_id),
+        )
+        self._conn.commit()
+
 
 # ---------------------------------------------------------------------------
 # CustomColumnRepository

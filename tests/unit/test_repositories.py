@@ -600,3 +600,51 @@ class TestCaseRepositoryFindByCompanyAndSubject:
         result = repo.find_by_company_and_subject("C001", "薪資問題")
         assert result is not None
         assert result.case_id == "CS-2026-010"
+
+
+# ---------------------------------------------------------------------------
+# TestCaseLogRepositoryTransferLogs
+# ---------------------------------------------------------------------------
+
+
+class TestCaseLogRepositoryTransferLogs:
+    def test_transfer_logs_moves_all_logs(self, db: DatabaseManager) -> None:
+        """transfer_logs 後，from_case 的所有 log 的 case_id 變為 to_case。"""
+        from hcp_cms.data.models import CaseLog
+        from hcp_cms.data.repositories import CaseLogRepository
+
+        case_repo = CaseRepository(db.connection)
+        log_repo = CaseLogRepository(db.connection)
+
+        # 插入公司（FK 約束）
+        co_repo = CompanyRepository(db.connection)
+        co_repo.insert(Company(company_id="C001", name="公司甲", domain="c001.com"))
+
+        case_a = Case(case_id="CS-2026-020", subject="主旨A", company_id="C001")
+        case_b = Case(case_id="CS-2026-021", subject="主旨B", company_id="C001")
+        case_repo.insert(case_a)
+        case_repo.insert(case_b)
+
+        log1 = CaseLog(
+            log_id="LOG-20260101-001",
+            case_id="CS-2026-020",
+            direction="客戶來信",
+            content="第一封",
+            logged_at="2026/01/01 09:00:00",
+        )
+        log2 = CaseLog(
+            log_id="LOG-20260101-002",
+            case_id="CS-2026-020",
+            direction="HCP 回覆",
+            content="第二封",
+            logged_at="2026/01/02 09:00:00",
+        )
+        log_repo.insert(log1)
+        log_repo.insert(log2)
+
+        log_repo.transfer_logs("CS-2026-020", "CS-2026-021")
+
+        logs_a = log_repo.list_by_case("CS-2026-020")
+        logs_b = log_repo.list_by_case("CS-2026-021")
+        assert len(logs_a) == 0
+        assert len(logs_b) == 2
