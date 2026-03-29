@@ -7,10 +7,8 @@ seed_rules.py — 從舊版 rules_config.py 移轉完整規則至 HCP CMS 資料
 
 from __future__ import annotations
 
-import os
 import sqlite3
 import sys
-from pathlib import Path
 
 from hcp_cms.data.database import DatabaseManager
 from hcp_cms.data.models import ClassificationRule, Company
@@ -315,7 +313,9 @@ def seed(conn: sqlite3.Connection, verbose: bool = True) -> dict:
 
 
 def main() -> None:
-    db_path = Path(os.environ.get("APPDATA", str(Path.home()))) / "HCP_CMS" / "cs_tracker.db"
+    from hcp_cms.app import get_default_db_path
+
+    db_path = get_default_db_path()
     if not db_path.exists():
         print(f"資料庫不存在：{db_path}")
         sys.exit(1)
