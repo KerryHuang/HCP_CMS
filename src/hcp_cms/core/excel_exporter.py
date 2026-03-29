@@ -57,7 +57,7 @@ class ExcelExporter:
 
         company_counters: dict[str, int] = {}
         for row, m in enumerate(mails, start=2):
-            ws.cell(row, 1, m.date[:10] if m.date else "")
+            ws.cell(row, 1, m.date if m.date else "")
             ws.cell(row, 2, ", ".join(m.recipients))
             ws.cell(row, 3, m.subject)
             ws.cell(row, 4, m.company_name or "—")

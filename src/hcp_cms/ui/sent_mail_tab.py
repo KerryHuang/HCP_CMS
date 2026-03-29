@@ -234,7 +234,7 @@ class SentMailTab(QWidget):
         self._list_table.setRowCount(len(mails))
         company_counters: dict[str, int] = {}
         for row, m in enumerate(mails):
-            self._list_table.setItem(row, 0, QTableWidgetItem(m.date[:10] if m.date else ""))
+            self._list_table.setItem(row, 0, QTableWidgetItem(m.date if m.date else ""))
             self._list_table.setItem(row, 1, QTableWidgetItem(", ".join(m.recipients)))
             self._list_table.setItem(row, 2, QTableWidgetItem(m.subject))
             self._list_table.setItem(row, 3, QTableWidgetItem(m.company_name or "未知"))

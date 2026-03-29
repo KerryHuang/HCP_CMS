@@ -122,6 +122,15 @@ class TestExcelExporter:
         ws = wb["寄件清單"]
         assert ws.cell(2, 6).value == "—"
 
+    def test_list_full_datetime(self, tmp_path):
+        """日期欄顯示完整日期時間，不截斷。"""
+        mail = _make_mail(date="2026/03/27 14:30:00")
+        path = str(tmp_path / "output.xlsx")
+        ExcelExporter().export_sent_mail([mail], path)
+        wb = openpyxl.load_workbook(path)
+        ws = wb["寄件清單"]
+        assert ws.cell(2, 1).value == "2026/03/27 14:30:00"
+
     def test_list_sequential_counter_per_company(self, tmp_path):
         """同公司的信件依出現順序編號（流水號）。"""
         mails = [
