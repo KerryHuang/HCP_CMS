@@ -787,3 +787,5 @@ class EmailView(QWidget):
         )
         self._update_conn_toggle()
         self._current_palette = p
+        # 重新套用預覽區的 placeholder HTML
+        self._preview.setHtml(self._placeholder_html())

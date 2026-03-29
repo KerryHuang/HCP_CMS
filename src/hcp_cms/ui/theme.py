@@ -64,24 +64,24 @@ DARK_PALETTE = ColorPalette(
 )
 
 LIGHT_PALETTE = ColorPalette(
-    bg_primary="#f8fafc",
+    bg_primary="#eef2f7",
     bg_secondary="#ffffff",
-    bg_sidebar="#f1f5f9",
-    bg_code="#f1f5f9",
-    bg_hover="#e2e8f0",
+    bg_sidebar="#dfe6ee",
+    bg_code="#e8ecf1",
+    bg_hover="#d5dce6",
     text_primary="#0f172a",
     text_secondary="#1e293b",
-    text_tertiary="#475569",
-    text_muted="#64748b",
-    text_faint="#94a3b8",
-    accent="#2563eb",
-    accent_button="#2563eb",
+    text_tertiary="#1e293b",
+    text_muted="#334155",
+    text_faint="#475569",
+    accent="#1d4ed8",
+    accent_button="#1e40af",
     accent_button_hover="#1d4ed8",
-    border_primary="#cbd5e1",
-    border_secondary="#e2e8f0",
-    success="#16a34a",
+    border_primary="#b0bec5",
+    border_secondary="#cfd8dc",
+    success="#15803d",
     error="#dc2626",
-    warning="#d97706",
+    warning="#b45309",
 )
 
 

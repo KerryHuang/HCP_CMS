@@ -146,6 +146,7 @@ class MainWindow(QMainWindow):
     def _make_nav_widget(self, text: str, shortcut: str | None) -> QWidget:
         """Build a nav item widget with optional right-aligned shortcut hint."""
         widget = QWidget()
+        widget.setObjectName("navItemWidget")
         widget.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         layout = QHBoxLayout(widget)
         layout.setContentsMargins(16, 0, 12, 0)
@@ -169,7 +170,7 @@ class MainWindow(QMainWindow):
             self._stack.setCurrentIndex(index)
         # Update nav label colours to reflect selection
         p = getattr(self, "_current_palette", None)
-        selected_color = p.accent if p else "#60a5fa"
+        selected_color = "white"
         unselected_color = p.text_tertiary if p else "#94a3b8"
         for i in range(self._nav_list.count()):
             widget = self._nav_list.itemWidget(self._nav_list.item(i))
@@ -243,16 +244,20 @@ class MainWindow(QMainWindow):
         """Apply theme stylesheet using the given palette."""
         self.setStyleSheet(f"""
             QMainWindow {{ background-color: {p.bg_primary}; }}
+            QWidget {{ background-color: {p.bg_primary}; color: {p.text_secondary}; }}
+            QDialog {{ background-color: {p.bg_primary}; }}
+            QScrollArea {{ background-color: {p.bg_primary}; }}
+            QFrame {{ background-color: transparent; }}
             #sidebar {{ background-color: {p.bg_sidebar}; border-right: 1px solid {p.border_secondary}; }}
             #logo {{ color: {p.accent}; font-size: 16px; font-weight: bold;
                     background-color: {p.bg_sidebar}; border-bottom: 1px solid {p.border_secondary}; }}
             #navList {{ background-color: {p.bg_sidebar}; border: none; color: {p.text_tertiary};
                        font-size: 13px; outline: none; }}
             #navList::item {{ padding: 10px 16px; border-radius: 6px; margin: 2px 8px; }}
-            #navList::item:selected {{ background-color: {p.accent_button}; color: {p.accent}; }}
+            #navList::item:selected {{ background-color: {p.accent_button}; color: white; }}
             #navList::item:hover {{ background-color: {p.bg_secondary}; }}
             QStackedWidget {{ background-color: {p.bg_primary}; }}
-            QLabel {{ color: {p.text_secondary}; }}
+            QLabel {{ color: {p.text_secondary}; background-color: transparent; }}
             QLineEdit {{ background-color: {p.bg_secondary}; color: {p.text_secondary};
                         border: 1px solid {p.border_primary}; border-radius: 4px; padding: 6px; }}
             QPushButton {{ background-color: {p.accent_button}; color: white; border: none;
@@ -266,18 +271,33 @@ class MainWindow(QMainWindow):
             QStatusBar {{ background-color: {p.bg_sidebar}; color: {p.text_muted}; }}
             QComboBox {{ background-color: {p.bg_secondary}; color: {p.text_secondary};
                        border: 1px solid {p.border_primary}; border-radius: 4px; padding: 4px; }}
+            QComboBox QAbstractItemView {{ background-color: {p.bg_secondary};
+                       color: {p.text_secondary}; }}
             QSpinBox {{ background-color: {p.bg_secondary}; color: {p.text_secondary};
                        border: 1px solid {p.border_primary}; }}
             QTextEdit {{ background-color: {p.bg_secondary}; color: {p.text_secondary};
                         border: 1px solid {p.border_primary}; }}
-            QGroupBox {{ color: {p.text_tertiary}; border: 1px solid {p.border_primary}; border-radius: 6px;
-                       margin-top: 8px; padding-top: 16px; }}
+            QGroupBox {{ color: {p.text_tertiary}; border: 1px solid {p.border_primary};
+                       border-radius: 6px; margin-top: 8px; padding-top: 16px;
+                       background-color: transparent; }}
             QGroupBox::title {{ subcontrol-origin: margin; left: 12px; padding: 0 4px; }}
+            QTabWidget::pane {{ background-color: {p.bg_primary}; }}
+            QCheckBox {{ color: {p.text_secondary}; background-color: transparent; }}
+            QRadioButton {{ color: {p.text_secondary}; background-color: transparent; }}
+            QRadioButton::indicator {{ width: 14px; height: 14px; border-radius: 8px;
+                border: 2px solid {p.border_primary}; background-color: {p.bg_secondary}; }}
+            QRadioButton::indicator:checked {{ background-color: {p.accent};
+                border: 2px solid {p.accent}; }}
+            QCheckBox::indicator {{ width: 14px; height: 14px; border-radius: 3px;
+                border: 2px solid {p.border_primary}; background-color: {p.bg_secondary}; }}
+            QCheckBox::indicator:checked {{ background-color: {p.accent};
+                border: 2px solid {p.accent}; }}
+            #navItemWidget {{ background: transparent; }}
             #navItemLabel {{ color: {p.text_tertiary}; font-size: 13px; background: transparent; }}
             #navShortcutHint {{ color: {p.text_faint}; font-size: 10px; background: transparent; }}
         """)
-        self._on_nav_changed(self._nav_list.currentRow())
         self._current_palette = p
+        self._on_nav_changed(self._nav_list.currentRow())
 
     def changeEvent(self, event: QEvent) -> None:
         """偵測視窗啟用事件，重新檢查系統主題。"""
