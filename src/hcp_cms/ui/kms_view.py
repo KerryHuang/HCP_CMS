@@ -325,9 +325,8 @@ class KMSView(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 20)
 
-        title = QLabel("📚 KMS 知識庫")
-        title.setStyleSheet("font-size: 18px; font-weight: bold; color: #f1f5f9;")
-        layout.addWidget(title)
+        self._title = QLabel("📚 KMS 知識庫")
+        layout.addWidget(self._title)
 
         self._tabs = QTabWidget()
         self._tabs.currentChanged.connect(self._on_tab_changed)
@@ -449,13 +448,12 @@ class KMSView(QWidget):
         smart_layout = QVBoxLayout(smart_tab)
         smart_layout.setSpacing(8)
 
-        smart_desc = QLabel(
+        self._smart_desc = QLabel(
             "📋 將客戶來信的問題描述貼入下方，系統會自動分析語意、比對歷史 Q&A，"
             "整理出建議回覆供參考使用。"
         )
-        smart_desc.setWordWrap(True)
-        smart_desc.setStyleSheet("color: #94a3b8; padding: 4px 0;")
-        smart_layout.addWidget(smart_desc)
+        self._smart_desc.setWordWrap(True)
+        smart_layout.addWidget(self._smart_desc)
 
         self._smart_input = QTextEdit()
         self._smart_input.setPlaceholderText(
@@ -482,9 +480,8 @@ class KMSView(QWidget):
         smart_btn_row.addStretch()
         smart_layout.addLayout(smart_btn_row)
 
-        smart_result_label = QLabel("比對結果（點選查看建議回覆）：")
-        smart_result_label.setStyleSheet("color: #94a3b8; font-size: 11px;")
-        smart_layout.addWidget(smart_result_label)
+        self._smart_result_label = QLabel("比對結果（點選查看建議回覆）：")
+        smart_layout.addWidget(self._smart_result_label)
 
         smart_splitter = QSplitter(Qt.Orientation.Vertical)
 
@@ -502,14 +499,10 @@ class KMSView(QWidget):
         answer_widget = QWidget()
         answer_layout = QVBoxLayout(answer_widget)
         answer_layout.setContentsMargins(0, 0, 0, 0)
-        answer_label = QLabel("建議回覆：")
-        answer_label.setStyleSheet("color: #60a5fa; font-weight: bold;")
-        answer_layout.addWidget(answer_label)
+        self._answer_label = QLabel("建議回覆：")
+        answer_layout.addWidget(self._answer_label)
         self._smart_answer_box = QTextEdit()
         self._smart_answer_box.setReadOnly(True)
-        self._smart_answer_box.setStyleSheet(
-            "background: #1e293b; color: #f1f5f9; border: 1px solid #334155; border-radius: 4px;"
-        )
         answer_layout.addWidget(self._smart_answer_box)
         smart_splitter.addWidget(answer_widget)
         smart_splitter.setSizes([200, 300])
@@ -576,7 +569,8 @@ class KMSView(QWidget):
         self._detail_solution.setPlainText(qa.solution or "")
         # 高亮查看按鈕
         if qa.has_image == "是":
-            self._view_btn.setStyleSheet("color: #60a5fa;")
+            accent = self._theme_mgr.current_palette().accent if self._theme_mgr else "#60a5fa"
+            self._view_btn.setStyleSheet(f"color: {accent};")
         else:
             self._view_btn.setStyleSheet("")
 
@@ -966,4 +960,11 @@ class KMSView(QWidget):
 
     def _apply_theme(self, p: ColorPalette) -> None:
         """套用主題色彩。"""
-        pass  # 後續 Task 實作
+        self._title.setStyleSheet(f"font-size: 18px; font-weight: bold; color: {p.text_primary};")
+        self._smart_desc.setStyleSheet(f"color: {p.text_tertiary}; padding: 4px 0;")
+        self._smart_result_label.setStyleSheet(f"color: {p.text_tertiary}; font-size: 11px;")
+        self._answer_label.setStyleSheet(f"color: {p.accent}; font-weight: bold;")
+        self._smart_answer_box.setStyleSheet(
+            f"background: {p.bg_secondary}; color: {p.text_primary}; "
+            f"border: 1px solid {p.border_primary}; border-radius: 4px;"
+        )

@@ -92,16 +92,14 @@ class MantisView(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 20)
 
-        title = QLabel("🔧 Mantis 同步")
-        title.setStyleSheet("font-size: 18px; font-weight: bold; color: #f1f5f9;")
-        layout.addWidget(title)
+        self._title = QLabel("🔧 Mantis 同步")
+        layout.addWidget(self._title)
 
         # ── 連線資訊（唯讀，設定請至系統設定）──────────────────────
         conn_group = QGroupBox("連線狀態")
         conn_layout = QHBoxLayout(conn_group)
 
         self._url_label = QLabel("尚未設定")
-        self._url_label.setStyleSheet("color: #94a3b8;")
         conn_layout.addWidget(QLabel("Mantis URL："))
         conn_layout.addWidget(self._url_label, stretch=1)
 
@@ -262,4 +260,5 @@ class MantisView(QWidget):
 
     def _apply_theme(self, p: ColorPalette) -> None:
         """套用主題色彩。"""
-        pass  # 後續 Task 實作
+        self._title.setStyleSheet(f"font-size: 18px; font-weight: bold; color: {p.text_primary};")
+        self._url_label.setStyleSheet(f"color: {p.text_tertiary};")

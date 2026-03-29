@@ -121,9 +121,8 @@ class RulesView(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 20)
 
-        title = QLabel("📏 規則設定")
-        title.setStyleSheet("font-size: 18px; font-weight: bold; color: #f1f5f9;")
-        layout.addWidget(title)
+        self._title = QLabel("📏 規則設定")
+        layout.addWidget(self._title)
 
         # ── 類型選擇列 ───────────────────────────────────────────
         filter_layout = QHBoxLayout()
@@ -156,21 +155,14 @@ class RulesView(QWidget):
 
         # ── 說明卡片 ─────────────────────────────────────────────
         self._desc_card = QFrame()
-        self._desc_card.setStyleSheet(
-            "QFrame { background-color: #1e293b; border: 1px solid #334155;"
-            " border-radius: 6px; padding: 4px; }"
-        )
         card_layout = QVBoxLayout(self._desc_card)
         card_layout.setContentsMargins(12, 8, 12, 8)
         card_layout.setSpacing(4)
 
         self._desc_title = QLabel()
-        self._desc_title.setStyleSheet("font-size: 13px; font-weight: bold; color: #93c5fd;")
         self._desc_body = QLabel()
-        self._desc_body.setStyleSheet("font-size: 12px; color: #cbd5e1;")
         self._desc_body.setWordWrap(True)
         self._desc_default = QLabel()
-        self._desc_default.setStyleSheet("font-size: 11px; color: #64748b; font-style: italic;")
 
         card_layout.addWidget(self._desc_title)
         card_layout.addWidget(self._desc_body)
@@ -218,7 +210,6 @@ class RulesView(QWidget):
         self._delete_btn = QPushButton("🗑️ 刪除")
         self._delete_btn.clicked.connect(self._on_delete_rule)
         self._delete_btn.setVisible(False)
-        self._delete_btn.setStyleSheet("background-color: #7f1d1d;")
         btn_layout.addWidget(self._delete_btn)
 
         self._cancel_btn = QPushButton("✕ 取消")
@@ -353,7 +344,15 @@ class RulesView(QWidget):
 
     def _apply_theme(self, p: ColorPalette) -> None:
         """套用主題色彩。"""
-        pass  # 後續 Task 實作
+        self._title.setStyleSheet(f"font-size: 18px; font-weight: bold; color: {p.text_primary};")
+        self._desc_card.setStyleSheet(
+            f"QFrame {{ background-color: {p.bg_secondary}; border: 1px solid {p.border_primary};"
+            f" border-radius: 6px; padding: 4px; }}"
+        )
+        self._desc_title.setStyleSheet(f"font-size: 13px; font-weight: bold; color: {p.accent};")
+        self._desc_body.setStyleSheet(f"font-size: 12px; color: {p.text_secondary};")
+        self._desc_default.setStyleSheet(f"font-size: 11px; color: {p.text_muted}; font-style: italic;")
+        self._delete_btn.setStyleSheet(f"background-color: {p.error};")
 
 
 # ---------------------------------------------------------------------------
