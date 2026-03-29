@@ -5,6 +5,7 @@ from __future__ import annotations
 import sqlite3
 
 from PySide6.QtWidgets import (
+    QButtonGroup,
     QCheckBox,
     QComboBox,
     QFileDialog,
@@ -15,6 +16,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPushButton,
+    QRadioButton,
     QScrollArea,
     QSpinBox,
     QStackedWidget,
@@ -58,6 +60,40 @@ class SettingsView(QWidget):
 
         self._title = QLabel("⚙️ 系統設定")
         layout.addWidget(self._title)
+
+        # 外觀設定
+        appearance_group = QGroupBox("外觀")
+        appearance_layout = QHBoxLayout(appearance_group)
+        appearance_layout.addWidget(QLabel("主題模式："))
+
+        self._theme_system = QRadioButton("跟隨系統")
+        self._theme_dark = QRadioButton("深色")
+        self._theme_light = QRadioButton("淺色")
+
+        self._theme_btn_group = QButtonGroup(self)
+        self._theme_btn_group.addButton(self._theme_system, 0)
+        self._theme_btn_group.addButton(self._theme_dark, 1)
+        self._theme_btn_group.addButton(self._theme_light, 2)
+
+        appearance_layout.addWidget(self._theme_system)
+        appearance_layout.addWidget(self._theme_dark)
+        appearance_layout.addWidget(self._theme_light)
+        appearance_layout.addStretch()
+
+        # 根據當前模式設定選中狀態
+        if self._theme_mgr:
+            mode = self._theme_mgr.current_mode()
+            if mode == "system":
+                self._theme_system.setChecked(True)
+            elif mode == "dark":
+                self._theme_dark.setChecked(True)
+            else:
+                self._theme_light.setChecked(True)
+        else:
+            self._theme_system.setChecked(True)
+
+        self._theme_btn_group.idClicked.connect(self._on_theme_changed)
+        layout.addWidget(appearance_group)
 
         # User settings
         user_group = QGroupBox("使用者設定")
@@ -424,6 +460,14 @@ class SettingsView(QWidget):
                 QMessageBox.warning(self, "連線失敗", "❌ 無法連線至 Mantis，請確認 URL 與帳密是否正確。")
         except Exception as e:
             QMessageBox.critical(self, "連線錯誤", f"❌ 發生例外：\n{e}")
+
+    def _on_theme_changed(self, button_id: int) -> None:
+        """使用者切換主題模式。"""
+        if not self._theme_mgr:
+            return
+        mode_map = {0: "system", 1: "dark", 2: "light"}
+        mode = mode_map.get(button_id, "system")
+        self._theme_mgr.set_theme(mode)
 
     def _apply_theme(self, p: ColorPalette) -> None:
         """套用主題色彩。"""
