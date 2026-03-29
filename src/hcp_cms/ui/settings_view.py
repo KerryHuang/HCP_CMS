@@ -56,9 +56,8 @@ class SettingsView(QWidget):
         layout = QVBoxLayout(container)
         layout.setContentsMargins(20, 20, 20, 20)
 
-        title = QLabel("⚙️ 系統設定")
-        title.setStyleSheet("font-size: 18px; font-weight: bold; color: #f1f5f9;")
-        layout.addWidget(title)
+        self._title = QLabel("⚙️ 系統設定")
+        layout.addWidget(self._title)
 
         # User settings
         user_group = QGroupBox("使用者設定")
@@ -128,12 +127,11 @@ class SettingsView(QWidget):
         url_row.addWidget(clear_url_btn)
         mantis_layout.addRow("Mantis URL：", url_row)
 
-        url_hint = QLabel(
+        self._url_hint = QLabel(
             "⚠ 請只填基本網址，例如：https://118.163.30.33/mantis/\n"
             "   不要包含 login_page.php 或 view.php 等頁面路徑"
         )
-        url_hint.setStyleSheet("color: #94a3b8; font-size: 11px;")
-        mantis_layout.addRow("", url_hint)
+        mantis_layout.addRow("", self._url_hint)
 
         self._mantis_user = QLineEdit()
         self._mantis_user.setPlaceholderText("帳號（登入用戶名稱）")
@@ -174,6 +172,7 @@ class SettingsView(QWidget):
             "QPushButton[objectName='protoBtn'] { padding:4px 18px; border-radius:4px; }"
         )
         self._btn_exchange.setStyleSheet(self._btn_imap.styleSheet())
+        # 初始樣式由 _apply_theme 負責，此處 inline 樣式在 _apply_theme 呼叫時會被覆蓋
         self._btn_imap.clicked.connect(lambda: self._on_toggle_protocol("imap"))
         self._btn_exchange.clicked.connect(lambda: self._on_toggle_protocol("exchange"))
         proto_row.addWidget(self._btn_imap)
@@ -223,9 +222,8 @@ class SettingsView(QWidget):
         self._exch_server.setPlaceholderText("mail.company.com（選填）")
         exch_form.addRow("Server：", self._exch_server)
 
-        exch_server_hint = QLabel("⚠ Server 留空時使用 autodiscover 自動探索")
-        exch_server_hint.setStyleSheet("color:#94a3b8; font-size:11px;")
-        exch_form.addRow("", exch_server_hint)
+        self._exch_server_hint = QLabel("⚠ Server 留空時使用 autodiscover 自動探索")
+        exch_form.addRow("", self._exch_server_hint)
 
         self._exch_email = QLineEdit()
         self._exch_email.setPlaceholderText("user@company.com")
@@ -263,24 +261,20 @@ class SettingsView(QWidget):
 
         # ── 移機提醒 ──────────────────────────────────────────
         from PySide6.QtWidgets import QFrame
-        notice = QFrame()
-        notice.setObjectName("migrationNotice")
-        notice.setStyleSheet(
-            "QFrame#migrationNotice { background-color: #fef3c7; border-radius: 6px; padding: 8px; }"
-        )
-        notice_layout = QVBoxLayout(notice)
+        self._notice = QFrame()
+        self._notice.setObjectName("migrationNotice")
+        notice_layout = QVBoxLayout(self._notice)
         notice_layout.setContentsMargins(12, 8, 12, 8)
-        notice_lbl = QLabel(
+        self._notice_lbl = QLabel(
             "📦 移機注意事項\n"
             "移機時請確認以下項目一併複製至新電腦：\n"
             "  • hcp_cms.db　　  — 資料庫\n"
             "  • kms_attachments/ — 知識庫圖片（與 .db 同目錄）\n"
             "缺少 kms_attachments/ 時，知識庫圖片將無法顯示。"
         )
-        notice_lbl.setStyleSheet("color: #92400e; font-size: 12px;")
-        notice_lbl.setWordWrap(True)
-        notice_layout.addWidget(notice_lbl)
-        layout.addWidget(notice)
+        self._notice_lbl.setWordWrap(True)
+        notice_layout.addWidget(self._notice_lbl)
+        layout.addWidget(self._notice)
 
         layout.addStretch()
 
@@ -433,4 +427,16 @@ class SettingsView(QWidget):
 
     def _apply_theme(self, p: ColorPalette) -> None:
         """套用主題色彩。"""
-        pass  # 後續 Task 實作
+        self._title.setStyleSheet(f"font-size: 18px; font-weight: bold; color: {p.text_primary};")
+        self._url_hint.setStyleSheet(f"color: {p.text_tertiary}; font-size: 11px;")
+        self._exch_server_hint.setStyleSheet(f"color: {p.text_tertiary}; font-size: 11px;")
+        self._notice.setStyleSheet(
+            f"QFrame#migrationNotice {{ background-color: {p.warning}22; border-radius: 6px; padding: 8px; }}"
+        )
+        self._notice_lbl.setStyleSheet(f"color: {p.warning}; font-size: 12px;")
+        proto_style = (
+            f"QPushButton[objectName='protoBtn']:checked {{ background:{p.accent_button_hover}; color:white; font-weight:bold; }}"
+            f"QPushButton[objectName='protoBtn'] {{ padding:4px 18px; border-radius:4px; }}"
+        )
+        self._btn_imap.setStyleSheet(proto_style)
+        self._btn_exchange.setStyleSheet(proto_style)

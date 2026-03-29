@@ -262,7 +262,7 @@ class EmailView(QWidget):
         self._tab_widget.addTab(inbox_widget, "📥 收件處理")
 
         # 寄件備份 tab
-        self._sent_tab = SentMailTab(conn=self._conn)
+        self._sent_tab = SentMailTab(conn=self._conn, theme_mgr=self._theme_mgr)
         self._tab_widget.addTab(self._sent_tab, "📤 寄件備份")
 
         layout.addWidget(self._tab_widget, stretch=1)

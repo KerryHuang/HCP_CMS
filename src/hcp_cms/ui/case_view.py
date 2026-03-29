@@ -242,7 +242,11 @@ class CaseView(QWidget):
         if not self._db_path:
             return
         from hcp_cms.ui.csv_import_dialog import CsvImportDialog
-        dialog = CsvImportDialog(self._db_path, parent=self)
+        dialog = CsvImportDialog(
+            self._db_path,
+            parent=self,
+            palette=self._theme_mgr.current_palette() if self._theme_mgr else None,
+        )
         dialog.exec()
         self.refresh()
 

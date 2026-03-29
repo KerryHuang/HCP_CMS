@@ -45,9 +45,8 @@ class ReportView(QWidget):
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(12)
 
-        title = QLabel("📊 報表中心")
-        title.setStyleSheet("font-size: 18px; font-weight: bold; color: #f1f5f9;")
-        layout.addWidget(title)
+        self._title = QLabel("📊 報表中心")
+        layout.addWidget(self._title)
 
         # ── 控制列 ──────────────────────────────────────────────────────
         ctrl = QHBoxLayout()
@@ -103,7 +102,6 @@ class ReportView(QWidget):
 
         # ── 狀態列 ──────────────────────────────────────────────────────
         self._status = QLabel("就緒")
-        self._status.setStyleSheet("color: #64748b;")
         layout.addWidget(self._status)
 
     def _on_params_changed(self) -> None:
@@ -226,4 +224,5 @@ class ReportView(QWidget):
 
     def _apply_theme(self, p: ColorPalette) -> None:
         """套用主題色彩。"""
-        pass  # 後續 Task 實作
+        self._title.setStyleSheet(f"font-size: 18px; font-weight: bold; color: {p.text_primary};")
+        self._status.setStyleSheet(f"color: {p.text_muted};")

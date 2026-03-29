@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
 from hcp_cms.core.excel_exporter import ExcelExporter
 from hcp_cms.core.sent_mail_manager import EnrichedSentMail, SentMailManager
 from hcp_cms.services.mail.base import MailProvider
+from hcp_cms.ui.theme import ColorPalette, ThemeManager
 
 
 class SentMailTab(QWidget):
@@ -34,12 +35,16 @@ class SentMailTab(QWidget):
     _worker_done = Signal(object)
     _worker_error = Signal(str)
 
-    def __init__(self, conn: sqlite3.Connection | None = None) -> None:
+    def __init__(self, conn: sqlite3.Connection | None = None, theme_mgr: ThemeManager | None = None) -> None:
         super().__init__()
         self._conn = conn
+        self._theme_mgr = theme_mgr
         self._provider: MailProvider | None = None
         self._current_mails: list[EnrichedSentMail] = []
         self._setup_ui()
+        if theme_mgr:
+            self._apply_theme(theme_mgr.current_palette())
+            theme_mgr.theme_changed.connect(self._apply_theme)
 
     def set_provider(self, provider: MailProvider | None) -> None:
         """由 EmailView 在連線成功後呼叫。"""
@@ -100,9 +105,8 @@ class SentMailTab(QWidget):
         layout.addLayout(filter_layout)
 
         # --- 公司彙總表 ---
-        summary_label = QLabel("公司彙總")
-        summary_label.setStyleSheet("font-weight: bold; color: #f1f5f9;")
-        layout.addWidget(summary_label)
+        self._summary_label = QLabel("公司彙總")
+        layout.addWidget(self._summary_label)
 
         self._summary_table = QTableWidget(0, 2)
         self._summary_table.setHorizontalHeaderLabels(["公司名稱", "次數"])
@@ -114,9 +118,8 @@ class SentMailTab(QWidget):
         layout.addWidget(self._summary_table)
 
         # --- 寄件清單 ---
-        list_label = QLabel("寄件清單")
-        list_label.setStyleSheet("font-weight: bold; color: #f1f5f9;")
-        layout.addWidget(list_label)
+        self._list_label = QLabel("寄件清單")
+        layout.addWidget(self._list_label)
 
         self._list_table = QTableWidget(0, 6)
         self._list_table.setHorizontalHeaderLabels(["日期", "收件人", "主旨", "公司", "案件", "第幾封"])
@@ -137,6 +140,11 @@ class SentMailTab(QWidget):
 
         self._worker_done.connect(self._on_worker_done, Qt.ConnectionType.QueuedConnection)
         self._worker_error.connect(self._on_worker_error, Qt.ConnectionType.QueuedConnection)
+
+    def _apply_theme(self, p: ColorPalette) -> None:
+        """套用主題色彩。"""
+        self._summary_label.setStyleSheet(f"font-weight: bold; color: {p.text_primary};")
+        self._list_label.setStyleSheet(f"font-weight: bold; color: {p.text_primary};")
 
     # --- 日期導航 ---
 

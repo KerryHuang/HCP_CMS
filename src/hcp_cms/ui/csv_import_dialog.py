@@ -38,6 +38,8 @@ from hcp_cms.core.csv_import_engine import (
     Mapping,
     _detect_encoding,
 )
+from hcp_cms.ui.theme import ColorPalette
+from hcp_cms.ui.theme import DARK_PALETTE as _DARK_PALETTE
 
 # 用於從 combo 顯示文字（如 "主旨 (subject)"）解析出 col_key
 _COMBO_KEY_RE = _re.compile(r'\(([^)]+)\)$')
@@ -46,9 +48,10 @@ _COMBO_KEY_RE = _re.compile(r'\(([^)]+)\)$')
 class CsvImportDialog(QDialog):
     """3 步驟 CSV 匯入精靈。"""
 
-    def __init__(self, db_path: Path, parent: QWidget | None = None) -> None:
+    def __init__(self, db_path: Path, parent: QWidget | None = None, palette: ColorPalette | None = None) -> None:
         super().__init__(parent)
         self._db_path = db_path
+        self._palette = palette or _DARK_PALETTE
         self._csv_path: Path | None = None
         self._headers: list[str] = []
         self._mapping: Mapping = {}
@@ -67,7 +70,7 @@ class CsvImportDialog(QDialog):
 
         # 步驟指示
         self._step_label = QLabel("步驟 1 / 3：選擇 CSV 檔案")
-        self._step_label.setStyleSheet("font-weight: bold; font-size: 14px;")
+        self._step_label.setStyleSheet(f"font-weight: bold; font-size: 14px; color: {self._palette.text_primary};")
         layout.addWidget(self._step_label)
 
         # 主體（堆疊頁）
@@ -102,7 +105,7 @@ class CsvImportDialog(QDialog):
 
         file_row = QHBoxLayout()
         self._file_label = QLabel("（未選擇）")
-        self._file_label.setStyleSheet("color: #94a3b8;")
+        self._file_label.setStyleSheet(f"color: {self._palette.text_tertiary};")
         browse_btn = QPushButton("瀏覽...")
         browse_btn.clicked.connect(self._on_browse)
         file_row.addWidget(self._file_label, 1)
@@ -199,7 +202,7 @@ class CsvImportDialog(QDialog):
         self._csv_path = csv_path
         self._headers = headers
         self._file_label.setText(csv_path.name)
-        self._file_label.setStyleSheet("color: #f1f5f9;")
+        self._file_label.setStyleSheet(f"color: {self._palette.text_primary};")
         self._file_info.setText(
             f"偵測編碼：{enc}　|　欄位數：{len(headers)}　|　資料筆數：{row_count}\n"
             f"欄位：{', '.join(headers[:8])}{'...' if len(headers) > 8 else ''}"
