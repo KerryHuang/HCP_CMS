@@ -19,3 +19,4 @@ user_config.json
 *.spec
 *.log
 _poc/
+_temp/
