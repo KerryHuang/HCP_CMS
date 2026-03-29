@@ -262,8 +262,8 @@ class TestImportEmail:
         assert case is not None
         assert case.case_id.startswith("CS-")
 
-    def test_our_reply_creates_case_and_links_parent(self, mgr, seeded_db):
-        """我方回覆 → 仍建案（action='created'），並透過 thread 偵測連結父案件。"""
+    def test_our_reply_merges_into_existing_case(self, mgr, seeded_db):
+        """我方回覆同主旨 → merged（action='merged'），不另建新案件，加入 CaseLog。"""
         parent, _ = mgr.import_email(
             subject="薪資計算問題",
             body="有異常",
@@ -273,7 +273,7 @@ class TestImportEmail:
         )
         assert parent is not None
 
-        # 我方回覆 → 建新案件，linked_case_id 指向父案件
+        # 我方回覆 → 合併入既有案件，action='merged'
         reply_case, action = mgr.import_email(
             subject="RE: 薪資計算問題",
             body="已處理",
@@ -281,13 +281,17 @@ class TestImportEmail:
             to_recipients=["user@aseglobal.com"],
             sent_time="2026/03/20 10:00",
         )
-        assert action == "created"
+        assert action == "merged"
         assert reply_case is not None
-        assert reply_case.case_id != parent.case_id
+        assert reply_case.case_id == parent.case_id
 
-        from hcp_cms.data.repositories import CaseRepository
-        child = CaseRepository(seeded_db.connection).get_by_id(reply_case.case_id)
-        assert child.linked_case_id == parent.case_id
+        from hcp_cms.data.repositories import CaseLogRepository, CaseRepository
+        # 案件總數仍為 1（不另建案）
+        assert len(CaseRepository(seeded_db.connection).list_all()) == 1
+        # CaseLog 應已新增，direction 為 HCP 回覆
+        logs = CaseLogRepository(seeded_db.connection).list_by_case(parent.case_id)
+        assert len(logs) == 1
+        assert logs[0].direction == "HCP 回覆"
 
     def test_our_reply_increments_reply_count(self, mgr, seeded_db):
         """我方每次回覆建案都應讓父案件 reply_count +1（由 link_to_parent 計算）。"""
@@ -342,3 +346,100 @@ class TestImportEmail:
         assert action == "created"
         assert case is not None
         assert case.progress == "待確認人天費用"
+
+    def test_import_email_find_existing_adds_log(self, seeded_db):
+        """相同 company + 主旨已有案件時，加入 CaseLog 而非建立新案件。"""
+        from hcp_cms.data.repositories import CaseLogRepository, CaseRepository
+
+        mgr = CaseManager(seeded_db.connection)
+        # 先建立一筆案件（寄件者為外部，分類到 C-ASE）
+        result1, action1 = mgr.import_email(
+            subject="薪資計算異常",
+            body="第一封內容",
+            sender_email="user@aseglobal.com",
+            sent_time="2026/03/01 09:00",
+        )
+        assert action1 == "created"
+        original_case_id = result1.case_id
+
+        # 匯入同主旨第二封
+        result2, action2 = mgr.import_email(
+            subject="RE: 薪資計算異常",
+            body="第二封內容",
+            sender_email="user@aseglobal.com",
+            sent_time="2026/03/02 10:00",
+        )
+        assert action2 == "merged"
+        assert result2.case_id == original_case_id
+
+        # 確認案件總數仍為 1
+        all_cases = CaseRepository(seeded_db.connection).list_all()
+        assert len(all_cases) == 1
+
+        # 確認 CaseLog 已新增
+        logs = CaseLogRepository(seeded_db.connection).list_by_case(original_case_id)
+        assert len(logs) == 1
+        assert logs[0].content == "第二封內容"
+
+    def test_import_email_no_match_creates_case(self, seeded_db):
+        """無匹配案件時建立新案件（action='created'）。"""
+        from hcp_cms.data.repositories import CaseRepository
+
+        mgr = CaseManager(seeded_db.connection)
+        _, action1 = mgr.import_email(
+            subject="薪資計算異常",
+            body="第一封",
+            sender_email="user@aseglobal.com",
+        )
+        _, action2 = mgr.import_email(
+            subject="請假申請流程",  # 不同主旨
+            body="第二封",
+            sender_email="user@aseglobal.com",
+        )
+        assert action1 == "created"
+        assert action2 == "created"
+        assert len(CaseRepository(seeded_db.connection).list_all()) == 2
+
+    def test_import_email_direction_hcp_reply(self, seeded_db):
+        """寄件者含 @ares.com.tw 時，direction 應為 'HCP 回覆'。
+
+        HCP 回覆時 sender 為我方，Classifier 會從 to_recipients 解析公司，
+        故需傳入客戶的 email 讓分類器找到 company_id。
+        """
+        from hcp_cms.data.repositories import CaseLogRepository
+
+        mgr = CaseManager(seeded_db.connection)
+        first, _ = mgr.import_email(
+            subject="薪資計算異常",
+            body="客戶來信",
+            sender_email="user@aseglobal.com",
+        )
+        # HCP 回覆：sender 為我方，to_recipients 為客戶（讓 Classifier 找到公司）
+        mgr.import_email(
+            subject="RE: 薪資計算異常",
+            body="我方回覆內容",
+            sender_email="staff@ares.com.tw",
+            to_recipients=["user@aseglobal.com"],
+        )
+        logs = CaseLogRepository(seeded_db.connection).list_by_case(first.case_id)
+        assert len(logs) == 1
+        assert logs[0].direction == "HCP 回覆"
+
+    def test_import_email_direction_client(self, seeded_db):
+        """外部寄件者且無 RE: 前綴時，direction 應為 '客戶來信'。"""
+        from hcp_cms.data.repositories import CaseLogRepository
+
+        mgr = CaseManager(seeded_db.connection)
+        first, _ = mgr.import_email(
+            subject="薪資計算異常",
+            body="第一封",
+            sender_email="user@aseglobal.com",
+        )
+        mgr.import_email(
+            subject="薪資計算異常",  # 同主旨，外部寄件者
+            body="第二封客戶來信",
+            sender_email="another@aseglobal.com",
+        )
+        logs = CaseLogRepository(seeded_db.connection).list_by_case(first.case_id)
+        assert len(logs) == 1
+        assert logs[0].direction == "客戶來信"

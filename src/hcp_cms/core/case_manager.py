@@ -8,8 +8,8 @@ from pathlib import Path
 from hcp_cms.core.classifier import Classifier
 from hcp_cms.core.thread_tracker import ThreadTracker
 from hcp_cms.data.fts import FTSManager
-from hcp_cms.data.models import Case
-from hcp_cms.data.repositories import CaseRepository
+from hcp_cms.data.models import Case, CaseLog
+from hcp_cms.data.repositories import CaseLogRepository, CaseRepository
 
 _SLASH_FMT = re.compile(r"^\d{4}/\d{2}/\d{2}")
 
@@ -35,10 +35,21 @@ def _normalize_sent_time(value: str | None) -> str | None:
     return s[:16].replace("-", "/").replace("T", " ")
 
 
+def _detect_direction(sender: str, subject: str) -> str:
+    """判斷信件方向：優先看寄件者網域，其次看主旨前綴。"""
+    sender_lower = sender.lower()
+    if "@ares.com.tw" in sender_lower or "hcpservice" in sender_lower:
+        return "HCP 回覆"
+    if re.match(r'^(RE|FW|FWD|回覆|轉寄|答覆)\s*:', subject, re.IGNORECASE):
+        return "HCP 回覆"
+    return "客戶來信"
+
+
 class CaseManager:
     def __init__(self, conn: sqlite3.Connection) -> None:
         self._conn = conn
         self._case_repo = CaseRepository(conn)
+        self._log_repo = CaseLogRepository(conn)
         self._fts = FTSManager(conn)
         self._classifier = Classifier(conn)
         self._tracker = ThreadTracker(conn)
@@ -53,15 +64,43 @@ class CaseManager:
         source_filename: str | None = None,
         progress_note: str | None = None,
     ) -> tuple[Case | None, str]:
-        """匯入信件並建案。每封信均建立一筆案件，我方回覆時同步更新父案件狀態。
+        """匯入信件並建案（Find-or-Create）。
+
+        若同公司、同主旨（去 RE:/FW: 前綴後相同）已有案件，
+        則新增 CaseLog 並更新 reply_count，不另建案件（action='merged'）。
+        否則走原有建案流程（action='created'）。
 
         Returns:
-            (case, action) — action 為 'created'（含我方回覆已建案）或 'replied'（父案件已標記回覆）
+            (case, action) — action 為 'created' 或 'merged'
         """
         recipients = to_recipients or []
 
-        # 所有信件（含我方回覆）均走建案流程
-        # create_case() 內的 thread detection 會自動找父案件並更新 reply_count
+        # Find-or-Create：先以分類器取得 company_id
+        classification = self._classifier.classify(subject, body, sender_email, recipients)
+        company_id = classification.get("company_id")
+
+        if company_id:
+            clean = ThreadTracker.clean_subject(subject)
+            existing = self._case_repo.find_by_company_and_subject(company_id, clean)
+            if existing:
+                direction = _detect_direction(sender_email, subject)
+                log_time = (
+                    _normalize_sent_time(sent_time)
+                    or datetime.now().strftime("%Y/%m/%d %H:%M:%S")
+                )
+                log = CaseLog(
+                    log_id=self._log_repo.next_log_id(),
+                    case_id=existing.case_id,
+                    direction=direction,
+                    content=body,
+                    logged_at=log_time,
+                )
+                self._log_repo.insert(log)
+                existing.reply_count += 1
+                self._case_repo.update(existing)
+                return existing, "merged"
+
+        # 沒有 existing → 原有建案流程（不變）
         case = self.create_case(
             subject=subject,
             body=body,
