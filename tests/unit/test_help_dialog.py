@@ -1,8 +1,17 @@
 """Tests for HelpDialog — section extraction and markdown rendering."""
 
 import pytest
+from PySide6.QtWidgets import QApplication
 
 from hcp_cms.ui.help_dialog import extract_section, PAGE_SECTIONS
+
+
+@pytest.fixture(scope="session")
+def qapp():
+    app = QApplication.instance()
+    if app is None:
+        app = QApplication([])
+    return app
 
 
 class TestExtractSection:
@@ -81,3 +90,35 @@ class TestMarkdownRendering:
         html = render_help_html(md)
         assert "#1e293b" in html
         assert "#e2e8f0" in html
+
+
+class TestHelpDialogWidget:
+    """Test HelpDialog QDialog widget."""
+
+    def test_dialog_creation(self, qapp):
+        from hcp_cms.ui.help_dialog import HelpDialog
+
+        dialog = HelpDialog(page_index=0, manual_text="## 3. 儀表板\n\n測試內容。\n")
+        assert dialog.windowTitle() == "說明 — 儀表板"
+
+    def test_dialog_contains_content(self, qapp):
+        from hcp_cms.ui.help_dialog import HelpDialog
+
+        dialog = HelpDialog(page_index=0, manual_text="## 3. 儀表板\n\n測試內容。\n")
+        html = dialog._browser.toHtml()
+        assert "測試內容" in html
+
+    def test_dialog_default_size(self, qapp):
+        from hcp_cms.ui.help_dialog import HelpDialog
+
+        dialog = HelpDialog(page_index=0, manual_text="## 3. 儀表板\n\n內容。\n")
+        assert dialog.width() >= 800
+        assert dialog.height() >= 600
+
+    def test_dialog_invalid_index_shows_fallback(self, qapp):
+        from hcp_cms.ui.help_dialog import HelpDialog
+
+        dialog = HelpDialog(page_index=99, manual_text="## 3. 儀表板\n\n內容。\n")
+        assert dialog.windowTitle() == "說明"
+        html = dialog._browser.toHtml()
+        assert "找不到" in html

@@ -5,6 +5,13 @@ from __future__ import annotations
 import re
 
 import markdown
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import (
+    QDialog,
+    QPushButton,
+    QTextBrowser,
+    QVBoxLayout,
+)
 
 # 頁面索引 → (頁面名稱, 起始章節號, 結束章節號) 的對應表
 # 結束章節號為 exclusive（不含）
@@ -85,3 +92,52 @@ def render_help_html(md_text: str) -> str:
     """Convert markdown to styled HTML with dark theme."""
     body = markdown.markdown(md_text, extensions=["tables", "fenced_code"])
     return f"<html><head>{_DARK_CSS}</head><body>{body}</body></html>"
+
+
+class HelpDialog(QDialog):
+    """Modal dialog that displays operation manual section for the current page."""
+
+    def __init__(
+        self,
+        page_index: int,
+        manual_text: str,
+        parent: object | None = None,
+    ) -> None:
+        super().__init__(parent)
+
+        # 取得頁面名稱
+        if 0 <= page_index < len(PAGE_SECTIONS):
+            page_name = PAGE_SECTIONS[page_index][0]
+            title = f"說明 — {page_name}"
+        else:
+            title = "說明"
+
+        self.setWindowTitle(title)
+        self.resize(800, 600)
+        self.setMinimumSize(600, 400)
+
+        # 擷取章節並渲染
+        section_md = extract_section(manual_text, page_index)
+        html = render_help_html(section_md)
+
+        # UI
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 8)
+
+        self._browser = QTextBrowser()
+        self._browser.setOpenExternalLinks(True)
+        self._browser.setHtml(html)
+        layout.addWidget(self._browser)
+
+        close_btn = QPushButton("關閉")
+        close_btn.setFixedWidth(100)
+        close_btn.clicked.connect(self.close)
+        close_btn.setStyleSheet(
+            "QPushButton { background-color: #334155; color: #e2e8f0; "
+            "border: 1px solid #475569; border-radius: 4px; padding: 6px 16px; }"
+            "QPushButton:hover { background-color: #475569; }"
+        )
+        layout.addWidget(close_btn, alignment=Qt.AlignmentFlag.AlignCenter)
+
+        # Dialog 深色背景
+        self.setStyleSheet("QDialog { background-color: #1e293b; }")
