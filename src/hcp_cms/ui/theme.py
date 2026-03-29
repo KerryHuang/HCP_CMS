@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
+from pathlib import Path
+
+from PySide6.QtCore import QObject, Signal
 
 
 @dataclass(frozen=True)
@@ -79,3 +83,92 @@ LIGHT_PALETTE = ColorPalette(
     error="#dc2626",
     warning="#d97706",
 )
+
+
+class ThemeManager(QObject):
+    """主題管理器 — 管理深色/淺色切換、設定持久化、系統偵測。"""
+
+    theme_changed = Signal(ColorPalette)
+
+    _VALID_MODES = ("dark", "light", "system")
+
+    def __init__(self, config_dir: Path) -> None:
+        super().__init__()
+        self._config_path = config_dir / "config.json"
+        self._mode: str = "system"
+        self._palette: ColorPalette = DARK_PALETTE
+        self._load_config()
+        self._resolve_palette()
+
+    def current_mode(self) -> str:
+        """取得當前模式字串。"""
+        return self._mode
+
+    def current_palette(self) -> ColorPalette:
+        """取得當前色彩組。"""
+        return self._palette
+
+    def set_theme(self, mode: str) -> None:
+        """切換主題模式。無效值會被忽略。"""
+        if mode not in self._VALID_MODES:
+            return
+        if mode == self._mode:
+            return
+        self._mode = mode
+        self._resolve_palette()
+        self._save_config()
+        self.theme_changed.emit(self._palette)
+
+    def refresh_system_theme(self) -> None:
+        """重新偵測系統主題（僅在 mode='system' 時有效）。"""
+        if self._mode != "system":
+            return
+        old_palette = self._palette
+        self._resolve_palette()
+        if self._palette != old_palette:
+            self.theme_changed.emit(self._palette)
+
+    def _resolve_palette(self) -> None:
+        """根據當前模式決定使用哪組色彩。"""
+        if self._mode == "light":
+            self._palette = LIGHT_PALETTE
+        elif self._mode == "dark":
+            self._palette = DARK_PALETTE
+        else:
+            self._palette = LIGHT_PALETTE if self._detect_system_light() else DARK_PALETTE
+
+    def _detect_system_light(self) -> bool:
+        """偵測 Windows 系統是否為淺色模式。"""
+        try:
+            import winreg
+
+            key = winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER,
+                r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize",
+            )
+            value, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
+            winreg.CloseKey(key)
+            return value == 1
+        except Exception:
+            return False
+
+    def _load_config(self) -> None:
+        """從 config.json 載入偏好。"""
+        try:
+            data = json.loads(self._config_path.read_text(encoding="utf-8"))
+            mode = data.get("theme", "system")
+            if mode in self._VALID_MODES:
+                self._mode = mode
+            else:
+                self._mode = "system"
+        except Exception:
+            self._mode = "system"
+        self._save_config()
+
+    def _save_config(self) -> None:
+        """儲存偏好到 config.json。"""
+        data = {"theme": self._mode}
+        self._config_path.write_text(
+            json.dumps(data, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
