@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
 import openpyxl
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side

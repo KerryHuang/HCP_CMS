@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Any
 
 from hcp_cms.core.report_writer import ReportWriter
-from hcp_cms.data.models import Case
 from hcp_cms.data.repositories import (
     CaseMantisRepository,
     CaseRepository,
@@ -232,7 +231,8 @@ class ReportEngine:
 
         Returns:
             dict，key 為工作表名稱，value 為 list of rows。
-            - "📊 月報摘要": row[0] 標題列、row[1] 表頭、row[2:5] KPI、row[6] 空行、row[7] 類型標題、row[8] 類型表頭、row[9+] 類型統計
+            - "📊 月報摘要": row[0] 標題列、row[1] 表頭、row[2:5] KPI、
+              row[6] 空行、row[7] 類型標題、row[8] 類型表頭、row[9+] 類型統計
             - "📋 案件明細": row[0] 表頭、row[1:] 案件資料
             - "🏢 客戶分析": row[0] 表頭、row[1:] 各公司統計
         """

@@ -3,7 +3,6 @@
 from pathlib import Path
 
 import openpyxl
-import pytest
 
 from hcp_cms.core.report_writer import ReportWriter
 
