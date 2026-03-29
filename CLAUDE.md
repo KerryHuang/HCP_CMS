@@ -1,3 +1,7 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 # HCP 客服管理系統 (HCP CMS)
 
 PySide6 + SQLite 桌面應用，管理客服信件、案件追蹤、知識庫搜尋。
@@ -15,15 +19,34 @@ PySide6 + SQLite 桌面應用，管理客服信件、案件追蹤、知識庫搜
 
 </law>
 
+# 常用指令
+
+```bash
+# 測試
+.venv/Scripts/python.exe -m pytest tests/ -v
+.venv/Scripts/python.exe -m pytest tests/unit/test_case_manager.py -v          # 單一檔案
+.venv/Scripts/python.exe -m pytest tests/unit/test_case_manager.py::TestXxx -v  # 單一類別
+.venv/Scripts/python.exe -m pytest tests/unit/test_case_manager.py::TestXxx::test_foo -v  # 單一方法
+
+# Lint / 格式化
+.venv/Scripts/ruff.exe check src/ tests/
+.venv/Scripts/ruff.exe format src/ tests/
+
+# 執行
+.venv/Scripts/python.exe -m hcp_cms
+```
+
+- **Python**: 3.14.3 | **PySide6**: 6.10.2 | **SQLite**: 內建 FTS5
+
 # 專案結構
 
 ```
 src/hcp_cms/
 ├── ui/          # UI 層 — PySide6 (Signal/Slot)
-├── core/        # Core 層 — 業務邏輯
-├── services/    # Services 層 — MailProvider/MantisClient ABC
-├── scheduler/   # Scheduler 層 — QTimer + QThread
-├── data/        # Data 層 — Repository + FTS5
+├── core/        # Core 層 — 業務邏輯 (XxxManager / XxxEngine)
+├── services/    # Services 層 — MailProvider / MantisClient ABC
+├── scheduler/   # Scheduler 層 — threading.Timer 背景排程
+├── data/        # Data 層 — Repository + FTS5 + Migration
 └── i18n/        # 國際化 JSON 語系檔
 
 tests/
@@ -31,10 +54,47 @@ tests/
 └── integration/ # 整合測試
 ```
 
-# 快速參考
+# 跨層架構
 
-- **測試**: `.venv/Scripts/python.exe -m pytest tests/ -v`
-- **Lint**: `.venv/Scripts/ruff.exe check src/ tests/`
-- **格式化**: `.venv/Scripts/ruff.exe format src/ tests/`
-- **執行**: `.venv/Scripts/python.exe -m hcp_cms`
-- **Python**: 3.14.3 | **PySide6**: 6.10.2 | **SQLite**: 內建 FTS5
+## 依賴注入：共用 sqlite3.Connection
+
+`app.py::main()` 建立 `DatabaseManager`，取得單一 `conn`，向下傳遞給 `MainWindow` → 各 View → 各 Core Manager → 各 Repository。所有層共用同一條連線。
+
+```
+app.main()
+  └─ DatabaseManager(db_path).initialize()
+       ├─ PRAGMA: busy_timeout=5000, journal_mode=WAL, foreign_keys=ON
+       ├─ executescript(_SCHEMA_SQL) — 12 表 + 2 FTS5 虛擬表
+       └─ _apply_pending_migrations() — 冪等 ALTER TABLE
+  └─ MainWindow(conn, db_dir)
+       └─ 各 View(conn) → Core Manager(conn) → Repository(conn)
+```
+
+## UI → Core → Data 呼叫鏈
+
+UI View 在方法內建立 Core Manager 實例（非持有），Core Manager 在 `__init__` 內建立 Repository 實例：
+
+```python
+# UI 層（CaseView）
+mgr = CaseManager(self._conn)
+case = mgr.create_case(subject=..., body=...)
+
+# Core 層（CaseManager.__init__）
+self._repo = CaseRepository(conn)
+self._fts = FTSManager(conn)
+self._classifier = Classifier(conn)
+```
+
+## 執行緒安全
+
+- `check_same_thread=False` — UI 主線程與 Scheduler 背景線程共用連線
+- WAL 模式 + `busy_timeout=5000ms` 處理並發寫入
+- Scheduler 使用 `threading.Timer` 遞迴排程，不可在背景線程直接操作 UI
+
+## 案件狀態機
+
+有效狀態：`"處理中"` → `"已回覆"` → `"已完成"`。客戶再次回信時重新開啟（→ `"處理中"`）。`ThreadTracker` 透過 subject / message_id / in_reply_to 串接信件串。
+
+## 自訂欄位系統
+
+`cs_cases` 表內 `cx_1` ~ `cx_N` 欄位 + `custom_columns` 表存後設資料。`Case.extra_fields: dict` 在執行期對映動態欄位值。
