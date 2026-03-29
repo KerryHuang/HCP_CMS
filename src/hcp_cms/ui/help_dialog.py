@@ -13,6 +13,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from hcp_cms.ui.theme import ColorPalette
+
 # 頁面索引 → (頁面名稱, 起始章節號, 結束章節號) 的對應表
 # 結束章節號為 exclusive（不含）
 PAGE_SECTIONS: list[tuple[str, int, int]] = [
@@ -26,31 +28,35 @@ PAGE_SECTIONS: list[tuple[str, int, int]] = [
     ("系統設定", 10, 12),  # 含第 11 章備份還原
 ]
 
-_DARK_CSS = """
+
+def _build_help_css(p: ColorPalette) -> str:
+    """根據主題生成說明對話框 CSS。"""
+    even_row_bg = p.bg_hover
+    return f"""
 <style>
-body {
-    background-color: #1e293b;
-    color: #e2e8f0;
+body {{
+    background-color: {p.bg_secondary};
+    color: {p.text_secondary};
     font-family: "Microsoft JhengHei", "微軟正黑體", sans-serif;
     font-size: 14px;
     line-height: 1.6;
     padding: 16px;
-}
-h2, h3, h4 { color: #60a5fa; margin-top: 20px; }
-table { border-collapse: collapse; width: 100%; margin: 12px 0; }
-th { background-color: #1e3a5f; color: #f1f5f9; padding: 8px 12px;
-     text-align: left; border: 1px solid #334155; }
-td { padding: 8px 12px; border: 1px solid #334155; }
-tr:nth-child(even) { background-color: #253349; }
-code { background-color: #0f172a; color: #93c5fd; padding: 2px 6px;
-       border-radius: 4px; font-size: 13px; }
-pre { background-color: #0f172a; padding: 12px; border-radius: 6px;
-      overflow-x: auto; }
-pre code { padding: 0; }
-blockquote { border-left: 3px solid #60a5fa; padding-left: 12px;
-             color: #94a3b8; margin: 12px 0; }
-a { color: #60a5fa; }
-hr { border: none; border-top: 1px solid #334155; margin: 20px 0; }
+}}
+h2, h3, h4 {{ color: {p.accent}; margin-top: 20px; }}
+table {{ border-collapse: collapse; width: 100%; margin: 12px 0; }}
+th {{ background-color: {p.accent_button}; color: {p.text_primary}; padding: 8px 12px;
+     text-align: left; border: 1px solid {p.border_primary}; }}
+td {{ padding: 8px 12px; border: 1px solid {p.border_primary}; }}
+tr:nth-child(even) {{ background-color: {even_row_bg}; }}
+code {{ background-color: {p.bg_code}; color: {p.accent}; padding: 2px 6px;
+       border-radius: 4px; font-size: 13px; }}
+pre {{ background-color: {p.bg_code}; padding: 12px; border-radius: 6px;
+      overflow-x: auto; }}
+pre code {{ padding: 0; }}
+blockquote {{ border-left: 3px solid {p.accent}; padding-left: 12px;
+             color: {p.text_tertiary}; margin: 12px 0; }}
+a {{ color: {p.accent}; }}
+hr {{ border: none; border-top: 1px solid {p.border_primary}; margin: 20px 0; }}
 </style>
 """
 
@@ -88,10 +94,13 @@ def extract_section(manual_text: str, page_index: int) -> str:
     return section
 
 
-def render_help_html(md_text: str) -> str:
-    """Convert markdown to styled HTML with dark theme."""
+def render_help_html(md_text: str, palette: ColorPalette | None = None) -> str:
+    """Convert markdown to styled HTML with theme."""
+    from hcp_cms.ui.theme import DARK_PALETTE
+    p = palette or DARK_PALETTE
+    css = _build_help_css(p)
     body = markdown.markdown(md_text, extensions=["tables", "fenced_code"])
-    return f"<html><head>{_DARK_CSS}</head><body>{body}</body></html>"
+    return f"<html><head>{css}</head><body>{body}</body></html>"
 
 
 class HelpDialog(QDialog):
@@ -102,8 +111,11 @@ class HelpDialog(QDialog):
         page_index: int,
         manual_text: str,
         parent: object | None = None,
+        palette: ColorPalette | None = None,
     ) -> None:
         super().__init__(parent)
+        from hcp_cms.ui.theme import DARK_PALETTE
+        p = palette or DARK_PALETTE
 
         # 取得頁面名稱
         if 0 <= page_index < len(PAGE_SECTIONS):
@@ -118,7 +130,7 @@ class HelpDialog(QDialog):
 
         # 擷取章節並渲染
         section_md = extract_section(manual_text, page_index)
-        html = render_help_html(section_md)
+        html = render_help_html(section_md, palette=p)
 
         # UI
         layout = QVBoxLayout(self)
@@ -133,11 +145,10 @@ class HelpDialog(QDialog):
         close_btn.setFixedWidth(100)
         close_btn.clicked.connect(self.close)
         close_btn.setStyleSheet(
-            "QPushButton { background-color: #334155; color: #e2e8f0; "
-            "border: 1px solid #475569; border-radius: 4px; padding: 6px 16px; }"
-            "QPushButton:hover { background-color: #475569; }"
+            f"QPushButton {{ background-color: {p.border_primary}; color: {p.text_secondary}; "
+            f"border: 1px solid {p.text_faint}; border-radius: 4px; padding: 6px 16px; }}"
+            f"QPushButton:hover {{ background-color: {p.text_faint}; }}"
         )
         layout.addWidget(close_btn, alignment=Qt.AlignmentFlag.AlignCenter)
 
-        # Dialog 深色背景
-        self.setStyleSheet("QDialog { background-color: #1e293b; }")
+        self.setStyleSheet(f"QDialog {{ background-color: {p.bg_secondary}; }}")

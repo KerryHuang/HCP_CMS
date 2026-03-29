@@ -224,7 +224,8 @@ class MainWindow(QMainWindow):
         manual_text = self._load_manual()
         if manual_text:
             page_index = self._nav_list.currentRow()
-            dialog = HelpDialog(page_index, manual_text, parent=self)
+            palette = self._current_palette if hasattr(self, "_current_palette") else None
+            dialog = HelpDialog(page_index, manual_text, parent=self, palette=palette)
             dialog.exec()
 
     def _load_manual(self) -> str:
