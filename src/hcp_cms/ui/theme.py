@@ -138,19 +138,33 @@ class ThemeManager(QObject):
             self._palette = LIGHT_PALETTE if self._detect_system_light() else DARK_PALETTE
 
     def _detect_system_light(self) -> bool:
-        """偵測 Windows 系統是否為淺色模式。"""
-        try:
-            import winreg
+        """偵測系統是否為淺色模式（Windows / macOS）。"""
+        import platform
 
-            key = winreg.OpenKey(
-                winreg.HKEY_CURRENT_USER,
-                r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize",
-            )
-            value, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
-            winreg.CloseKey(key)
-            return value == 1
+        system = platform.system()
+        try:
+            if system == "Windows":
+                import winreg
+
+                key = winreg.OpenKey(
+                    winreg.HKEY_CURRENT_USER,
+                    r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize",
+                )
+                value, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
+                winreg.CloseKey(key)
+                return value == 1
+            elif system == "Darwin":
+                import subprocess
+
+                result = subprocess.run(
+                    ["defaults", "read", "-g", "AppleInterfaceStyle"],
+                    capture_output=True,
+                    text=True,
+                )
+                return result.returncode != 0
         except Exception:
-            return False
+            pass
+        return False
 
     def _load_config(self) -> None:
         """從 config.json 載入偏好。"""
