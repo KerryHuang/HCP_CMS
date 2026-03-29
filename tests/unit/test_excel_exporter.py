@@ -50,9 +50,9 @@ class TestExcelExporter:
 
     def test_summary_rows_count(self, tmp_path):
         mails = [
-            _make_mail(company_id="C001", company_name="甲公司", company_reply_count=5),
-            _make_mail(company_id="C002", company_name="乙公司", company_reply_count=2),
-            _make_mail(company_id="C001", company_name="甲公司", company_reply_count=5),
+            _make_mail(company_id="C001", company_name="甲公司", subject="主旨A"),
+            _make_mail(company_id="C002", company_name="乙公司", subject="主旨B"),
+            _make_mail(company_id="C001", company_name="甲公司", subject="主旨A"),  # 同主旨重複
         ]
         path = str(tmp_path / "output.xlsx")
         ExcelExporter().export_sent_mail(mails, path)
@@ -61,17 +61,31 @@ class TestExcelExporter:
         # 2 間公司 + 1 標題列
         assert ws.max_row == 3
 
-    def test_summary_sorted_by_count_desc(self, tmp_path):
+    def test_summary_count_unique_subjects(self, tmp_path):
+        """彙總次數 = 不重複主旨數（同主旨多封算一封）。"""
         mails = [
-            _make_mail(company_id="C001", company_name="甲公司", company_reply_count=2),
-            _make_mail(company_id="C002", company_name="乙公司", company_reply_count=5),
+            _make_mail(company_id="C001", company_name="甲公司", subject="主旨A"),
+            _make_mail(company_id="C001", company_name="甲公司", subject="主旨B"),
+            _make_mail(company_id="C001", company_name="甲公司", subject="主旨A"),  # 重複，不計
         ]
         path = str(tmp_path / "output.xlsx")
         ExcelExporter().export_sent_mail(mails, path)
         wb = openpyxl.load_workbook(path)
         ws = wb["公司彙總"]
-        assert ws.cell(2, 1).value == "乙公司"
-        assert ws.cell(3, 1).value == "甲公司"
+        assert ws.cell(2, 2).value == 2  # 2 個不重複主旨
+
+    def test_summary_sorted_by_count_desc(self, tmp_path):
+        mails = [
+            _make_mail(company_id="C001", company_name="甲公司", subject="主旨A"),
+            _make_mail(company_id="C002", company_name="乙公司", subject="主旨B"),
+            _make_mail(company_id="C002", company_name="乙公司", subject="主旨C"),
+        ]
+        path = str(tmp_path / "output.xlsx")
+        ExcelExporter().export_sent_mail(mails, path)
+        wb = openpyxl.load_workbook(path)
+        ws = wb["公司彙總"]
+        assert ws.cell(2, 1).value == "乙公司"  # 2 主旨，排前面
+        assert ws.cell(3, 1).value == "甲公司"  # 1 主旨
 
     def test_list_header(self, tmp_path):
         path = str(tmp_path / "output.xlsx")

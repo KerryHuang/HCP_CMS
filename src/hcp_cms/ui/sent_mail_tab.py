@@ -219,12 +219,18 @@ class SentMailTab(QWidget):
     # --- 渲染 ---
 
     def _populate_tables(self, mails: list[EnrichedSentMail]) -> None:
-        # 彙總表（去重後依次數降冪）
-        seen: dict[str, tuple[str, int]] = {}
+        # 彙總表：以不重複主旨數計算各公司次數，依次數降冪
+        company_names: dict[str, str] = {}
+        company_subjects: dict[str, set[str]] = {}
         for m in mails:
-            if m.company_id and m.company_id not in seen:
-                seen[m.company_id] = (m.company_name or m.company_id, m.company_reply_count)
-        ranked = sorted(seen.values(), key=lambda x: x[1], reverse=True)
+            if m.company_id:
+                company_names.setdefault(m.company_id, m.company_name or m.company_id)
+                company_subjects.setdefault(m.company_id, set()).add(m.subject)
+        ranked = sorted(
+            [(company_names[cid], len(subjects)) for cid, subjects in company_subjects.items()],
+            key=lambda x: x[1],
+            reverse=True,
+        )
         self._summary_table.setRowCount(len(ranked))
         for row, (name, count) in enumerate(ranked):
             self._summary_table.setItem(row, 0, QTableWidgetItem(name))

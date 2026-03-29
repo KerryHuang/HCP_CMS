@@ -35,12 +35,18 @@ class ExcelExporter:
             cell = ws.cell(1, col, title)
             cell.font = bold
 
-        # 去重並依次數降冪
-        seen: dict[str, tuple[str, int]] = {}
+        # 以不重複主旨數計算各公司次數，依次數降冪
+        company_names: dict[str, str] = {}
+        company_subjects: dict[str, set[str]] = {}
         for m in mails:
-            if m.company_id and m.company_id not in seen:
-                seen[m.company_id] = (m.company_name or m.company_id, m.company_reply_count)
-        ranked = sorted(seen.values(), key=lambda x: x[1], reverse=True)
+            if m.company_id:
+                company_names.setdefault(m.company_id, m.company_name or m.company_id)
+                company_subjects.setdefault(m.company_id, set()).add(m.subject)
+        ranked = sorted(
+            [(company_names[cid], len(subjects)) for cid, subjects in company_subjects.items()],
+            key=lambda x: x[1],
+            reverse=True,
+        )
 
         for row, (name, count) in enumerate(ranked, start=2):
             ws.cell(row, 1, name)
