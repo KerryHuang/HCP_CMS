@@ -19,6 +19,7 @@ exchangelib >= 5.1
 requests >= 2.31
 keyring >= 25.0
 jieba >= 0.42
+python-docx >= 1.1
 ```
 
 ## 開發依賴
@@ -49,7 +50,7 @@ D:\cms\
 │   ├── settings.json           # Hook 設定
 │   ├── rules/                  # 各層程式碼慣例
 │   ├── hooks/                  # ruff 自動檢查
-│   └── skills/                 # 9 個開發技能
+│   └── skills/                 # 11 個開發技能
 ├── src/
 │   └── hcp_cms/
 │       ├── __init__.py
@@ -67,6 +68,7 @@ D:\cms\
 │       │   ├── mantis_view.py
 │       │   ├── report_view.py
 │       │   ├── rules_view.py
+│       │   ├── sent_mail_tab.py #   寄件清單
 │       │   ├── settings_view.py
 │       │   └── widgets/        #   共用元件（status_bar）
 │       │
@@ -79,6 +81,8 @@ D:\cms\
 │       │   ├── custom_column_manager.py # 自定義欄位管理
 │       │   ├── kms_engine.py   #   KMS 搜尋 + CRUD + Excel
 │       │   ├── report_engine.py #  Excel 報表產生
+│       │   ├── report_writer.py #  報表 Excel 寫入
+│       │   ├── sent_mail_manager.py # 寄件清單管理
 │       │   └── thread_tracker.py #  對話串追蹤
 │       │
 │       ├── services/           # Services 層 — 外部服務介面
@@ -133,7 +137,7 @@ SQLite
 
 ## 資料庫 Schema
 
-### 主表（9 張）
+### 主表（10 張）
 | 表名 | 用途 |
 |------|------|
 | cs_cases | 客服案件（含 `reply_time TEXT`：從 progress 解析的回覆時間，供統計報表使用） |
@@ -145,6 +149,7 @@ SQLite
 | classification_rules | 分類規則（DB 驅動，支援 handler/progress） |
 | case_logs | 案件操作日誌 |
 | custom_columns | 自定義欄位定義 |
+| db_meta | Schema 版本管理 |
 
 ### 虛擬表（2 張 FTS5 + 1 張同義詞）
 | 表名 | 用途 |

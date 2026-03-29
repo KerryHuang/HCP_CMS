@@ -92,6 +92,7 @@ src/hcp_cms/
 │   ├── case_detail_dialog.py #  案件詳情對話框
 │   ├── csv_import_dialog.py #  CSV 匯入精靈
 │   ├── delete_cases_dialog.py # 批次刪除案件對話框
+│   ├── sent_mail_tab.py    #   寄件清單
 │   ├── settings_view.py    #   系統設定
 │   └── widgets/            #   共用元件
 ├── core/                   # 業務邏輯層
@@ -103,6 +104,8 @@ src/hcp_cms/
 │   ├── custom_column_manager.py # 自定義欄位管理
 │   ├── kms_engine.py       #   KMS 搜尋 + CRUD + Excel 匯入匯出
 │   ├── report_engine.py    #   Excel 報表產生
+│   ├── report_writer.py    #   報表 Excel 寫入
+│   ├── sent_mail_manager.py #  寄件清單管理
 │   └── thread_tracker.py   #   對話串追蹤
 ├── services/               # 外部整合層
 │   ├── mail/               #   信件提供者（IMAP/Exchange/MSG）
@@ -155,6 +158,7 @@ SQLite WAL 模式，支援 3 人透過網路磁碟共用。
 | UI | PySide6 |
 | 資料庫 | SQLite3（WAL 模式） |
 | Excel | openpyxl |
+| Word | python-docx |
 | 信件 | extract-msg, imaplib, exchangelib |
 | Mantis | requests（REST/SOAP） |
 | 密鑰 | keyring |
@@ -169,15 +173,17 @@ SQLite WAL 模式，支援 3 人透過網路磁碟共用。
 
 - **Rules** — 各層程式碼慣例自動注入（data / core / ui / services / tests）
 - **Hooks** — Write/Edit 後自動執行 ruff format + lint 檢查
-- **Skills** — 9 個開發技能，輸入 `/指令` 即可使用：
+- **Skills** — 11 個開發技能，輸入 `/指令` 即可使用：
 
 | 指令 | 用途 |
 |------|------|
 | `/commit` | 提交變更（繁體中文訊息） |
 | `/push` `/pull` | 推送 / 拉取 |
+| `/reflect` | Session 回顧 |
 | `/test` | 執行測試 |
 | `/run` | 啟動應用程式 |
 | `/build` | 打包執行檔 |
+| `/poc` | POC 驗證 |
 | `/release` | 發行新版本 |
 | `/publish` | 本地發行驗證 |
 | `/update-docs` | 更新專案文件 |
