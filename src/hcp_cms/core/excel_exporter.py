@@ -50,15 +50,20 @@ class ExcelExporter:
         ws = wb.create_sheet("寄件清單")
         bold = Font(bold=True)
 
-        headers = ["日期", "收件人", "主旨", "公司", "案件", "次數"]
+        headers = ["日期", "收件人", "主旨", "公司", "案件", "第幾封"]
         for col, title in enumerate(headers, start=1):
             cell = ws.cell(1, col, title)
             cell.font = bold
 
+        company_counters: dict[str, int] = {}
         for row, m in enumerate(mails, start=2):
             ws.cell(row, 1, m.date[:10] if m.date else "")
             ws.cell(row, 2, ", ".join(m.recipients))
             ws.cell(row, 3, m.subject)
             ws.cell(row, 4, m.company_name or "—")
             ws.cell(row, 5, m.linked_case_id or "—")
-            ws.cell(row, 6, str(m.company_reply_count) if m.company_id else "—")
+            if m.company_id:
+                company_counters[m.company_id] = company_counters.get(m.company_id, 0) + 1
+                ws.cell(row, 6, str(company_counters[m.company_id]))
+            else:
+                ws.cell(row, 6, "—")

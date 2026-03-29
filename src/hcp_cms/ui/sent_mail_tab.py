@@ -119,7 +119,7 @@ class SentMailTab(QWidget):
         layout.addWidget(list_label)
 
         self._list_table = QTableWidget(0, 6)
-        self._list_table.setHorizontalHeaderLabels(["日期", "收件人", "主旨", "公司", "案件", "次數"])
+        self._list_table.setHorizontalHeaderLabels(["日期", "收件人", "主旨", "公司", "案件", "第幾封"])
         self._list_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         header = self._list_table.horizontalHeader()
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
@@ -232,6 +232,7 @@ class SentMailTab(QWidget):
 
         # 寄件清單
         self._list_table.setRowCount(len(mails))
+        company_counters: dict[str, int] = {}
         for row, m in enumerate(mails):
             self._list_table.setItem(row, 0, QTableWidgetItem(m.date[:10] if m.date else ""))
             self._list_table.setItem(row, 1, QTableWidgetItem(", ".join(m.recipients)))
@@ -242,7 +243,11 @@ class SentMailTab(QWidget):
             if m.linked_case_id:
                 case_item.setToolTip("雙擊複製案件編號")
             self._list_table.setItem(row, 4, case_item)
-            count_text = str(m.company_reply_count) if m.company_id else "—"
+            if m.company_id:
+                company_counters[m.company_id] = company_counters.get(m.company_id, 0) + 1
+                count_text = str(company_counters[m.company_id])
+            else:
+                count_text = "—"
             self._list_table.setItem(row, 5, QTableWidgetItem(count_text))
 
     def _on_export(self) -> None:

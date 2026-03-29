@@ -79,7 +79,7 @@ class TestExcelExporter:
         wb = openpyxl.load_workbook(path)
         ws = wb["寄件清單"]
         headers = [ws.cell(1, c).value for c in range(1, 7)]
-        assert headers == ["日期", "收件人", "主旨", "公司", "案件", "次數"]
+        assert headers == ["日期", "收件人", "主旨", "公司", "案件", "第幾封"]
 
     def test_list_rows_count(self, tmp_path):
         mails = [_make_mail(), _make_mail(), _make_mail()]
@@ -121,3 +121,20 @@ class TestExcelExporter:
         wb = openpyxl.load_workbook(path)
         ws = wb["寄件清單"]
         assert ws.cell(2, 6).value == "—"
+
+    def test_list_sequential_counter_per_company(self, tmp_path):
+        """同公司的信件依出現順序編號（流水號）。"""
+        mails = [
+            _make_mail(company_id="C001", company_name="甲公司"),
+            _make_mail(company_id="C002", company_name="乙公司"),
+            _make_mail(company_id="C001", company_name="甲公司"),
+            _make_mail(company_id="C001", company_name="甲公司"),
+        ]
+        path = str(tmp_path / "output.xlsx")
+        ExcelExporter().export_sent_mail(mails, path)
+        wb = openpyxl.load_workbook(path)
+        ws = wb["寄件清單"]
+        assert ws.cell(2, 6).value == "1"  # 甲公司第1封
+        assert ws.cell(3, 6).value == "1"  # 乙公司第1封
+        assert ws.cell(4, 6).value == "2"  # 甲公司第2封
+        assert ws.cell(5, 6).value == "3"  # 甲公司第3封
