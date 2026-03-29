@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+import sys
 from pathlib import Path
 
 from PySide6.QtCore import QSize, Qt
@@ -194,6 +195,35 @@ class MainWindow(QMainWindow):
             action.setShortcut(QKeySequence(key))
             action.triggered.connect(lambda checked=False, i=index: self._nav_list.setCurrentRow(i))
             self.addAction(action)
+
+        # F1 — 上下文說明
+        help_action = QAction("F1", self)
+        help_action.setShortcut(QKeySequence("F1"))
+        help_action.triggered.connect(self._on_help_requested)
+        self.addAction(help_action)
+
+    def _on_help_requested(self) -> None:
+        """Open help dialog for the current page."""
+        from hcp_cms.ui.help_dialog import HelpDialog
+
+        manual_text = self._load_manual()
+        if manual_text:
+            page_index = self._nav_list.currentRow()
+            dialog = HelpDialog(page_index, manual_text, parent=self)
+            dialog.exec()
+
+    def _load_manual(self) -> str:
+        """Load operation-manual.md content."""
+        # 打包後從 _MEIPASS 讀取，開發時從專案根目錄讀取
+        if hasattr(sys, "_MEIPASS"):
+            base = Path(sys._MEIPASS)
+        else:
+            base = Path(__file__).resolve().parent.parent.parent.parent  # src/hcp_cms/ui → 專案根
+
+        manual_path = base / "docs" / "operation-manual.md"
+        if manual_path.exists():
+            return manual_path.read_text(encoding="utf-8")
+        return ""
 
     def _apply_dark_theme(self) -> None:
         """Apply dark theme stylesheet."""

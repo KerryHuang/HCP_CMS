@@ -39,6 +39,13 @@ class TestMainWindow:
         window = MainWindow(db.connection)
         assert window._stack.count() == 8  # 8 views
 
+    def test_f1_shortcut_exists(self, qapp):
+        from hcp_cms.ui.main_window import MainWindow
+
+        window = MainWindow()
+        shortcuts = [a.shortcut().toString() for a in window.actions()]
+        assert "F1" in shortcuts
+
 
 class TestDashboardView:
     def test_create(self, qapp):
