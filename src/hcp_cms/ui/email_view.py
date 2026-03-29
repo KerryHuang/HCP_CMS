@@ -50,14 +50,16 @@ class EmailView(QWidget):
     _worker_error = Signal(str)    # 背景工作失敗
     _mail_arrived = Signal(object) # 逐封信件串流顯示
 
-    _BASE_STYLE = (
-        "body{margin:16px;font-family:'Segoe UI',Arial,sans-serif;"
-        "font-size:13px;background:#1e293b;color:#e2e8f0;line-height:1.6;}"
-        "pre{white-space:pre-wrap;word-break:break-word;}"
-        "a{color:#60a5fa;}"
-        "blockquote{border-left:3px solid #4b5563;margin:0;padding-left:12px;color:#94a3b8;}"
-        "img{max-width:100%;}"
-    )
+    def _build_base_style(self, p: ColorPalette) -> str:
+        """根據當前主題生成 HTML 預覽 CSS。"""
+        return (
+            f"body{{margin:16px;font-family:'Segoe UI',Arial,sans-serif;"
+            f"font-size:13px;background:{p.bg_secondary};color:{p.text_secondary};line-height:1.6;}}"
+            f"pre{{white-space:pre-wrap;word-break:break-word;}}"
+            f"a{{color:{p.accent};}}"
+            f"blockquote{{border-left:3px solid {p.border_primary};margin:0;padding-left:12px;color:{p.text_tertiary};}}"
+            f"img{{max-width:100%;}}"
+        )
 
     def __init__(self, conn: sqlite3.Connection | None = None, kms: KMSEngine | None = None, theme_mgr: ThemeManager | None = None) -> None:
         super().__init__()
@@ -100,18 +102,11 @@ class EmailView(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 20)
 
-        title = QLabel("📧 信件處理")
-        title.setStyleSheet("font-size: 18px; font-weight: bold; color: #f1f5f9;")
-        layout.addWidget(title)
+        self._title = QLabel("📧 信件處理")
+        layout.addWidget(self._title)
 
         # 可折疊連線設定
         self._conn_toggle_btn = QPushButton("⚙ 連線設定  ▲")
-        self._conn_toggle_btn.setStyleSheet(
-            "QPushButton { text-align: left; padding: 6px 12px;"
-            " background: #1e293b; color: #94a3b8;"
-            " border: 1px solid #334155; border-radius: 6px; font-size: 13px; }"
-            "QPushButton:hover { background: #273344; color: #cbd5e1; }"
-        )
         self._conn_toggle_btn.clicked.connect(self._on_toggle_conn)
         layout.addWidget(self._conn_toggle_btn)
 
@@ -136,14 +131,6 @@ class EmailView(QWidget):
 
         # Tab widget：收件處理 / 寄件備份
         self._tab_widget = QTabWidget()
-        self._tab_widget.setStyleSheet(
-            "QTabWidget::pane { border: none; background: transparent; }"
-            "QTabBar::tab { background: #1e293b; color: #94a3b8;"
-            "  padding: 6px 16px; border-bottom: 2px solid transparent; }"
-            "QTabBar::tab:selected { background: #1e293b; color: #f1f5f9;"
-            "  border-bottom: 2px solid #3b82f6; }"
-            "QTabBar::tab:hover:!selected { background: #273344; color: #cbd5e1; }"
-        )
         inbox_widget = QWidget()
         inbox_layout = QVBoxLayout(inbox_widget)
         inbox_layout.setContentsMargins(0, 8, 0, 0)
@@ -319,22 +306,24 @@ class EmailView(QWidget):
 
     def _update_conn_toggle(self) -> None:
         """更新折疊按鈕文字與樣式。"""
+        from hcp_cms.ui.theme import DARK_PALETTE
+        p = getattr(self, "_current_palette", None) or DARK_PALETTE
         arrow = "▲" if self._conn_content.isVisible() else "▼"
         if self._connected_proto:
             self._conn_toggle_btn.setText(f"✅ {self._connected_proto}  {self._connected_user}  {arrow}")
             self._conn_toggle_btn.setStyleSheet(
-                "QPushButton { text-align: left; padding: 6px 12px;"
-                " background: #1e293b; color: #4ade80;"
-                " border: 1px solid #166534; border-radius: 6px; font-size: 13px; }"
-                "QPushButton:hover { background: #273344; }"
+                f"QPushButton {{ text-align: left; padding: 6px 12px;"
+                f" background: {p.bg_secondary}; color: {p.success};"
+                f" border: 1px solid #166534; border-radius: 6px; font-size: 13px; }}"
+                f"QPushButton:hover {{ background: {p.bg_hover}; }}"
             )
         else:
             self._conn_toggle_btn.setText(f"⚙ 連線設定  {arrow}")
             self._conn_toggle_btn.setStyleSheet(
-                "QPushButton { text-align: left; padding: 6px 12px;"
-                " background: #1e293b; color: #94a3b8;"
-                " border: 1px solid #334155; border-radius: 6px; font-size: 13px; }"
-                "QPushButton:hover { background: #273344; color: #cbd5e1; }"
+                f"QPushButton {{ text-align: left; padding: 6px 12px;"
+                f" background: {p.bg_secondary}; color: {p.text_tertiary};"
+                f" border: 1px solid {p.border_primary}; border-radius: 6px; font-size: 13px; }}"
+                f"QPushButton:hover {{ background: {p.bg_hover}; color: {p.text_secondary}; }}"
             )
 
     def _on_connect(self) -> None:
@@ -622,20 +611,29 @@ class EmailView(QWidget):
         self._log.append(f"解析完成，共 {self._table.rowCount()} 封信件")
 
     def _placeholder_html(self) -> str:
+        from hcp_cms.ui.theme import DARK_PALETTE
+        p = getattr(self, "_current_palette", None) or DARK_PALETTE
+        style = self._build_base_style(p)
         return (
-            f"<html><head><style>{self._BASE_STYLE}</style></head>"
+            f"<html><head><style>{style}</style></head>"
             "<body><p style='color:#64748b'>點選信件以預覽內容…</p></body></html>"
         )
 
     def _wrap_plain(self, text: str) -> str:
+        from hcp_cms.ui.theme import DARK_PALETTE
+        p = getattr(self, "_current_palette", None) or DARK_PALETTE
+        style = self._build_base_style(p)
         return (
-            f"<html><head><style>{self._BASE_STYLE}</style></head>"
+            f"<html><head><style>{style}</style></head>"
             f"<body><pre>{escape(text)}</pre></body></html>"
         )
 
     def _inject_style(self, html: str) -> str:
-        """在信件 HTML 中注入深色背景 CSS。"""
-        tag = f"<style>{self._BASE_STYLE}</style>"
+        """在信件 HTML 中注入背景 CSS。"""
+        from hcp_cms.ui.theme import DARK_PALETTE
+        p = getattr(self, "_current_palette", None) or DARK_PALETTE
+        style = self._build_base_style(p)
+        tag = f"<style>{style}</style>"
         lower = html.lower()
         if "<head>" in lower:
             pos = lower.index("<head>") + len("<head>")
@@ -773,4 +771,14 @@ class EmailView(QWidget):
 
     def _apply_theme(self, p: ColorPalette) -> None:
         """套用主題色彩。"""
-        pass  # 後續 Task 實作
+        self._title.setStyleSheet(f"font-size: 18px; font-weight: bold; color: {p.text_primary};")
+        self._tab_widget.setStyleSheet(
+            f"QTabWidget::pane {{ border: none; background: transparent; }}"
+            f"QTabBar::tab {{ background: {p.bg_secondary}; color: {p.text_tertiary};"
+            f"  padding: 6px 16px; border-bottom: 2px solid transparent; }}"
+            f"QTabBar::tab:selected {{ background: {p.bg_secondary}; color: {p.text_primary};"
+            f"  border-bottom: 2px solid #3b82f6; }}"
+            f"QTabBar::tab:hover:!selected {{ background: {p.bg_hover}; color: {p.text_secondary}; }}"
+        )
+        self._update_conn_toggle()
+        self._current_palette = p
