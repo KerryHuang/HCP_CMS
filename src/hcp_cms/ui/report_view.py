@@ -153,15 +153,26 @@ class ReportView(QWidget):
             table = QTableWidget()
             if rows:
                 col_count = max(len(r) for r in rows)
-                table.setColumnCount(col_count)
-                table.setRowCount(len(rows) - 1 if len(rows) > 1 else 0)
 
-                headers = rows[0] if rows else []
-                table.setHorizontalHeaderLabels([str(h) for h in headers])
+                # 判斷第一列是否為正式欄位標題：
+                # 若只有一列、或第一列欄數少於第二列，視為標題列（非標頭），全部列當資料顯示
+                has_proper_header = len(rows) < 2 or len(rows[0]) >= len(rows[1])
 
-                for row_idx, row in enumerate(rows[1:]):
-                    for col_idx, value in enumerate(row):
-                        table.setItem(row_idx, col_idx, QTableWidgetItem(str(value) if value else ""))
+                if has_proper_header:
+                    # 第一列作為 QTableWidget 橫向標頭
+                    table.setColumnCount(col_count)
+                    table.setRowCount(max(0, len(rows) - 1))
+                    table.setHorizontalHeaderLabels([str(h) for h in rows[0]])
+                    for row_idx, row in enumerate(rows[1:]):
+                        for col_idx, value in enumerate(row):
+                            table.setItem(row_idx, col_idx, QTableWidgetItem(str(value) if value else ""))
+                else:
+                    # 第一列為標題列（如月報摘要），全部列當資料顯示，使用預設數字標頭
+                    table.setColumnCount(col_count)
+                    table.setRowCount(len(rows))
+                    for row_idx, row in enumerate(rows):
+                        for col_idx, value in enumerate(row):
+                            table.setItem(row_idx, col_idx, QTableWidgetItem(str(value) if value else ""))
 
                 table.resizeColumnsToContents()
             self._tab_widget.addTab(table, sheet_name)

@@ -59,4 +59,16 @@ class ReportWriter:
                     if row_idx % 2 == 0:
                         cell.fill = FILL_ALT_ROW
 
+        # 自動調整欄寬（依內容最大長度，上限 50 字元）
+        for ws in wb.worksheets:
+            for col_cells in ws.columns:
+                max_length = 0
+                for cell in col_cells:
+                    if cell.value:
+                        max_length = max(max_length, len(str(cell.value)))
+                adjusted = min(max_length + 2, 50)
+                if adjusted > 0:
+                    col_letter = col_cells[0].column_letter
+                    ws.column_dimensions[col_letter].width = adjusted
+
         wb.save(str(path))
