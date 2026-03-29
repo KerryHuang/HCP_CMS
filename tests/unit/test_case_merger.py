@@ -105,6 +105,17 @@ class TestCaseMergerFindDuplicateGroups:
         groups = merger.find_duplicate_groups()
         assert len(groups) == 0
 
+    def test_find_duplicate_groups_multi_prefix(self, db: DatabaseManager) -> None:
+        """多層 RE: 前綴剝除後應歸為同一群組。"""
+        repo = CaseRepository(db.connection)
+        _insert_case(repo, "CS-2026-006", "薪資問題", "C001")
+        _insert_case(repo, "CS-2026-007", "RE: RE: 薪資問題", "C001")
+
+        merger = CaseMerger(db.connection)
+        groups = merger.find_duplicate_groups()
+        assert len(groups) == 1
+        assert len(groups[0]) == 2
+
 
 class TestCaseMergerMergeGroup:
     def test_merge_group_keeps_earliest(self, db: DatabaseManager) -> None:

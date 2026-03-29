@@ -13,8 +13,14 @@ class ThreadTracker:
 
     @staticmethod
     def clean_subject(subject: str) -> str:
-        """Remove RE:/FW:/回覆:/轉寄: prefixes (case-insensitive, repeating)."""
-        return re.sub(r'^(RE:|FW:|FWD:|回覆:|轉寄:|答覆:)\s*', '', subject, flags=re.IGNORECASE).strip()
+        """Remove RE:/FW:/回覆:/轉寄: prefixes recursively (case-insensitive)."""
+        _prefix_re = re.compile(r'^(RE:|FW:|FWD:|回覆:|轉寄:|答覆:)\s*', re.IGNORECASE)
+        result = subject
+        while True:
+            stripped = _prefix_re.sub('', result).strip()
+            if stripped == result:
+                return result
+            result = stripped
 
     @staticmethod
     def subjects_match(s1: str, s2: str) -> bool:

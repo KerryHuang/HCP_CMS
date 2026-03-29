@@ -21,8 +21,8 @@ class TestThreadTracker:
         assert ThreadTracker.clean_subject("RE: 薪資問題") == "薪資問題"
 
     def test_clean_subject_fw(self):
-        assert ThreadTracker.clean_subject("FW: FW: 系統異常") == "FW: 系統異常"
-        # Only removes first prefix; that's OK
+        assert ThreadTracker.clean_subject("FW: FW: 系統異常") == "系統異常"
+        # Recursively removes all prefixes
 
     def test_clean_subject_chinese(self):
         assert ThreadTracker.clean_subject("回覆: 請假問題") == "請假問題"
