@@ -34,6 +34,7 @@ from PySide6.QtWidgets import (
 )
 
 from hcp_cms.core.kms_engine import KMSEngine
+from hcp_cms.ui.theme import ColorPalette, ThemeManager
 
 _IMAGE_EXTS = frozenset({".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"})
 
@@ -272,14 +273,19 @@ class KMSView(QWidget):
         conn: sqlite3.Connection | None = None,
         kms: KMSEngine | None = None,
         db_dir: Path | None = None,
+        theme_mgr: ThemeManager | None = None,
     ) -> None:
         super().__init__()
         self._conn = conn
         self._kms = kms or (KMSEngine(conn) if conn else None)
         self._db_dir = db_dir
+        self._theme_mgr = theme_mgr
         self._results: list = []
         self._pending: list = []
         self._setup_ui()
+        if theme_mgr:
+            self._apply_theme(theme_mgr.current_palette())
+            theme_mgr.theme_changed.connect(self._apply_theme)
 
     def _make_field_widget(self, label: str, attr_name: str) -> tuple[QWidget, QTextEdit]:
         """建立標題列 + 展開按鈕 + QTextEdit 的組合 widget。"""
@@ -957,3 +963,7 @@ class KMSView(QWidget):
             QMessageBox.information(self, "匯出完成", f"已儲存至：\n{path}")
         except Exception as e:
             QMessageBox.critical(self, "匯出失敗", str(e))
+
+    def _apply_theme(self, p: ColorPalette) -> None:
+        """套用主題色彩。"""
+        pass  # 後續 Task 實作

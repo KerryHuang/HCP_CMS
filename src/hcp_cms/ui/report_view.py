@@ -24,16 +24,21 @@ from PySide6.QtWidgets import (
 
 from hcp_cms.core.report_engine import ReportEngine
 from hcp_cms.core.report_writer import ReportWriter
+from hcp_cms.ui.theme import ColorPalette, ThemeManager
 
 
 class ReportView(QWidget):
     """Report center page."""
 
-    def __init__(self, conn: sqlite3.Connection | None = None) -> None:
+    def __init__(self, conn: sqlite3.Connection | None = None, theme_mgr: ThemeManager | None = None) -> None:
         super().__init__()
         self._conn = conn
+        self._theme_mgr = theme_mgr
         self._preview_data: dict[str, list[list]] | None = None
         self._setup_ui()
+        if theme_mgr:
+            self._apply_theme(theme_mgr.current_palette())
+            theme_mgr.theme_changed.connect(self._apply_theme)
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
@@ -218,3 +223,7 @@ class ReportView(QWidget):
         except Exception as e:
             self._status.setText(f"❌ 下載失敗：{e}")
             QMessageBox.critical(self, "下載失敗", str(e))
+
+    def _apply_theme(self, p: ColorPalette) -> None:
+        """套用主題色彩。"""
+        pass  # 後續 Task 實作

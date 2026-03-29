@@ -39,6 +39,7 @@ from hcp_cms.services.credential import CredentialManager
 from hcp_cms.services.mail.base import MailProvider, RawEmail
 from hcp_cms.services.mail.msg_reader import MSGReader
 from hcp_cms.ui.sent_mail_tab import SentMailTab
+from hcp_cms.ui.theme import ColorPalette, ThemeManager
 
 
 class EmailView(QWidget):
@@ -58,10 +59,11 @@ class EmailView(QWidget):
         "img{max-width:100%;}"
     )
 
-    def __init__(self, conn: sqlite3.Connection | None = None, kms: KMSEngine | None = None) -> None:
+    def __init__(self, conn: sqlite3.Connection | None = None, kms: KMSEngine | None = None, theme_mgr: ThemeManager | None = None) -> None:
         super().__init__()
         self._conn = conn
         self._kms = kms
+        self._theme_mgr = theme_mgr
         self._creds = CredentialManager()
         self._provider: MailProvider | None = None
         self._pending_files: list[Path] = []
@@ -69,6 +71,9 @@ class EmailView(QWidget):
         self._auto_connected = False
         self._auto_fetch_after_connect = False
         self._setup_ui()
+        if theme_mgr:
+            self._apply_theme(theme_mgr.current_palette())
+            theme_mgr.theme_changed.connect(self._apply_theme)
 
     def try_auto_connect(self) -> None:
         """由外部（如 MainWindow）呼叫，首次進入頁面時自動連線。"""
@@ -765,3 +770,7 @@ class EmailView(QWidget):
                 message_id=email.message_id,
             )
         )
+
+    def _apply_theme(self, p: ColorPalette) -> None:
+        """套用主題色彩。"""
+        pass  # 後續 Task 實作

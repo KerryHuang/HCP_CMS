@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
 from hcp_cms.core.case_manager import CaseManager
 from hcp_cms.data.fts import FTSManager
 from hcp_cms.data.repositories import CaseRepository, CompanyRepository
+from hcp_cms.ui.theme import ColorPalette, ThemeManager
 
 _FIXED_COL_COUNT = 9
 
@@ -40,13 +41,18 @@ class CaseView(QWidget):
         self,
         conn: sqlite3.Connection | None = None,
         db_path: Path | None = None,
+        theme_mgr: ThemeManager | None = None,
     ) -> None:
         super().__init__()
         self._conn = conn
         self._db_path = db_path
+        self._theme_mgr = theme_mgr
         from hcp_cms.core.custom_column_manager import CustomColumnManager
         self._custom_col_mgr = CustomColumnManager(conn) if conn else None
         self._setup_ui()
+        if theme_mgr:
+            self._apply_theme(theme_mgr.current_palette())
+            theme_mgr.theme_changed.connect(self._apply_theme)
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
@@ -313,3 +319,7 @@ class CaseView(QWidget):
         dlg = CaseDetailDialog(self._conn, case_id, parent=self)
         dlg.case_updated.connect(self.refresh)
         dlg.exec()
+
+    def _apply_theme(self, p: ColorPalette) -> None:
+        """套用主題色彩。"""
+        pass  # 後續 Task 實作

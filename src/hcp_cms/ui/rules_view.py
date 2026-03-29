@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
 
 from hcp_cms.data.models import ClassificationRule
 from hcp_cms.data.repositories import RuleRepository
+from hcp_cms.ui.theme import ColorPalette, ThemeManager
 
 # 規則類型定義：(顯示名稱, DB key, 說明, Pattern 範例, Value 範例, 預設值)
 _RULE_TYPES: list[tuple[str, str, str, str, str, str]] = [
@@ -102,11 +103,15 @@ _TYPE_KEY_TO_IDX = {t[1]: i for i, t in enumerate(_RULE_TYPES)}
 class RulesView(QWidget):
     """Classification rules management page."""
 
-    def __init__(self, conn: sqlite3.Connection | None = None) -> None:
+    def __init__(self, conn: sqlite3.Connection | None = None, theme_mgr: ThemeManager | None = None) -> None:
         super().__init__()
         self._conn = conn
+        self._theme_mgr = theme_mgr
         self._editing_id: int | None = None
         self._setup_ui()
+        if theme_mgr:
+            self._apply_theme(theme_mgr.current_palette())
+            theme_mgr.theme_changed.connect(self._apply_theme)
 
     def _current_type_key(self) -> str:
         idx = self._type_combo.currentIndex()
@@ -345,6 +350,10 @@ class RulesView(QWidget):
     def _on_format_help(self) -> None:
         dlg = RulesFormatDialog(self)
         dlg.exec()
+
+    def _apply_theme(self, p: ColorPalette) -> None:
+        """套用主題色彩。"""
+        pass  # 後續 Task 實作
 
 
 # ---------------------------------------------------------------------------

@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
 
 from hcp_cms.core.case_manager import CaseManager
 from hcp_cms.data.repositories import CaseRepository
+from hcp_cms.ui.theme import ColorPalette, ThemeManager
 
 
 class KPICard(QFrame):
@@ -52,12 +53,16 @@ class KPICard(QFrame):
 class DashboardView(QWidget):
     """Dashboard with KPI cards and recent cases."""
 
-    def __init__(self, conn: sqlite3.Connection | None = None) -> None:
+    def __init__(self, conn: sqlite3.Connection | None = None, theme_mgr: ThemeManager | None = None) -> None:
         super().__init__()
         self._conn = conn
+        self._theme_mgr = theme_mgr
         self._setup_ui()
         if conn:
             self.refresh()
+        if theme_mgr:
+            self._apply_theme(theme_mgr.current_palette())
+            theme_mgr.theme_changed.connect(self._apply_theme)
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
@@ -120,3 +125,7 @@ class DashboardView(QWidget):
                 self._table.setItem(i, 4, QTableWidgetItem(case.sent_time or ""))
         except Exception:
             pass
+
+    def _apply_theme(self, p: ColorPalette) -> None:
+        """套用主題色彩。"""
+        pass  # 後續 Task 實作

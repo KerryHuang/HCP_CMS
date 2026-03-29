@@ -23,18 +23,23 @@ from PySide6.QtWidgets import (
 )
 
 from hcp_cms.services.credential import CredentialManager
+from hcp_cms.ui.theme import ColorPalette, ThemeManager
 
 
 class SettingsView(QWidget):
     """System settings page."""
 
-    def __init__(self, conn: sqlite3.Connection | None = None) -> None:
+    def __init__(self, conn: sqlite3.Connection | None = None, theme_mgr: ThemeManager | None = None) -> None:
         super().__init__()
         self._conn = conn
+        self._theme_mgr = theme_mgr
         self._creds = CredentialManager()
         self._setup_ui()
         self._load_mantis_creds()
         self._load_mail_creds()
+        if theme_mgr:
+            self._apply_theme(theme_mgr.current_palette())
+            theme_mgr.theme_changed.connect(self._apply_theme)
 
     def _setup_ui(self) -> None:
         outer = QVBoxLayout(self)
@@ -425,3 +430,7 @@ class SettingsView(QWidget):
                 QMessageBox.warning(self, "連線失敗", "❌ 無法連線至 Mantis，請確認 URL 與帳密是否正確。")
         except Exception as e:
             QMessageBox.critical(self, "連線錯誤", f"❌ 發生例外：\n{e}")
+
+    def _apply_theme(self, p: ColorPalette) -> None:
+        """套用主題色彩。"""
+        pass  # 後續 Task 實作

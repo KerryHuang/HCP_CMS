@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 from hcp_cms.data.repositories import MantisRepository
 from hcp_cms.services.credential import CredentialManager
 from hcp_cms.services.mantis.soap import MantisSoapClient
+from hcp_cms.ui.theme import ColorPalette, ThemeManager
 
 
 class _SyncWorker(QThread):
@@ -76,12 +77,16 @@ class _SyncWorker(QThread):
 class MantisView(QWidget):
     """Mantis 同步頁面 — 顯示所有已關聯的 Ticket 並可批次同步。"""
 
-    def __init__(self, conn: sqlite3.Connection | None = None) -> None:
+    def __init__(self, conn: sqlite3.Connection | None = None, theme_mgr: ThemeManager | None = None) -> None:
         super().__init__()
         self._conn = conn
+        self._theme_mgr = theme_mgr
         self._creds = CredentialManager()
         self._worker: _SyncWorker | None = None
         self._setup_ui()
+        if theme_mgr:
+            self._apply_theme(theme_mgr.current_palette())
+            theme_mgr.theme_changed.connect(self._apply_theme)
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
@@ -254,3 +259,7 @@ class MantisView(QWidget):
             "請至左側選單「⚙ 系統設定」→ 找到「Mantis SOAP 連線設定」\n"
             "填入 Mantis 基本網址（如 https://118.163.30.33/mantis/）、帳號、密碼後儲存。"
         )
+
+    def _apply_theme(self, p: ColorPalette) -> None:
+        """套用主題色彩。"""
+        pass  # 後續 Task 實作

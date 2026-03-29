@@ -114,14 +114,14 @@ class MainWindow(QMainWindow):
         kms = KMSEngine(self._conn) if self._conn else None
 
         self._views: dict[str, QWidget] = {
-            "dashboard": DashboardView(self._conn),
-            "cases": CaseView(self._conn, db_path=self._db_dir / "cs_tracker.db" if self._db_dir else None),
-            "kms": KMSView(self._conn, kms=kms, db_dir=self._db_dir),
-            "email": EmailView(self._conn, kms=kms),
-            "mantis": MantisView(self._conn),
-            "reports": ReportView(self._conn),
-            "rules": RulesView(self._conn),
-            "settings": SettingsView(self._conn),
+            "dashboard": DashboardView(self._conn, theme_mgr=self._theme_mgr),
+            "cases": CaseView(self._conn, db_path=self._db_dir / "cs_tracker.db" if self._db_dir else None, theme_mgr=self._theme_mgr),
+            "kms": KMSView(self._conn, kms=kms, db_dir=self._db_dir, theme_mgr=self._theme_mgr),
+            "email": EmailView(self._conn, kms=kms, theme_mgr=self._theme_mgr),
+            "mantis": MantisView(self._conn, theme_mgr=self._theme_mgr),
+            "reports": ReportView(self._conn, theme_mgr=self._theme_mgr),
+            "rules": RulesView(self._conn, theme_mgr=self._theme_mgr),
+            "settings": SettingsView(self._conn, theme_mgr=self._theme_mgr),
         }
 
         for view in self._views.values():
