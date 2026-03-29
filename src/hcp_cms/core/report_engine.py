@@ -411,6 +411,100 @@ class ReportEngine:
 
         return result
 
+    def build_monthly_report(self, start_date: str, end_date: str) -> dict[str, list[list]]:
+        """組裝月報的所有工作表資料，回傳純資料結構（無 Excel 依賴）。
+
+        Args:
+            start_date: 起始日期，格式 YYYY/MM/DD
+            end_date:   結束日期，格式 YYYY/MM/DD（含當天）
+
+        Returns:
+            dict，key 為工作表名稱，value 為 list of rows。
+            - "📊 月報摘要": row[0] 標題列、row[1] 表頭、row[2:5] KPI、row[6] 空行、row[7] 類型標題、row[8] 類型表頭、row[9+] 類型統計
+            - "📋 案件明細": row[0] 表頭、row[1:] 案件資料
+            - "🏢 客戶分析": row[0] 表頭、row[1:] 各公司統計
+        """
+        cases = self._case_repo.list_by_date_range(start_date, end_date)
+        companies = self._company_repo.list_all()
+        company_map = {c.company_id: c for c in companies}
+
+        closed_statuses = {"已完成", "Closed", "已回覆"}
+        total = len(cases)
+        replied = sum(1 for c in cases if c.status == "已回覆")
+        pending = sum(1 for c in cases if c.status not in closed_statuses)
+        reply_rate = (replied / total * 100) if total > 0 else 0.0
+
+        result: dict[str, list[list]] = {}
+
+        # ── Sheet 1: 月報摘要 ──────────────────────────────────────────
+        summary_rows: list[list] = [
+            # row 0: 標題列
+            [f"📊 客服報表摘要 — {start_date} ～ {end_date}", f"產生日期：{datetime.now().strftime('%Y/%m/%d %H:%M')}"],
+            # row 1: 表頭
+            ["指標", "數值", "說明"],
+            # row 2-5: KPI
+            ["案件總數", total, f"{start_date} ～ {end_date}"],
+            ["已回覆", replied, "replied = 是"],
+            ["待處理", pending, "狀態非已完成/Closed"],
+            ["回覆率", f"{reply_rate:.1f}%", "已回覆 ÷ 總數 × 100%"],
+            # row 6: 空行
+            [],
+            # row 7: 問題類型統計標題
+            ["問題類型統計"],
+            # row 8: 類型表頭
+            ["問題類型", "件數", "佔比"],
+        ]
+        # row 9+: 問題類型明細
+        issue_counts: dict[str, int] = {}
+        for c in cases:
+            it = c.issue_type or "其他"
+            issue_counts[it] = issue_counts.get(it, 0) + 1
+        for it, count in sorted(issue_counts.items(), key=lambda x: -x[1]):
+            pct = count / total * 100 if total > 0 else 0
+            summary_rows.append([it, count, f"{pct:.1f}%"])
+        result["📊 月報摘要"] = summary_rows
+
+        # ── Sheet 2: 案件明細 ──────────────────────────────────────────
+        detail_headers = [
+            "案件編號", "聯絡方式", "狀態", "優先", "寄送時間",
+            "客戶", "聯絡人", "主旨", "系統/產品", "問題類型", "錯誤類型",
+            "影響期間", "進度", "實際回覆時間", "備註",
+            "RD 負責人", "處理人", "回覆次數", "關聯案件",
+        ]
+        detail_rows: list[list] = [detail_headers]
+        for case in cases:
+            comp = company_map.get(case.company_id or "")
+            company_name = comp.name if comp else (case.company_id or "")
+            detail_rows.append(_clean_row([
+                case.case_id, case.contact_method, case.status, case.priority,
+                case.sent_time,
+                company_name, case.contact_person, case.subject,
+                case.system_product, case.issue_type, case.error_type,
+                case.impact_period, case.progress, case.actual_reply,
+                case.notes or "", case.rd_assignee or "", case.handler or "",
+                case.reply_count, case.linked_case_id or "",
+            ]))
+        result["📋 案件明細"] = detail_rows
+
+        # ── Sheet 3: 客戶分析 ──────────────────────────────────────────
+        analysis_rows: list[list] = [["客戶", "已回覆", "處理中", "合計"]]
+        company_stats: dict[str, dict[str, int]] = {}
+        for case in cases:
+            comp = company_map.get(case.company_id or "")
+            cname = comp.name if comp else (case.company_id or "（未知）")
+            if cname not in company_stats:
+                company_stats[cname] = {"replied": 0, "pending": 0}
+            if case.status == "已回覆":
+                company_stats[cname]["replied"] += 1
+            if case.status not in closed_statuses:
+                company_stats[cname]["pending"] += 1
+        for cname, stat in sorted(company_stats.items()):
+            total_c = stat["replied"] + stat["pending"]
+            analysis_rows.append(_clean_row([cname, stat["replied"], stat["pending"], total_c]))
+        result["🏢 客戶分析"] = analysis_rows
+
+        return result
+
     def generate_monthly_report(self, start_date: str, end_date: str, output_path: Path) -> Path:
         """Generate monthly report Excel with KPI summary.
 

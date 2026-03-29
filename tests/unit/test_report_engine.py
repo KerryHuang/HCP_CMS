@@ -191,3 +191,43 @@ class TestReportEngine:
         assert ase_rows[0][0] == "↩ 返回客戶索引"
         assert ase_rows[1][0] == "案件編號"
         assert len(ase_rows) == 4  # link + header + 2 cases
+
+    # ── build_monthly_report 測試 ──────────────────────────────────────────
+
+    def test_build_monthly_report_returns_dict(self, seeded_db):
+        engine = ReportEngine(seeded_db.connection)
+        data = engine.build_monthly_report("2026/03/01", "2026/03/31")
+        assert isinstance(data, dict)
+        assert "📊 月報摘要" in data
+        assert "📋 案件明細" in data
+        assert "🏢 客戶分析" in data
+
+    def test_build_monthly_report_kpi(self, seeded_db):
+        engine = ReportEngine(seeded_db.connection)
+        data = engine.build_monthly_report("2026/03/01", "2026/03/31")
+        summary = data["📊 月報摘要"]
+        # summary[0] = title row, summary[1] = header row, summary[2:] = KPI data rows
+        total_row = summary[2]
+        assert total_row[0] == "案件總數"
+        assert total_row[1] == 3
+
+    def test_build_monthly_report_case_detail(self, seeded_db):
+        engine = ReportEngine(seeded_db.connection)
+        data = engine.build_monthly_report("2026/03/01", "2026/03/31")
+        detail = data["📋 案件明細"]
+        assert detail[0][0] == "案件編號"  # header
+        assert len(detail) == 4  # 1 header + 3 cases
+
+    def test_build_monthly_report_customer_analysis(self, seeded_db):
+        engine = ReportEngine(seeded_db.connection)
+        data = engine.build_monthly_report("2026/03/01", "2026/03/31")
+        analysis = data["🏢 客戶分析"]
+        assert analysis[0] == ["客戶", "已回覆", "處理中", "合計"]
+        assert len(analysis) == 3  # 1 header + 2 companies
+
+    def test_build_monthly_report_no_data(self, db):
+        engine = ReportEngine(db.connection)
+        data = engine.build_monthly_report("2026/01/01", "2026/01/31")
+        summary = data["📊 月報摘要"]
+        total_row = summary[2]
+        assert total_row[1] == 0
