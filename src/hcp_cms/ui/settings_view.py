@@ -479,8 +479,10 @@ class SettingsView(QWidget):
         )
         self._notice_lbl.setStyleSheet(f"color: {p.warning}; font-size: 12px;")
         proto_style = (
-            f"QPushButton[objectName='protoBtn']:checked {{ background:{p.accent_button_hover}; color:white; font-weight:bold; }}"
-            f"QPushButton[objectName='protoBtn'] {{ padding:4px 18px; border-radius:4px; }}"
+            f"QPushButton[objectName='protoBtn']:checked"
+            f" {{ background:{p.accent_button_hover}; color:white; font-weight:bold; }}"
+            f"QPushButton[objectName='protoBtn']"
+            f" {{ padding:4px 18px; border-radius:4px; }}"
         )
         self._btn_imap.setStyleSheet(proto_style)
         self._btn_exchange.setStyleSheet(proto_style)

@@ -57,7 +57,8 @@ class EmailView(QWidget):
             f"font-size:13px;background:{p.bg_secondary};color:{p.text_secondary};line-height:1.6;}}"
             f"pre{{white-space:pre-wrap;word-break:break-word;}}"
             f"a{{color:{p.accent};}}"
-            f"blockquote{{border-left:3px solid {p.border_primary};margin:0;padding-left:12px;color:{p.text_tertiary};}}"
+            f"blockquote{{border-left:3px solid {p.border_primary};"
+            f"margin:0;padding-left:12px;color:{p.text_tertiary};}}"
             f"img{{max-width:100%;}}"
         )
 

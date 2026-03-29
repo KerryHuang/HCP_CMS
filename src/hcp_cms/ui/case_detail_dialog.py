@@ -302,7 +302,8 @@ class CaseDetailDialog(QDialog):
         # ── 下方詳情面板（常駐） ──
         detail_frame = QFrame()
         detail_frame.setStyleSheet(
-            f"QFrame {{ background-color: {self._palette.bg_secondary}; border: 1px solid {self._palette.border_primary}; border-radius: 6px; }}"
+            f"QFrame {{ background-color: {self._palette.bg_secondary};"
+            f" border: 1px solid {self._palette.border_primary}; border-radius: 6px; }}"
         )
         detail_layout = QVBoxLayout(detail_frame)
         detail_layout.setContentsMargins(12, 10, 12, 10)
@@ -352,7 +353,8 @@ class CaseDetailDialog(QDialog):
         self._detail_desc.setReadOnly(True)
         self._detail_desc.setMaximumHeight(90)
         self._detail_desc.setStyleSheet(
-            f"QTextEdit {{ background: {self._palette.bg_code}; color: {self._palette.text_tertiary}; border: none; font-size: 11px; }}"
+            f"QTextEdit {{ background: {self._palette.bg_code};"
+            f" color: {self._palette.text_tertiary}; border: none; font-size: 11px; }}"
         )
         self._detail_desc.setVisible(False)
         detail_layout.addWidget(self._detail_desc)
@@ -367,7 +369,8 @@ class CaseDetailDialog(QDialog):
         self._detail_notes.setReadOnly(True)
         self._detail_notes.setMaximumHeight(110)
         self._detail_notes.setStyleSheet(
-            f"QTextEdit {{ background: {self._palette.bg_code}; color: {self._palette.text_tertiary}; border: none; font-size: 11px; }}"
+            f"QTextEdit {{ background: {self._palette.bg_code};"
+            f" color: {self._palette.text_tertiary}; border: none; font-size: 11px; }}"
         )
         self._detail_notes.setVisible(False)
         detail_layout.addWidget(self._detail_notes)

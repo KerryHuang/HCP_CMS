@@ -253,8 +253,8 @@ class MainWindow(QMainWindow):
             #navList::item:hover {{ background-color: {p.bg_secondary}; }}
             QStackedWidget {{ background-color: {p.bg_primary}; }}
             QLabel {{ color: {p.text_secondary}; }}
-            QLineEdit {{ background-color: {p.bg_secondary}; color: {p.text_secondary}; border: 1px solid {p.border_primary};
-                        border-radius: 4px; padding: 6px; }}
+            QLineEdit {{ background-color: {p.bg_secondary}; color: {p.text_secondary};
+                        border: 1px solid {p.border_primary}; border-radius: 4px; padding: 6px; }}
             QPushButton {{ background-color: {p.accent_button}; color: white; border: none;
                           border-radius: 4px; padding: 8px 16px; font-weight: bold; }}
             QPushButton:hover {{ background-color: {p.accent_button_hover}; }}
@@ -264,10 +264,12 @@ class MainWindow(QMainWindow):
             QHeaderView::section {{ background-color: {p.accent_button}; color: white;
                                    padding: 6px; border: 1px solid {p.border_primary}; }}
             QStatusBar {{ background-color: {p.bg_sidebar}; color: {p.text_muted}; }}
-            QComboBox {{ background-color: {p.bg_secondary}; color: {p.text_secondary}; border: 1px solid {p.border_primary};
-                       border-radius: 4px; padding: 4px; }}
-            QSpinBox {{ background-color: {p.bg_secondary}; color: {p.text_secondary}; border: 1px solid {p.border_primary}; }}
-            QTextEdit {{ background-color: {p.bg_secondary}; color: {p.text_secondary}; border: 1px solid {p.border_primary}; }}
+            QComboBox {{ background-color: {p.bg_secondary}; color: {p.text_secondary};
+                       border: 1px solid {p.border_primary}; border-radius: 4px; padding: 4px; }}
+            QSpinBox {{ background-color: {p.bg_secondary}; color: {p.text_secondary};
+                       border: 1px solid {p.border_primary}; }}
+            QTextEdit {{ background-color: {p.bg_secondary}; color: {p.text_secondary};
+                        border: 1px solid {p.border_primary}; }}
             QGroupBox {{ color: {p.text_tertiary}; border: 1px solid {p.border_primary}; border-radius: 6px;
                        margin-top: 8px; padding-top: 16px; }}
             QGroupBox::title {{ subcontrol-origin: margin; left: 12px; padding: 0 4px; }}
