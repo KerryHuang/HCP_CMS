@@ -11,6 +11,7 @@ from PySide6.QtCore import QDate, Qt, Signal
 from PySide6.QtWidgets import (
     QApplication,
     QDateEdit,
+    QFileDialog,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -22,6 +23,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from hcp_cms.core.excel_exporter import ExcelExporter
 from hcp_cms.core.sent_mail_manager import EnrichedSentMail, SentMailManager
 from hcp_cms.services.mail.base import MailProvider
 
@@ -36,6 +38,7 @@ class SentMailTab(QWidget):
         super().__init__()
         self._conn = conn
         self._provider: MailProvider | None = None
+        self._current_mails: list[EnrichedSentMail] = []
         self._setup_ui()
 
     def set_provider(self, provider: MailProvider | None) -> None:
@@ -88,6 +91,11 @@ class SentMailTab(QWidget):
         self._refresh_btn.clicked.connect(self._on_refresh)
         filter_layout.addWidget(self._refresh_btn)
 
+        self._export_btn = QPushButton("📥 匯出 Excel")
+        self._export_btn.setEnabled(False)
+        self._export_btn.clicked.connect(self._on_export)
+        filter_layout.addWidget(self._export_btn)
+
         filter_layout.addStretch()
         layout.addLayout(filter_layout)
 
@@ -100,12 +108,8 @@ class SentMailTab(QWidget):
         self._summary_table.setHorizontalHeaderLabels(["公司名稱", "次數"])
         self._summary_table.setFixedHeight(120)
         self._summary_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self._summary_table.horizontalHeader().setSectionResizeMode(
-            0, QHeaderView.ResizeMode.Stretch
-        )
-        self._summary_table.horizontalHeader().setSectionResizeMode(
-            1, QHeaderView.ResizeMode.Fixed
-        )
+        self._summary_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self._summary_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
         self._summary_table.horizontalHeader().resizeSection(1, 60)
         layout.addWidget(self._summary_table)
 
@@ -115,9 +119,7 @@ class SentMailTab(QWidget):
         layout.addWidget(list_label)
 
         self._list_table = QTableWidget(0, 6)
-        self._list_table.setHorizontalHeaderLabels(
-            ["日期", "收件人", "主旨", "公司", "案件", "次數"]
-        )
+        self._list_table.setHorizontalHeaderLabels(["日期", "收件人", "主旨", "公司", "案件", "次數"])
         self._list_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         header = self._list_table.horizontalHeader()
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
@@ -186,9 +188,7 @@ class SentMailTab(QWidget):
         if since.date() == until.date():
             self._log.append(f"正在取得 {since.strftime('%Y/%m/%d')} 的寄件備份...")
         else:
-            self._log.append(
-                f"正在取得 {since.strftime('%Y/%m/%d')} ~ {until.strftime('%Y/%m/%d')} 的寄件備份..."
-            )
+            self._log.append(f"正在取得 {since.strftime('%Y/%m/%d')} ~ {until.strftime('%Y/%m/%d')} 的寄件備份...")
 
         conn = self._conn
         provider = self._provider
@@ -207,6 +207,8 @@ class SentMailTab(QWidget):
     def _on_worker_done(self, results: object) -> None:
         mails = cast(list[EnrichedSentMail], results)
         self._refresh_btn.setEnabled(True)
+        self._current_mails = mails
+        self._export_btn.setEnabled(len(mails) > 0)
         self._log.append(f"✅ 取得 {len(mails)} 封寄件備份。")
         self._populate_tables(mails)
 
@@ -242,6 +244,23 @@ class SentMailTab(QWidget):
             self._list_table.setItem(row, 4, case_item)
             count_text = str(m.company_reply_count) if m.company_id else "—"
             self._list_table.setItem(row, 5, QTableWidgetItem(count_text))
+
+    def _on_export(self) -> None:
+        d = self._date_edit.date()
+        default_name = f"寄件備份_{d.toString('yyyy-MM-dd')}.xlsx"
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "匯出 Excel",
+            default_name,
+            "Excel 檔案 (*.xlsx)",
+        )
+        if not path:
+            return
+        try:
+            ExcelExporter().export_sent_mail(self._current_mails, path)
+            self._log.append(f"✅ 已匯出至 {path}")
+        except Exception as e:
+            self._log.append(f"❌ 匯出失敗：{e}")
 
     def _on_cell_double_clicked(self, row: int, col: int) -> None:
         if col == 4:
