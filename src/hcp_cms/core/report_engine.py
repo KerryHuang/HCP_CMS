@@ -250,6 +250,167 @@ class ReportEngine:
         wb.save(str(output_path))
         return output_path
 
+    def build_tracking_table(self, start_date: str, end_date: str) -> dict[str, list[list]]:
+        """組裝問題追蹤總表的所有工作表資料，回傳純資料結構（無 Excel 依賴）。
+
+        Args:
+            start_date: 起始日期，格式 YYYY/MM/DD
+            end_date:   結束日期，格式 YYYY/MM/DD（含當天）
+
+        Returns:
+            dict，key 為工作表名稱，value 為 list of rows（第 0 列為表頭）。
+        """
+        cases = self._case_repo.list_by_date_range(start_date, end_date)
+        qas = self._qa_repo.list_all()
+        companies = self._company_repo.list_all()
+        mantis_tickets = self._mantis_repo.list_all()
+
+        # 建立公司 id → Company 快取
+        company_map = {c.company_id: c for c in companies}
+
+        # 預先計算各公司頁籤名稱
+        company_cases: dict[str, list] = {}
+        for case in cases:
+            cid = case.company_id or "unknown"
+            company_cases.setdefault(cid, []).append(case)
+
+        # 工作表名稱不可含 \ / * ? : [ ]，一律替換為 -
+        _INVALID_SHEET_CHARS = re.compile(r'[\\/*?:\[\]]')
+
+        def _safe_sheet_name(raw: str, suffix: str = "_問題") -> str:
+            sanitized = _INVALID_SHEET_CHARS.sub("-", raw)
+            return (sanitized[:28] + suffix)[:31]
+
+        company_sheet_names: dict[str, str] = {}
+        for comp in companies:
+            if company_cases.get(comp.company_id):
+                raw = f"{comp.domain}({comp.name})" if comp.domain else comp.name
+                company_sheet_names[comp.company_id] = _safe_sheet_name(raw)
+
+        result: dict[str, list[list]] = {}
+
+        # ── Sheet 1: 客戶索引 ──────────────────────────────────────────
+        index_rows: list[list] = [["#", "公司名稱", "Email 域名", "聯絡方式", "案件數", "快速連結"]]
+        for i, comp in enumerate(companies, 1):
+            count = sum(1 for c in cases if c.company_id == comp.company_id)
+            if comp.company_id in company_sheet_names:
+                link_text = f"→ {comp.name}問題記錄"
+            else:
+                link_text = ""
+            index_rows.append(_clean_row([i, comp.name, comp.domain, comp.contact_info or "", count, link_text]))
+        result["📋 客戶索引"] = index_rows
+
+        # ── Sheet 2: 問題追蹤總表 ──────────────────────────────────────
+        custom_cols = self._custom_col_mgr.list_columns()
+        main_headers = [
+            "案件編號", "聯絡方式", "問題狀態", "優先等級",
+            "寄件時間", "首次回覆時效(hr)", "客戶", "客戶公司", "客戶聯絡電話",
+            "主旨", "系統／產品", "問題類型", "錯誤類型",
+            "受影響員工人數", "影響期間", "處理進度", "負責人",
+            "預計回覆時間", "實際回覆時間", "結案時間",
+            "是否需升級", "是否有附圖", "QA文件名稱", "備註",
+        ] + [col.col_label for col in custom_cols]
+
+        tracking_rows: list[list] = [main_headers]
+        for case in cases:
+            comp = company_map.get(case.company_id or "")
+            company_name = comp.name if comp else (case.company_id or "")
+            company_phone = comp.contact_info if comp else ""
+            closed_at = case.updated_at if case.status in ("已完成", "Closed") else ""
+            tracking_rows.append(_clean_row([
+                case.case_id, case.contact_method, case.status, case.priority,
+                case.sent_time, _reply_hours(case.sent_time, case.actual_reply),
+                case.contact_person, company_name, company_phone or "",
+                case.subject, case.system_product, case.issue_type, case.error_type,
+                "", case.impact_period, case.progress, case.handler,
+                "", case.actual_reply, closed_at,
+                "", "", "", case.notes or "",
+            ] + [_clean(case.extra_fields.get(col.col_key, "")) for col in custom_cols]))
+        result["問題追蹤總表"] = tracking_rows
+
+        # ── Sheet 3: QA知識庫 ──────────────────────────────────────────
+        qa_headers = [
+            "QA編號", "系統／產品", "問題類型", "錯誤類型",
+            "Q｜客戶問題描述", "A｜標準回覆內容",
+            "附圖說明", "Word文件名稱", "建立日期", "建立人", "備註",
+        ]
+        qa_rows: list[list] = [qa_headers]
+        for qa in qas:
+            qa_rows.append(_clean_row([
+                qa.qa_id, qa.system_product, qa.issue_type, qa.error_type,
+                qa.question, qa.answer,
+                qa.has_image, qa.doc_name or "", qa.created_at or "",
+                qa.created_by or "", qa.notes or "",
+            ]))
+        result["QA知識庫"] = qa_rows
+
+        # ── 個別公司頁籤 ───────────────────────────────────────────────
+        comp_case_headers = [
+            "案件編號", "聯絡方式", "問題狀態", "優先等級",
+            "寄件時間", "主旨", "系統／產品", "問題類型", "錯誤類型",
+            "影響期間", "處理進度", "實際回覆時間", "結案時間", "備註",
+        ] + [col.col_label for col in custom_cols]
+
+        for comp in companies:
+            comp_cases = company_cases.get(comp.company_id, [])
+            if not comp_cases:
+                continue
+            sheet_name = company_sheet_names[comp.company_id]
+            # Row 0：返回客戶索引（純文字）
+            # Row 1：表頭
+            # Row 2+：資料
+            comp_rows: list[list] = [
+                ["↩ 返回客戶索引"],
+                comp_case_headers,
+            ]
+            for case in comp_cases:
+                closed_at = case.updated_at if case.status in ("已完成", "Closed") else ""
+                comp_rows.append(_clean_row([
+                    case.case_id, case.contact_method, case.status, case.priority,
+                    case.sent_time, case.subject, case.system_product,
+                    case.issue_type, case.error_type,
+                    case.impact_period, case.progress, case.actual_reply,
+                    closed_at, case.notes or "",
+                ] + [_clean(case.extra_fields.get(col.col_key, "")) for col in custom_cols]))
+            result[sheet_name] = comp_rows
+
+        # ── Mantis提單追蹤 ─────────────────────────────────────────────
+        mantis_headers = [
+            "Mantis票號", "建立時間", "客戶", "問題摘要", "關聯CS案件",
+            "優先等級", "狀態", "類型", "相關程式/模組",
+            "內部確認進度", "負責人", "預計修復日期", "實際修復日期", "備註",
+        ]
+        mantis_rows: list[list] = [mantis_headers]
+        for ticket in mantis_tickets:
+            comp = company_map.get(ticket.company_id or "")
+            company_name = comp.name if comp else (ticket.company_id or "")
+            linked = ", ".join(self._case_mantis_repo.get_cases_for_ticket(ticket.ticket_id))
+            mantis_rows.append(_clean_row([
+                ticket.ticket_id, ticket.created_time or "", company_name,
+                ticket.summary, linked,
+                ticket.priority or "", ticket.status or "", ticket.issue_type or "",
+                ticket.module or "", ticket.progress or "", ticket.handler or "",
+                ticket.planned_fix or "", ticket.actual_fix or "", ticket.notes or "",
+            ]))
+        result["Mantis提單追蹤"] = mantis_rows
+
+        # ── 客制需求 ───────────────────────────────────────────────────
+        custom_cases = [c for c in cases if c.issue_type and "客制" in c.issue_type]
+        if custom_cases:
+            custom_rows: list[list] = [comp_case_headers]
+            for case in custom_cases:
+                closed_at = case.updated_at if case.status in ("已完成", "Closed") else ""
+                custom_rows.append(_clean_row([
+                    case.case_id, case.contact_method, case.status, case.priority,
+                    case.sent_time, case.subject, case.system_product,
+                    case.issue_type, case.error_type,
+                    case.impact_period, case.progress, case.actual_reply,
+                    closed_at, case.notes or "",
+                ] + [_clean(case.extra_fields.get(col.col_key, "")) for col in custom_cols]))
+            result["客制需求"] = custom_rows
+
+        return result
+
     def generate_monthly_report(self, start_date: str, end_date: str, output_path: Path) -> Path:
         """Generate monthly report Excel with KPI summary.
 

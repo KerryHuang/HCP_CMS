@@ -156,3 +156,38 @@ class TestReportEngine:
         header_cell = ws_ase.cell(row=2, column=1)
         assert header_cell.value == "案件編號"
         wb.close()
+
+    # ── build_tracking_table 測試 ──────────────────────────────────────────
+
+    def test_build_tracking_table_returns_dict(self, seeded_db):
+        engine = ReportEngine(seeded_db.connection)
+        data = engine.build_tracking_table("2026/03/01", "2026/03/31")
+        assert isinstance(data, dict)
+        assert "📋 客戶索引" in data
+        assert "問題追蹤總表" in data
+        assert "QA知識庫" in data
+        assert "Mantis提單追蹤" in data
+
+    def test_build_tracking_table_sheet_structure(self, seeded_db):
+        engine = ReportEngine(seeded_db.connection)
+        data = engine.build_tracking_table("2026/03/01", "2026/03/31")
+        index_sheet = data["📋 客戶索引"]
+        assert index_sheet[0] == ["#", "公司名稱", "Email 域名", "聯絡方式", "案件數", "快速連結"]
+        tracking_sheet = data["問題追蹤總表"]
+        assert len(tracking_sheet) == 4  # 1 header + 3 data rows
+
+    def test_build_tracking_table_custom_sheet(self, seeded_db):
+        engine = ReportEngine(seeded_db.connection)
+        data = engine.build_tracking_table("2026/03/01", "2026/03/31")
+        assert "客制需求" in data
+        assert len(data["客制需求"]) == 2  # 1 header + 1 custom case
+
+    def test_build_tracking_table_company_sheets(self, seeded_db):
+        engine = ReportEngine(seeded_db.connection)
+        data = engine.build_tracking_table("2026/03/01", "2026/03/31")
+        ase_key = [k for k in data if "日月光" in k]
+        assert len(ase_key) == 1
+        ase_rows = data[ase_key[0]]
+        assert ase_rows[0][0] == "↩ 返回客戶索引"
+        assert ase_rows[1][0] == "案件編號"
+        assert len(ase_rows) == 4  # link + header + 2 cases
