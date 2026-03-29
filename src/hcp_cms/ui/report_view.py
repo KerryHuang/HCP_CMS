@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import sqlite3
 from pathlib import Path
 
@@ -25,6 +24,7 @@ from PySide6.QtWidgets import (
 from hcp_cms.core.report_engine import ReportEngine
 from hcp_cms.core.report_writer import ReportWriter
 from hcp_cms.ui.theme import ColorPalette, ThemeManager
+from hcp_cms.ui.utils import open_file
 
 
 class ReportView(QWidget):
@@ -216,7 +216,7 @@ class ReportView(QWidget):
                 QMessageBox.StandardButton.Yes,
             )
             if reply == QMessageBox.StandardButton.Yes:
-                os.startfile(path)  # type: ignore[attr-defined]
+                open_file(path)
 
         except Exception as e:
             self._status.setText(f"❌ 下載失敗：{e}")
