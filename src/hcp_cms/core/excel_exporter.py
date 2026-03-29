@@ -59,6 +59,6 @@ class ExcelExporter:
             ws.cell(row, 1, m.date[:10] if m.date else "")
             ws.cell(row, 2, ", ".join(m.recipients))
             ws.cell(row, 3, m.subject)
-            ws.cell(row, 4, m.company_name or "未知")
+            ws.cell(row, 4, m.company_name or "—")
             ws.cell(row, 5, m.linked_case_id or "—")
-            ws.cell(row, 6, str(m.company_reply_count) if m.company_id else "—")
+            ws.cell(row, 6, m.company_reply_count if m.company_id else "—")

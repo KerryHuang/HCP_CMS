@@ -106,6 +106,14 @@ class TestExcelExporter:
         ws = wb["寄件清單"]
         assert ws.cell(2, 5).value == "—"
 
+    def test_list_empty_company_name_filled_dash(self, tmp_path):
+        mail = _make_mail(company_id=None, company_name=None, company_reply_count=0)
+        path = str(tmp_path / "output.xlsx")
+        ExcelExporter().export_sent_mail([mail], path)
+        wb = openpyxl.load_workbook(path)
+        ws = wb["寄件清單"]
+        assert ws.cell(2, 4).value == "—"
+
     def test_list_empty_company_id_no_count(self, tmp_path):
         mail = _make_mail(company_id=None, company_name=None, company_reply_count=0)
         path = str(tmp_path / "output.xlsx")
