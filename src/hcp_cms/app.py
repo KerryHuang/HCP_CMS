@@ -40,8 +40,13 @@ def main() -> int:
     db = DatabaseManager(db_path)
     db.initialize()
 
+    # Initialize theme
+    from hcp_cms.ui.theme import ThemeManager
+
+    theme_mgr = ThemeManager(db_path.parent)
+
     # Create and show main window
-    window = MainWindow(db.connection, db_dir=db_path.parent)
+    window = MainWindow(db.connection, db_dir=db_path.parent, theme_mgr=theme_mgr)
     window.show()
 
     # Run application

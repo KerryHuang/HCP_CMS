@@ -6,7 +6,7 @@ import sqlite3
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QSize, Qt
+from PySide6.QtCore import QEvent, QSize, Qt
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (
     QHBoxLayout,
@@ -29,6 +29,7 @@ from hcp_cms.ui.mantis_view import MantisView
 from hcp_cms.ui.report_view import ReportView
 from hcp_cms.ui.rules_view import RulesView
 from hcp_cms.ui.settings_view import SettingsView
+from hcp_cms.ui.theme import ColorPalette, ThemeManager
 
 
 class MainWindow(QMainWindow):
@@ -38,16 +39,25 @@ class MainWindow(QMainWindow):
         self,
         db_connection: sqlite3.Connection | None = None,
         db_dir: Path | None = None,
+        theme_mgr: ThemeManager | None = None,
     ) -> None:
         super().__init__()
         self._conn = db_connection
         self._db_dir = db_dir
+        self._theme_mgr = theme_mgr
+        self._current_palette: ColorPalette | None = None
         self.setWindowTitle("HCP CMS v2.0")
         self.setMinimumSize(1200, 800)
 
         self._setup_ui()
         self._setup_shortcuts()
-        self._apply_dark_theme()
+
+        # 主題初始化：有 ThemeManager 時使用 palette，否則走舊版硬編碼
+        if self._theme_mgr:
+            self._apply_theme(self._theme_mgr.current_palette())
+            self._theme_mgr.theme_changed.connect(self._apply_theme)
+        else:
+            self._apply_dark_theme()
 
     def _setup_ui(self) -> None:
         """Set up the main layout: sidebar + content area."""
@@ -158,12 +168,17 @@ class MainWindow(QMainWindow):
         if 0 <= index < self._stack.count():
             self._stack.setCurrentIndex(index)
         # Update nav label colours to reflect selection
+        p = getattr(self, "_current_palette", None)
+        selected_color = p.accent if p else "#60a5fa"
+        unselected_color = p.text_tertiary if p else "#94a3b8"
         for i in range(self._nav_list.count()):
             widget = self._nav_list.itemWidget(self._nav_list.item(i))
             if widget:
                 label = widget.findChild(QLabel, "navItemLabel")
                 if label:
-                    label.setStyleSheet("color: #60a5fa;" if i == index else "color: #94a3b8;")
+                    label.setStyleSheet(
+                        f"color: {selected_color};" if i == index else f"color: {unselected_color};"
+                    )
         # 切到信件處理頁時自動連線
         if index == 3:  # 信件處理 = index 3
             self._views["email"].try_auto_connect()
@@ -260,3 +275,51 @@ class MainWindow(QMainWindow):
             #navItemLabel { color: #94a3b8; font-size: 13px; background: transparent; }
             #navShortcutHint { color: #475569; font-size: 10px; background: transparent; }
         """)
+
+    def _apply_theme(self, p: ColorPalette) -> None:
+        """Apply theme stylesheet using the given palette."""
+        self.setStyleSheet(f"""
+            QMainWindow {{ background-color: {p.bg_primary}; }}
+            #sidebar {{ background-color: {p.bg_sidebar}; border-right: 1px solid {p.border_secondary}; }}
+            #logo {{ color: {p.accent}; font-size: 16px; font-weight: bold;
+                    background-color: {p.bg_sidebar}; border-bottom: 1px solid {p.border_secondary}; }}
+            #navList {{ background-color: {p.bg_sidebar}; border: none; color: {p.text_tertiary};
+                       font-size: 13px; outline: none; }}
+            #navList::item {{ padding: 10px 16px; border-radius: 6px; margin: 2px 8px; }}
+            #navList::item:selected {{ background-color: {p.accent_button}; color: {p.accent}; }}
+            #navList::item:hover {{ background-color: {p.bg_secondary}; }}
+            QStackedWidget {{ background-color: {p.bg_primary}; }}
+            QLabel {{ color: {p.text_secondary}; }}
+            QLineEdit {{ background-color: {p.bg_secondary}; color: {p.text_secondary}; border: 1px solid {p.border_primary};
+                        border-radius: 4px; padding: 6px; }}
+            QPushButton {{ background-color: {p.accent_button}; color: white; border: none;
+                          border-radius: 4px; padding: 8px 16px; font-weight: bold; }}
+            QPushButton:hover {{ background-color: {p.accent_button_hover}; }}
+            QTableWidget {{ background-color: {p.bg_secondary}; color: {p.text_secondary};
+                          gridline-color: {p.border_primary}; border: none; }}
+            QTableWidget::item {{ padding: 4px; }}
+            QHeaderView::section {{ background-color: {p.accent_button}; color: white;
+                                   padding: 6px; border: 1px solid {p.border_primary}; }}
+            QStatusBar {{ background-color: {p.bg_sidebar}; color: {p.text_muted}; }}
+            QComboBox {{ background-color: {p.bg_secondary}; color: {p.text_secondary}; border: 1px solid {p.border_primary};
+                       border-radius: 4px; padding: 4px; }}
+            QSpinBox {{ background-color: {p.bg_secondary}; color: {p.text_secondary}; border: 1px solid {p.border_primary}; }}
+            QTextEdit {{ background-color: {p.bg_secondary}; color: {p.text_secondary}; border: 1px solid {p.border_primary}; }}
+            QGroupBox {{ color: {p.text_tertiary}; border: 1px solid {p.border_primary}; border-radius: 6px;
+                       margin-top: 8px; padding-top: 16px; }}
+            QGroupBox::title {{ subcontrol-origin: margin; left: 12px; padding: 0 4px; }}
+            #navItemLabel {{ color: {p.text_tertiary}; font-size: 13px; background: transparent; }}
+            #navShortcutHint {{ color: {p.text_faint}; font-size: 10px; background: transparent; }}
+        """)
+        self._on_nav_changed(self._nav_list.currentRow())
+        self._current_palette = p
+
+    def changeEvent(self, event: QEvent) -> None:
+        """偵測視窗啟用事件，重新檢查系統主題。"""
+        if (
+            event.type() == QEvent.Type.ActivationChange
+            and self.isActiveWindow()
+            and self._theme_mgr
+        ):
+            self._theme_mgr.refresh_system_theme()
+        super().changeEvent(event)
