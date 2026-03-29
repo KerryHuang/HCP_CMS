@@ -45,10 +45,10 @@ from hcp_cms.ui.theme import ColorPalette, ThemeManager
 class EmailView(QWidget):
     """Email processing page."""
 
-    navigate_to_cases = Signal()   # 匯入完成後請求跳轉至案件管理
+    navigate_to_cases = Signal()  # 匯入完成後請求跳轉至案件管理
     _worker_done = Signal(object)  # 背景工作完成（跨線程安全）
-    _worker_error = Signal(str)    # 背景工作失敗
-    _mail_arrived = Signal(object) # 逐封信件串流顯示
+    _worker_error = Signal(str)  # 背景工作失敗
+    _mail_arrived = Signal(object)  # 逐封信件串流顯示
 
     def _build_base_style(self, p: ColorPalette) -> str:
         """根據當前主題生成 HTML 預覽 CSS。"""
@@ -61,7 +61,12 @@ class EmailView(QWidget):
             f"img{{max-width:100%;}}"
         )
 
-    def __init__(self, conn: sqlite3.Connection | None = None, kms: KMSEngine | None = None, theme_mgr: ThemeManager | None = None) -> None:
+    def __init__(
+        self,
+        conn: sqlite3.Connection | None = None,
+        kms: KMSEngine | None = None,
+        theme_mgr: ThemeManager | None = None,
+    ) -> None:
         super().__init__()
         self._conn = conn
         self._kms = kms
@@ -69,7 +74,7 @@ class EmailView(QWidget):
         self._creds = CredentialManager()
         self._provider: MailProvider | None = None
         self._pending_files: list[Path] = []
-        self._emails: list[RawEmail | None] = []   # 與 _pending_files 平行
+        self._emails: list[RawEmail | None] = []  # 與 _pending_files 平行
         self._auto_connected = False
         self._auto_fetch_after_connect = False
         self._setup_ui()
@@ -307,6 +312,7 @@ class EmailView(QWidget):
     def _update_conn_toggle(self) -> None:
         """更新折疊按鈕文字與樣式。"""
         from hcp_cms.ui.theme import DARK_PALETTE
+
         p = getattr(self, "_current_palette", None) or DARK_PALETTE
         arrow = "▲" if self._conn_content.isVisible() else "▼"
         if self._connected_proto:
@@ -554,9 +560,7 @@ class EmailView(QWidget):
                 item.setCheckState(state)
 
     def _on_import_msg(self) -> None:
-        files, _ = QFileDialog.getOpenFileNames(
-            self, "選擇 .msg 檔案", "", "Outlook Messages (*.msg)"
-        )
+        files, _ = QFileDialog.getOpenFileNames(self, "選擇 .msg 檔案", "", "Outlook Messages (*.msg)")
         if not files:
             return
 
@@ -612,25 +616,25 @@ class EmailView(QWidget):
 
     def _placeholder_html(self) -> str:
         from hcp_cms.ui.theme import DARK_PALETTE
+
         p = getattr(self, "_current_palette", None) or DARK_PALETTE
         style = self._build_base_style(p)
         return (
             f"<html><head><style>{style}</style></head>"
-            "<body><p style='color:#64748b'>點選信件以預覽內容…</p></body></html>"
+            f"<body><p style='color:{p.text_muted}'>點選信件以預覽內容…</p></body></html>"
         )
 
     def _wrap_plain(self, text: str) -> str:
         from hcp_cms.ui.theme import DARK_PALETTE
+
         p = getattr(self, "_current_palette", None) or DARK_PALETTE
         style = self._build_base_style(p)
-        return (
-            f"<html><head><style>{style}</style></head>"
-            f"<body><pre>{escape(text)}</pre></body></html>"
-        )
+        return f"<html><head><style>{style}</style></head><body><pre>{escape(text)}</pre></body></html>"
 
     def _inject_style(self, html: str) -> str:
         """在信件 HTML 中注入背景 CSS。"""
         from hcp_cms.ui.theme import DARK_PALETTE
+
         p = getattr(self, "_current_palette", None) or DARK_PALETTE
         style = self._build_base_style(p)
         tag = f"<style>{style}</style>"
@@ -659,9 +663,9 @@ class EmailView(QWidget):
 
     def _on_import_selected(self) -> None:
         rows = [
-            r for r in range(self._table.rowCount())
-            if self._table.item(r, 0) is not None
-            and self._table.item(r, 0).checkState() == Qt.CheckState.Checked
+            r
+            for r in range(self._table.rowCount())
+            if self._table.item(r, 0) is not None and self._table.item(r, 0).checkState() == Qt.CheckState.Checked
         ]
         self._do_import_rows(rows)
 

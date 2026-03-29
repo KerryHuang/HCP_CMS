@@ -52,12 +52,10 @@ class MainWindow(QMainWindow):
         self._setup_ui()
         self._setup_shortcuts()
 
-        # 主題初始化：有 ThemeManager 時使用 palette，否則走舊版硬編碼
+        # 套用主題
         if self._theme_mgr:
             self._apply_theme(self._theme_mgr.current_palette())
             self._theme_mgr.theme_changed.connect(self._apply_theme)
-        else:
-            self._apply_dark_theme()
 
     def _setup_ui(self) -> None:
         """Set up the main layout: sidebar + content area."""
@@ -115,7 +113,9 @@ class MainWindow(QMainWindow):
 
         self._views: dict[str, QWidget] = {
             "dashboard": DashboardView(self._conn, theme_mgr=self._theme_mgr),
-            "cases": CaseView(self._conn, db_path=self._db_dir / "cs_tracker.db" if self._db_dir else None, theme_mgr=self._theme_mgr),
+            "cases": CaseView(
+                self._conn, db_path=self._db_dir / "cs_tracker.db" if self._db_dir else None, theme_mgr=self._theme_mgr
+            ),
             "kms": KMSView(self._conn, kms=kms, db_dir=self._db_dir, theme_mgr=self._theme_mgr),
             "email": EmailView(self._conn, kms=kms, theme_mgr=self._theme_mgr),
             "mantis": MantisView(self._conn, theme_mgr=self._theme_mgr),
@@ -176,9 +176,7 @@ class MainWindow(QMainWindow):
             if widget:
                 label = widget.findChild(QLabel, "navItemLabel")
                 if label:
-                    label.setStyleSheet(
-                        f"color: {selected_color};" if i == index else f"color: {unselected_color};"
-                    )
+                    label.setStyleSheet(f"color: {selected_color};" if i == index else f"color: {unselected_color};")
         # 切到信件處理頁時自動連線
         if index == 3:  # 信件處理 = index 3
             self._views["email"].try_auto_connect()
@@ -241,42 +239,6 @@ class MainWindow(QMainWindow):
             return manual_path.read_text(encoding="utf-8")
         return ""
 
-    def _apply_dark_theme(self) -> None:
-        """Apply dark theme stylesheet."""
-        self.setStyleSheet("""
-            QMainWindow { background-color: #111827; }
-            #sidebar { background-color: #0f172a; border-right: 1px solid #1e293b; }
-            #logo { color: #60a5fa; font-size: 16px; font-weight: bold;
-                    background-color: #0f172a; border-bottom: 1px solid #1e293b; }
-            #navList { background-color: #0f172a; border: none; color: #94a3b8;
-                       font-size: 13px; outline: none; }
-            #navList::item { padding: 10px 16px; border-radius: 6px; margin: 2px 8px; }
-            #navList::item:selected { background-color: #1e3a5f; color: #60a5fa; }
-            #navList::item:hover { background-color: #1e293b; }
-            QStackedWidget { background-color: #111827; }
-            QLabel { color: #e2e8f0; }
-            QLineEdit { background-color: #1e293b; color: #e2e8f0; border: 1px solid #334155;
-                        border-radius: 4px; padding: 6px; }
-            QPushButton { background-color: #1e40af; color: white; border: none;
-                          border-radius: 4px; padding: 8px 16px; font-weight: bold; }
-            QPushButton:hover { background-color: #2563eb; }
-            QTableWidget { background-color: #1e293b; color: #e2e8f0;
-                          gridline-color: #334155; border: none; }
-            QTableWidget::item { padding: 4px; }
-            QHeaderView::section { background-color: #1e3a5f; color: white;
-                                   padding: 6px; border: 1px solid #334155; }
-            QStatusBar { background-color: #0f172a; color: #64748b; }
-            QComboBox { background-color: #1e293b; color: #e2e8f0; border: 1px solid #334155;
-                       border-radius: 4px; padding: 4px; }
-            QSpinBox { background-color: #1e293b; color: #e2e8f0; border: 1px solid #334155; }
-            QTextEdit { background-color: #1e293b; color: #e2e8f0; border: 1px solid #334155; }
-            QGroupBox { color: #94a3b8; border: 1px solid #334155; border-radius: 6px;
-                       margin-top: 8px; padding-top: 16px; }
-            QGroupBox::title { subcontrol-origin: margin; left: 12px; padding: 0 4px; }
-            #navItemLabel { color: #94a3b8; font-size: 13px; background: transparent; }
-            #navShortcutHint { color: #475569; font-size: 10px; background: transparent; }
-        """)
-
     def _apply_theme(self, p: ColorPalette) -> None:
         """Apply theme stylesheet using the given palette."""
         self.setStyleSheet(f"""
@@ -317,10 +279,6 @@ class MainWindow(QMainWindow):
 
     def changeEvent(self, event: QEvent) -> None:
         """偵測視窗啟用事件，重新檢查系統主題。"""
-        if (
-            event.type() == QEvent.Type.ActivationChange
-            and self.isActiveWindow()
-            and self._theme_mgr
-        ):
+        if event.type() == QEvent.Type.ActivationChange and self.isActiveWindow() and self._theme_mgr:
             self._theme_mgr.refresh_system_theme()
         super().changeEvent(event)

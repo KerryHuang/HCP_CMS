@@ -38,8 +38,8 @@ from hcp_cms.core.csv_import_engine import (
     Mapping,
     _detect_encoding,
 )
-from hcp_cms.ui.theme import ColorPalette
 from hcp_cms.ui.theme import DARK_PALETTE as _DARK_PALETTE
+from hcp_cms.ui.theme import ColorPalette
 
 # 用於從 combo 顯示文字（如 "主旨 (subject)"）解析出 col_key
 _COMBO_KEY_RE = _re.compile(r'\(([^)]+)\)$')

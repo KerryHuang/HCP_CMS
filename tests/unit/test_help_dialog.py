@@ -3,7 +3,7 @@
 import pytest
 from PySide6.QtWidgets import QApplication
 
-from hcp_cms.ui.help_dialog import extract_section, PAGE_SECTIONS
+from hcp_cms.ui.help_dialog import PAGE_SECTIONS, extract_section
 
 
 @pytest.fixture(scope="session")

@@ -34,8 +34,7 @@ _RULE_TYPES: list[tuple[str, str, str, str, str, str]] = [
     (
         "🖥 系統產品",
         "product",
-        "根據關鍵字判斷此信件屬於哪個系統或產品。\n"
-        "例如信中提到「薪資」→ 填入 HCP；提到「WebLogic」→ 填入 WebLogic。",
+        "根據關鍵字判斷此信件屬於哪個系統或產品。\n例如信中提到「薪資」→ 填入 HCP；提到「WebLogic」→ 填入 WebLogic。",
         "HCP|人事系統|薪資系統",
         "HCP",
         "無符合時預設填入：HCP",
@@ -43,8 +42,7 @@ _RULE_TYPES: list[tuple[str, str, str, str, str, str]] = [
     (
         "❓ 問題類型",
         "issue",
-        "根據關鍵字判斷問題的大分類。\n"
-        "常見值：BUG（程式錯誤）、REQ（功能需求）、OTH（其他詢問）。",
+        "根據關鍵字判斷問題的大分類。\n常見值：BUG（程式錯誤）、REQ（功能需求）、OTH（其他詢問）。",
         "bug|錯誤|異常|閃退",
         "BUG",
         "無符合時預設填入：OTH",
@@ -52,8 +50,7 @@ _RULE_TYPES: list[tuple[str, str, str, str, str, str]] = [
     (
         "🔧 功能模組",
         "error",
-        "根據關鍵字判斷屬於哪個功能模組（細分類）。\n"
-        "例如「薪資、月薪」→ 薪資獎金計算；「請假、假單」→ 假勤管理。",
+        "根據關鍵字判斷屬於哪個功能模組（細分類）。\n例如「薪資、月薪」→ 薪資獎金計算；「請假、假單」→ 假勤管理。",
         "薪資|薪酬|月薪|工資",
         "薪資獎金計算",
         "無符合時預設填入：人事資料管理",
@@ -61,8 +58,7 @@ _RULE_TYPES: list[tuple[str, str, str, str, str, str]] = [
     (
         "⚡ 優先等級",
         "priority",
-        "根據關鍵字判斷案件的處理優先順序。\n"
-        "常見值：高、中、低。",
+        "根據關鍵字判斷案件的處理優先順序。\n常見值：高、中、低。",
         "緊急|urgent|ASAP|立即",
         "高",
         "無符合時預設填入：中",
@@ -70,8 +66,7 @@ _RULE_TYPES: list[tuple[str, str, str, str, str, str]] = [
     (
         "📢 廣播信過濾",
         "broadcast",
-        "符合此規則的信件會被視為廣播通知，不自動建立案件。\n"
-        "例如系統維護公告、公司公告等群發信件。",
+        "符合此規則的信件會被視為廣播通知，不自動建立案件。\n例如系統維護公告、公司公告等群發信件。",
         "維護通知|系統公告|更新公告|停機",
         "廣播",
         "符合則跳過建案",
@@ -79,8 +74,7 @@ _RULE_TYPES: list[tuple[str, str, str, str, str, str]] = [
     (
         "👤 自動指派人員",
         "handler",
-        "根據關鍵字自動填入「技術負責人」欄位。\n"
-        "例如薪資相關信件自動指派給薪資模組負責工程師。",
+        "根據關鍵字自動填入「技術負責人」欄位。\n例如薪資相關信件自動指派給薪資模組負責工程師。",
         "薪資|薪酬",
         "王小明",
         "無符合時留空",
@@ -88,8 +82,7 @@ _RULE_TYPES: list[tuple[str, str, str, str, str, str]] = [
     (
         "📋 自動填入進度",
         "progress",
-        "根據關鍵字自動填入「處理進度」欄位。\n"
-        "也可在信件主旨加上 (RD_姓名) 標記來指定負責人。",
+        "根據關鍵字自動填入「處理進度」欄位。\n也可在信件主旨加上 (RD_姓名) 標記來指定負責人。",
         "緊急|ASAP|urgent",
         "優先處理中",
         "無符合時留空",
@@ -284,12 +277,14 @@ class RulesView(QWidget):
         if not pattern or not value:
             QMessageBox.warning(self, "欄位不完整", "請填寫「關鍵字」及「符合時填入的值」。")
             return
-        RuleRepository(self._conn).insert(ClassificationRule(
-            rule_type=self._current_type_key(),
-            pattern=pattern,
-            value=value,
-            priority=self._priority_spin.value(),
-        ))
+        RuleRepository(self._conn).insert(
+            ClassificationRule(
+                rule_type=self._current_type_key(),
+                pattern=pattern,
+                value=value,
+                priority=self._priority_spin.value(),
+            )
+        )
         self.refresh()
 
     def _on_save_edit(self) -> None:
@@ -300,13 +295,15 @@ class RulesView(QWidget):
         if not pattern or not value:
             QMessageBox.warning(self, "欄位不完整", "請填寫「關鍵字」及「符合時填入的值」。")
             return
-        RuleRepository(self._conn).update(ClassificationRule(
-            rule_id=self._editing_id,
-            rule_type=self._current_type_key(),
-            pattern=pattern,
-            value=value,
-            priority=self._priority_spin.value(),
-        ))
+        RuleRepository(self._conn).update(
+            ClassificationRule(
+                rule_id=self._editing_id,
+                rule_type=self._current_type_key(),
+                pattern=pattern,
+                value=value,
+                priority=self._priority_spin.value(),
+            )
+        )
         self.refresh()
 
     def _on_delete_rule(self) -> None:
@@ -339,7 +336,8 @@ class RulesView(QWidget):
         QMessageBox.information(self, "匯出完成", f"規則已匯出至：\n{path}")
 
     def _on_format_help(self) -> None:
-        dlg = RulesFormatDialog(self)
+        palette = self._theme_mgr.current_palette() if self._theme_mgr else None
+        dlg = RulesFormatDialog(self, palette=palette)
         dlg.exec()
 
     def _apply_theme(self, p: ColorPalette) -> None:
@@ -423,8 +421,9 @@ progress,緊急|ASAP|urgent,優先處理,10
 class RulesFormatDialog(QDialog):
     """CSV 格式說明對話框。"""
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(self, parent: QWidget | None = None, palette: ColorPalette | None = None) -> None:
         super().__init__(parent)
+        self._palette = palette
         self.setWindowTitle("📋 規則 CSV 格式說明")
         self.setMinimumSize(680, 580)
         self._setup_ui()
@@ -436,13 +435,16 @@ class RulesFormatDialog(QDialog):
         self._text = QTextEdit()
         self._text.setReadOnly(True)
         self._text.setPlainText(_CSV_HELP_TEXT)
+        from hcp_cms.ui.theme import DARK_PALETTE
+
+        p = self._palette or DARK_PALETTE
         self._text.setStyleSheet(
             "QTextEdit {"
             "  font-family: 'Consolas', '微軟正黑體', monospace;"
             "  font-size: 13px;"
-            "  background-color: #0f172a;"
-            "  color: #e2e8f0;"
-            "  border: 1px solid #334155;"
+            f"  background-color: {p.bg_sidebar};"
+            f"  color: {p.text_secondary};"
+            f"  border: 1px solid {p.border_primary};"
             "  border-radius: 4px;"
             "  padding: 8px;"
             "}"

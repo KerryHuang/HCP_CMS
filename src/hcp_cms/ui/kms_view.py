@@ -92,7 +92,8 @@ class KMSImageViewDialog(QDialog):
                 if img_path.suffix.lower() in _IMAGE_EXTS:
                     lbl = QLabel()
                     pix = QPixmap(str(img_path)).scaled(
-                        100, 100,
+                        100,
+                        100,
                         Qt.AspectRatioMode.KeepAspectRatio,
                         Qt.TransformationMode.SmoothTransformation,
                     )
@@ -117,6 +118,7 @@ class KMSImageViewDialog(QDialog):
             msg_path = Path(qa.doc_name)
             if msg_path.exists():
                 from hcp_cms.services.mail.msg_reader import MSGReader
+
                 raw = MSGReader(directory=None).read_single_file(msg_path)
                 if raw and raw.html_body:
                     html_body = self._replace_cid(raw.html_body)
@@ -134,9 +136,9 @@ pre { white-space:pre-wrap !important; word-break:break-word !important; }
         if html_body:
             # 在 </head> 之前注入 CSS；若無 head 則插在最前面
             import re as _re2
+
             if _re2.search(r"</head>", html_body, _re2.IGNORECASE):
-                html_body = _re2.sub(r"(</head>)", _RESPONSIVE_CSS + r"\1",
-                                     html_body, count=1, flags=_re2.IGNORECASE)
+                html_body = _re2.sub(r"(</head>)", _RESPONSIVE_CSS + r"\1", html_body, count=1, flags=_re2.IGNORECASE)
             else:
                 html_body = _RESPONSIVE_CSS + html_body
             return html_body
@@ -163,7 +165,7 @@ pre { white-space:pre-wrap !important; word-break:break-word !important; }
 <h3>問題</h3><div class="content">{q}</div>
 <h3>回覆</h3><div class="content">{a}</div>
 {img_html}
-{'<h3>解決方案</h3><div class="content">' + s + '</div>' if s else ''}
+{'<h3>解決方案</h3><div class="content">' + s + "</div>" if s else ""}
 </body></html>"""
 
     def _replace_cid(self, html: str) -> str:
@@ -171,12 +173,14 @@ pre { white-space:pre-wrap !important; word-break:break-word !important; }
         if not self._db_dir:
             return html
         img_dir = self._db_dir / "kms_attachments" / self._qa.qa_id
+
         def replacer(m):
             cid = m.group(1).split("@")[0]
-            for f in (img_dir.iterdir() if img_dir.exists() else []):
+            for f in img_dir.iterdir() if img_dir.exists() else []:
                 if f.stem.lower() == cid.lower() or f.name.lower() == cid.lower():
                     return f'src="{f.as_uri()}"'
             return m.group(0)
+
         return re.sub(r'src=["\']cid:([^"\'>\s]+)["\']', replacer, html, flags=re.IGNORECASE)
 
     def _open_full_image(self, img_path_str: str) -> None:
@@ -186,11 +190,14 @@ pre { white-space:pre-wrap !important; word-break:break-word !important; }
         lay = QVBoxLayout(dlg)
         lbl = QLabel()
         pix = QPixmap(img_path_str)
-        lbl.setPixmap(pix.scaled(
-            780, 560,
-            Qt.AspectRatioMode.KeepAspectRatio,
-            Qt.TransformationMode.SmoothTransformation,
-        ))
+        lbl.setPixmap(
+            pix.scaled(
+                780,
+                560,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+        )
         lay.addWidget(lbl)
         dlg.exec()
 
@@ -298,15 +305,19 @@ class KMSView(QWidget):
         hlay = QHBoxLayout(header)
         hlay.setContentsMargins(0, 0, 0, 0)
         lbl = QLabel(label)
-        lbl.setStyleSheet("color: #94a3b8; font-size: 11px;")
+        p = self._theme_mgr.current_palette() if self._theme_mgr else None
+        lbl_color = p.text_tertiary if p else "#94a3b8"
+        btn_color = p.text_muted if p else "#64748b"
+        btn_hover = p.text_secondary if p else "#e2e8f0"
+        lbl.setStyleSheet(f"color: {lbl_color}; font-size: 11px;")
         hlay.addWidget(lbl)
         hlay.addStretch()
         expand_btn = QPushButton("⛶")
         expand_btn.setFixedSize(22, 22)
         expand_btn.setToolTip("展開檢視")
         expand_btn.setStyleSheet(
-            "QPushButton { background: transparent; color: #64748b; font-size: 14px; border: none; }"
-            " QPushButton:hover { color: #e2e8f0; }"
+            f"QPushButton {{ background: transparent; color: {btn_color}; font-size: 14px; border: none; }}"
+            f" QPushButton:hover {{ color: {btn_hover}; }}"
         )
         hlay.addWidget(expand_btn)
         vlay.addWidget(header)
@@ -449,16 +460,13 @@ class KMSView(QWidget):
         smart_layout.setSpacing(8)
 
         self._smart_desc = QLabel(
-            "📋 將客戶來信的問題描述貼入下方，系統會自動分析語意、比對歷史 Q&A，"
-            "整理出建議回覆供參考使用。"
+            "📋 將客戶來信的問題描述貼入下方，系統會自動分析語意、比對歷史 Q&A，整理出建議回覆供參考使用。"
         )
         self._smart_desc.setWordWrap(True)
         smart_layout.addWidget(self._smart_desc)
 
         self._smart_input = QTextEdit()
-        self._smart_input.setPlaceholderText(
-            "請在此貼上客戶問題原文（可貼整封信件，系統自動萃取關鍵詞比對）..."
-        )
+        self._smart_input.setPlaceholderText("請在此貼上客戶問題原文（可貼整封信件，系統自動萃取關鍵詞比對）...")
         self._smart_input.setMinimumHeight(120)
         self._smart_input.setMaximumHeight(180)
         smart_layout.addWidget(self._smart_input)
@@ -471,11 +479,13 @@ class KMSView(QWidget):
         smart_btn_row.addWidget(smart_search_btn)
         smart_clear_btn = QPushButton("🗑 清除")
         smart_clear_btn.setMinimumHeight(36)
-        smart_clear_btn.clicked.connect(lambda: (
-            self._smart_input.clear(),
-            self._smart_result_table.setRowCount(0),
-            self._smart_answer_box.clear(),
-        ))
+        smart_clear_btn.clicked.connect(
+            lambda: (
+                self._smart_input.clear(),
+                self._smart_result_table.setRowCount(0),
+                self._smart_answer_box.clear(),
+            )
+        )
         smart_btn_row.addWidget(smart_clear_btn)
         smart_btn_row.addStretch()
         smart_layout.addLayout(smart_btn_row)
@@ -579,6 +589,7 @@ class KMSView(QWidget):
         if not self._kms:
             return
         from hcp_cms.data.models import QAKnowledge
+
         empty = QAKnowledge(qa_id="（新增）", question="", answer="")
         dlg = QAReviewDialog(empty, parent=self)
         dlg.setWindowTitle("新增 QA")
@@ -587,6 +598,7 @@ class KMSView(QWidget):
         fields = dlg.result_fields()
         if not fields.get("question") or not fields.get("answer"):
             from PySide6.QtWidgets import QMessageBox
+
             QMessageBox.warning(self, "欄位不完整", "「問題」與「回覆」為必填欄位。")
             return
         action = dlg.result_action()
@@ -603,9 +615,7 @@ class KMSView(QWidget):
 
         from hcp_cms.services.mail.msg_reader import MSGReader
 
-        files, _ = QFileDialog.getOpenFileNames(
-            self, "選擇 .msg 檔案（可多選）", "", "Outlook Messages (*.msg)"
-        )
+        files, _ = QFileDialog.getOpenFileNames(self, "選擇 .msg 檔案（可多選）", "", "Outlook Messages (*.msg)")
         if not files:
             return
 
@@ -637,8 +647,7 @@ class KMSView(QWidget):
         self._refresh_pending()
         self._on_show_all()
         QMessageBox.information(
-            self, "批次匯入完成",
-            f"✅ 成功：{ok} 筆\n❌ 失敗／略過：{fail} 筆\n\n已匯入的 QA 位於「待審核」頁籤。"
+            self, "批次匯入完成", f"✅ 成功：{ok} 筆\n❌ 失敗／略過：{fail} 筆\n\n已匯入的 QA 位於「待審核」頁籤。"
         )
 
     def _on_import_msg_folder(self) -> None:
@@ -652,28 +661,24 @@ class KMSView(QWidget):
 
         from hcp_cms.services.mail.msg_reader import MSGReader
 
-        folder = QFileDialog.getExistingDirectory(
-            self, "選擇資料夾（含子資料夾，支援 .msg / .xlsx / .xls / .csv）", ""
-        )
+        folder = QFileDialog.getExistingDirectory(self, "選擇資料夾（含子資料夾，支援 .msg / .xlsx / .xls / .csv）", "")
         if not folder:
             return
 
         root = Path(folder)
-        msg_paths   = sorted(root.rglob("*.msg"))
+        msg_paths = sorted(root.rglob("*.msg"))
         excel_paths = sorted(root.rglob("*.xlsx")) + sorted(root.rglob("*.xls")) + sorted(root.rglob("*.csv"))
-        all_paths   = msg_paths + excel_paths
+        all_paths = msg_paths + excel_paths
 
         if not all_paths:
-            QMessageBox.information(self, "無檔案",
-                f"在資料夾中找不到任何支援的檔案：\n{folder}\n\n"
-                "支援格式：.msg、.xlsx、.xls、.csv")
+            QMessageBox.information(
+                self, "無檔案", f"在資料夾中找不到任何支援的檔案：\n{folder}\n\n支援格式：.msg、.xlsx、.xls、.csv"
+            )
             return
 
         reader = MSGReader()
         progress = QProgressDialog("批次匯入中...", "取消", 0, len(all_paths), self)
-        progress.setWindowTitle(
-            f"匯入資料夾（.msg×{len(msg_paths)} + Excel/CSV×{len(excel_paths)}）"
-        )
+        progress.setWindowTitle(f"匯入資料夾（.msg×{len(msg_paths)} + Excel/CSV×{len(excel_paths)}）")
         progress.setWindowModality(Qt.WindowModality.WindowModal)
         progress.show()
 
@@ -701,7 +706,8 @@ class KMSView(QWidget):
                     continue
                 try:
                     self._kms.create_qa(
-                        question=q, answer=a,
+                        question=q,
+                        answer=a,
                         solution=_find(row, COL_S),
                         keywords=_find(row, COL_K),
                         system_product=_find(row, COL_P),
@@ -740,8 +746,7 @@ class KMSView(QWidget):
                     fail += f
                 else:  # .csv
                     with open(path, newline="", encoding="utf-8-sig") as f_csv:
-                        rows = [{k.strip(): (v or "").strip() for k, v in r.items()}
-                                for r in csv.DictReader(f_csv)]
+                        rows = [{k.strip(): (v or "").strip() for k, v in r.items()} for r in csv.DictReader(f_csv)]
                     o, f = _import_excel_rows(rows)
                     ok += o
                     fail += f
@@ -752,12 +757,13 @@ class KMSView(QWidget):
         self._refresh_pending()
         self._on_show_all()
         QMessageBox.information(
-            self, "資料夾匯入完成",
+            self,
+            "資料夾匯入完成",
             f"資料夾：{folder}\n\n"
             f"📧 .msg 檔案：{len(msg_paths)} 個\n"
             f"📊 Excel/CSV 檔案：{len(excel_paths)} 個\n\n"
             f"✅ 成功：{ok} 筆\n❌ 失敗／略過：{fail} 筆\n\n"
-            ".msg → 「待審核」頁籤；Excel/CSV → 直接「已完成」"
+            ".msg → 「待審核」頁籤；Excel/CSV → 直接「已完成」",
         )
 
     def _on_import_excel(self) -> None:
@@ -769,10 +775,7 @@ class KMSView(QWidget):
         import openpyxl
         from PySide6.QtWidgets import QMessageBox
 
-        path, _ = QFileDialog.getOpenFileName(
-            self, "選擇 Excel 或 CSV 檔案", "",
-            "試算表 (*.xlsx *.xls *.csv)"
-        )
+        path, _ = QFileDialog.getOpenFileName(self, "選擇 Excel 或 CSV 檔案", "", "試算表 (*.xlsx *.xls *.csv)")
         if not path:
             return
 
@@ -833,10 +836,11 @@ class KMSView(QWidget):
         self._refresh_pending()
         self._on_show_all()
         QMessageBox.information(
-            self, "匯入完成",
+            self,
+            "匯入完成",
             f"✅ 成功：{ok} 筆\n❌ 失敗／略過：{fail} 筆\n\n"
             "📋 Excel 欄位名稱（擇一）：\n"
-            "  問題（必填）、回覆（必填）、解決方案、關鍵字、產品"
+            "  問題（必填）、回覆（必填）、解決方案、關鍵字、產品",
         )
 
     def _on_smart_search(self) -> None:
@@ -848,6 +852,7 @@ class KMSView(QWidget):
             return
 
         from PySide6.QtWidgets import QTableWidgetItem
+
         results = self._kms.search(query)
         self._smart_results = results[:10]
         self._smart_result_table.setRowCount(0)
