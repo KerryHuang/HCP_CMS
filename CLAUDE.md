@@ -1,7 +1,3 @@
-# CLAUDE.md
-
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
 # HCP 客服管理系統 (HCP CMS)
 
 PySide6 + SQLite 桌面應用，管理客服信件、案件追蹤、知識庫搜尋。
@@ -15,25 +11,19 @@ PySide6 + SQLite 桌面應用，管理客服信件、案件追蹤、知識庫搜
 
 **Law 4: 搜尋管線** — 搜尋功能必須經過完整管線：jieba 斷詞 → 同義詞擴展 → FTS5 MATCH。不可直接 LIKE 查詢。
 
-**Law 5: 信件處理** — 新增信件來源時必須實作 MailProvider ABC。信件處理管線 7 步不可跳過或重排。
+**Law 5: 信件處理** — 新增信件來源時必須實作 MailProvider ABC。信件處理管線 7 步不可跳過或重排：①重複檢查 →②廣播信過濾 →③欄位解析 →④自動分類 →⑤對話串比對 →⑥建案/更新 →⑦QA 抽取。
 
 </law>
 
 # 常用指令
 
 ```bash
-# 測試
-.venv/Scripts/python.exe -m pytest tests/ -v
-.venv/Scripts/python.exe -m pytest tests/unit/test_case_manager.py -v          # 單一檔案
-.venv/Scripts/python.exe -m pytest tests/unit/test_case_manager.py::TestXxx -v  # 單一類別
-.venv/Scripts/python.exe -m pytest tests/unit/test_case_manager.py::TestXxx::test_foo -v  # 單一方法
-
-# Lint / 格式化
-.venv/Scripts/ruff.exe check src/ tests/
-.venv/Scripts/ruff.exe format src/ tests/
-
-# 執行
-.venv/Scripts/python.exe -m hcp_cms
+.venv/Scripts/python.exe -m pytest tests/ -v                    # 全部測試
+.venv/Scripts/python.exe -m pytest tests/unit/test_xxx.py -v    # 單一檔案
+.venv/Scripts/python.exe -m pytest tests/unit/test_xxx.py::TestClass::test_method -v
+.venv/Scripts/ruff.exe check src/ tests/                        # Lint
+.venv/Scripts/ruff.exe format src/ tests/                       # 格式化
+.venv/Scripts/python.exe -m hcp_cms                             # 執行
 ```
 
 - **Python**: 3.14.3 | **PySide6**: 6.10.2 | **SQLite**: 內建 FTS5
