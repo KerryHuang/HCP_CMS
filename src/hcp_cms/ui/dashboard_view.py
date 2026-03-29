@@ -25,29 +25,35 @@ class KPICard(QFrame):
 
     def __init__(self, title: str, value: str, subtitle: str = "", color: str = "#3b82f6") -> None:
         super().__init__()
+        self._border_color = color
         self.setFrameStyle(QFrame.Shape.Box)
-        self.setStyleSheet(f"""
-            QFrame {{ background-color: #1e293b; border-radius: 8px;
-                     border-left: 3px solid {color}; padding: 8px; }}
-        """)
 
         layout = QVBoxLayout(self)
 
-        title_label = QLabel(title)
-        title_label.setStyleSheet("color: #64748b; font-size: 11px;")
-        layout.addWidget(title_label)
+        self._title_label = QLabel(title)
+        layout.addWidget(self._title_label)
 
         self._value_label = QLabel(value)
-        self._value_label.setStyleSheet("color: #f1f5f9; font-size: 24px; font-weight: bold;")
         layout.addWidget(self._value_label)
 
+        self._sub_label: QLabel | None = None
         if subtitle:
-            sub = QLabel(subtitle)
-            sub.setStyleSheet("color: #34d399; font-size: 10px;")
-            layout.addWidget(sub)
+            self._sub_label = QLabel(subtitle)
+            layout.addWidget(self._sub_label)
 
     def set_value(self, value: str) -> None:
         self._value_label.setText(value)
+
+    def apply_theme(self, p: ColorPalette) -> None:
+        """套用主題色彩。"""
+        self.setStyleSheet(f"""
+            QFrame {{ background-color: {p.bg_secondary}; border-radius: 8px;
+                     border-left: 3px solid {self._border_color}; padding: 8px; }}
+        """)
+        self._title_label.setStyleSheet(f"color: {p.text_muted}; font-size: 11px;")
+        self._value_label.setStyleSheet(f"color: {p.text_primary}; font-size: 24px; font-weight: bold;")
+        if self._sub_label:
+            self._sub_label.setStyleSheet(f"color: {p.success}; font-size: 10px;")
 
 
 class DashboardView(QWidget):
@@ -69,9 +75,8 @@ class DashboardView(QWidget):
         layout.setContentsMargins(20, 20, 20, 20)
 
         # Title
-        title = QLabel("📊 儀表板")
-        title.setStyleSheet("font-size: 18px; font-weight: bold; color: #f1f5f9;")
-        layout.addWidget(title)
+        self._title = QLabel("📊 儀表板")
+        layout.addWidget(self._title)
 
         # KPI cards grid
         kpi_layout = QGridLayout()
@@ -87,9 +92,8 @@ class DashboardView(QWidget):
         layout.addLayout(kpi_layout)
 
         # Recent cases table
-        recent_label = QLabel("最近案件")
-        recent_label.setStyleSheet("color: #94a3b8; font-weight: bold; margin-top: 16px;")
-        layout.addWidget(recent_label)
+        self._recent_label = QLabel("最近案件")
+        layout.addWidget(self._recent_label)
 
         self._table = QTableWidget(0, 5)
         self._table.setHorizontalHeaderLabels(["案件編號", "公司", "主旨", "狀態", "時間"])
@@ -128,4 +132,9 @@ class DashboardView(QWidget):
 
     def _apply_theme(self, p: ColorPalette) -> None:
         """套用主題色彩。"""
-        pass  # 後續 Task 實作
+        self._title.setStyleSheet(f"font-size: 18px; font-weight: bold; color: {p.text_primary};")
+        self._recent_label.setStyleSheet(f"color: {p.text_tertiary}; font-weight: bold; margin-top: 16px;")
+        self._kpi_total.apply_theme(p)
+        self._kpi_reply_rate.apply_theme(p)
+        self._kpi_pending.apply_theme(p)
+        self._kpi_frt.apply_theme(p)
