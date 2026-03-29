@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from hcp_cms.core.case_merger import CaseMerger
 from hcp_cms.services.credential import CredentialManager
 from hcp_cms.ui.theme import ColorPalette, ThemeManager
 
@@ -139,11 +140,14 @@ class SettingsView(QWidget):
         self._export_btn = QPushButton("📤 匯出")
         self._import_btn = QPushButton("📥 匯入合併")
         self._migrate_btn = QPushButton("🔄 舊 DB 遷移")
+        self._merge_duplicates_btn = QPushButton("🔧 整合重複案件")
+        self._merge_duplicates_btn.clicked.connect(self._on_merge_duplicates)
         btn_layout.addWidget(self._backup_now_btn)
         btn_layout.addWidget(self._restore_btn)
         btn_layout.addWidget(self._export_btn)
         btn_layout.addWidget(self._import_btn)
         btn_layout.addWidget(self._migrate_btn)
+        btn_layout.addWidget(self._merge_duplicates_btn)
         backup_layout.addRow(btn_layout)
         layout.addWidget(backup_group)
 
@@ -164,8 +168,7 @@ class SettingsView(QWidget):
         mantis_layout.addRow("Mantis URL：", url_row)
 
         self._url_hint = QLabel(
-            "⚠ 請只填基本網址，例如：https://118.163.30.33/mantis/\n"
-            "   不要包含 login_page.php 或 view.php 等頁面路徑"
+            "⚠ 請只填基本網址，例如：https://118.163.30.33/mantis/\n   不要包含 login_page.php 或 view.php 等頁面路徑"
         )
         mantis_layout.addRow("", self._url_hint)
 
@@ -248,7 +251,7 @@ class SettingsView(QWidget):
         self._imap_pwd.setPlaceholderText("密碼")
         imap_form.addRow("密碼：", self._imap_pwd)
 
-        self._mail_stack.addWidget(imap_widget)   # index 0
+        self._mail_stack.addWidget(imap_widget)  # index 0
 
         # ── Exchange 頁 ──
         exch_widget = QWidget()
@@ -274,7 +277,7 @@ class SettingsView(QWidget):
         self._exch_pwd.setPlaceholderText("密碼")
         exch_form.addRow("密碼：", self._exch_pwd)
 
-        self._mail_stack.addWidget(exch_widget)   # index 1
+        self._mail_stack.addWidget(exch_widget)  # index 1
 
         mail_outer.addWidget(self._mail_stack)
 
@@ -297,6 +300,7 @@ class SettingsView(QWidget):
 
         # ── 移機提醒 ──────────────────────────────────────────
         from PySide6.QtWidgets import QFrame
+
         self._notice = QFrame()
         self._notice.setObjectName("migrationNotice")
         notice_layout = QVBoxLayout(self._notice)
@@ -318,6 +322,20 @@ class SettingsView(QWidget):
         path, _ = QFileDialog.getOpenFileName(self, "選擇資料庫", "", "SQLite (*.db)")
         if path:
             self._db_path.setText(path)
+
+    def _on_merge_duplicates(self) -> None:
+        """整合資料庫中所有重複案件（相同公司 + 相同主旨）。"""
+        if not self._conn:
+            QMessageBox.warning(self, "整合重複案件", "資料庫未連線。")
+            return
+        try:
+            deleted = CaseMerger(self._conn).merge_all_duplicates()
+            if deleted == 0:
+                QMessageBox.information(self, "整合重複案件", "目前無重複案件。")
+            else:
+                QMessageBox.information(self, "整合重複案件", f"已整合 {deleted} 個重複案件。")
+        except Exception as e:
+            QMessageBox.critical(self, "整合重複案件", f"整合失敗：{e}")
 
     # ── Mantis 憑證 ────────────────────────────────────────────────────
 
@@ -405,6 +423,7 @@ class SettingsView(QWidget):
         try:
             if is_imap:
                 from hcp_cms.services.mail.imap import IMAPProvider
+
                 host = self._imap_host.text().strip()
                 if not host:
                     QMessageBox.warning(self, "欄位不完整", "請先填寫 IMAP 主機位址。")
@@ -420,6 +439,7 @@ class SettingsView(QWidget):
                 )
             else:
                 from hcp_cms.services.mail.exchange import ExchangeProvider
+
                 email_addr = self._exch_email.text().strip()
                 if not email_addr:
                     QMessageBox.warning(self, "欄位不完整", "請先填寫 Exchange Email 帳號。")
@@ -445,6 +465,7 @@ class SettingsView(QWidget):
     def _on_test_mantis(self) -> None:
         """測試 SOAP 連線是否成功。"""
         from hcp_cms.services.mantis.soap import MantisSoapClient
+
         url = self._mantis_url.text().strip()
         user = self._mantis_user.text().strip()
         pwd = self._mantis_pwd.text()
