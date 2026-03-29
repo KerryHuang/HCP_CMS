@@ -239,7 +239,7 @@ class IMAPProvider(MailProvider):
                 from email.utils import parsedate_to_datetime
 
                 dt = parsedate_to_datetime(raw_date)
-                date_str = dt.strftime("%Y/%m/%d %H:%M:%S")
+                date_str = dt.astimezone().strftime("%Y/%m/%d %H:%M:%S")
             except Exception:
                 pass
 
