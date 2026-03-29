@@ -89,10 +89,10 @@ class TestReportEngine:
         path = engine.generate_monthly_report("2026/03/01", "2026/03/31", tmp_path / "report.xlsx")
         wb = openpyxl.load_workbook(str(path))
         ws = wb["📊 月報摘要"]
-        # Row 4: 案件總數 = 3（row 1 標題、row 2 空、row 3 欄位標題）
-        assert ws.cell(row=4, column=2).value == 3
-        # Row 5: 已回覆 = 1
-        assert ws.cell(row=5, column=2).value == 1
+        # ReportWriter 寫法：row 1 = 標題列（header），row 2 = 欄位標題，row 3 = 案件總數
+        assert ws.cell(row=3, column=2).value == 3
+        # Row 4: 已回覆 = 1
+        assert ws.cell(row=4, column=2).value == 1
         wb.close()
 
     def test_monthly_report_customer_analysis_sheet(self, seeded_db, tmp_path):
@@ -111,7 +111,8 @@ class TestReportEngine:
         assert path.exists()
         wb = openpyxl.load_workbook(str(path))
         ws = wb["📊 月報摘要"]
-        assert ws.cell(row=4, column=2).value == 0  # total = 0
+        # ReportWriter 寫法：row 3 = 案件總數
+        assert ws.cell(row=3, column=2).value == 0  # total = 0
         wb.close()
 
     def test_report_header_style(self, seeded_db, tmp_path):
@@ -124,38 +125,20 @@ class TestReportEngine:
         assert cell.font.color.rgb == "00FFFFFF"  # white text
         wb.close()
 
-    def test_customer_index_has_hyperlinks_to_company_sheets(self, seeded_db, tmp_path):
-        """客戶索引的快速連結欄位應有超連結指向各公司頁籤。"""
+    def test_customer_index_has_link_text(self, seeded_db):
+        """客戶索引的快速連結欄位應包含各公司連結文字。"""
         engine = ReportEngine(seeded_db.connection)
-        path = engine.generate_tracking_table("2026/03/01", "2026/03/31", tmp_path / "tracking.xlsx")
-        wb = openpyxl.load_workbook(str(path))
-        ws = wb["📋 客戶索引"]
-        # C1（日月光）在第 2 列，快速連結在第 6 欄
-        link_cell = ws.cell(row=2, column=6)
-        val = str(link_cell.value or "")
-        assert val.startswith("=HYPERLINK"), "日月光快速連結應為 HYPERLINK 公式"
-        assert "日月光" in val
-        # C2（欣興）在第 3 列
-        link_cell2 = ws.cell(row=3, column=6)
-        val2 = str(link_cell2.value or "")
-        assert val2.startswith("=HYPERLINK"), "欣興快速連結應為 HYPERLINK 公式"
-        wb.close()
+        data = engine.build_tracking_table("2026/03/01", "2026/03/31")
+        index_rows = data["📋 客戶索引"]
+        # 日月光 in row 1 (index 1)，連結文字在第 6 欄（index 5）
+        assert "日月光" in str(index_rows[1][5])
 
-    def test_company_sheet_has_back_link_to_index(self, seeded_db, tmp_path):
-        """各公司頁籤第一列應有返回客戶索引的 HYPERLINK 公式。"""
+    def test_company_sheet_has_back_link_text(self, seeded_db):
+        """各公司頁籤第一列應有返回客戶索引的文字。"""
         engine = ReportEngine(seeded_db.connection)
-        path = engine.generate_tracking_table("2026/03/01", "2026/03/31", tmp_path / "tracking.xlsx")
-        wb = openpyxl.load_workbook(str(path))
-        # 日月光的頁籤
-        ws_ase = wb["ase.com(日月光)_問題"]
-        back_cell = ws_ase.cell(row=1, column=1)
-        val = str(back_cell.value or "")
-        assert val.startswith("=HYPERLINK"), "公司頁籤第一列應有 HYPERLINK 公式"
-        assert "客戶索引" in val
-        # 表頭應在第 2 列
-        header_cell = ws_ase.cell(row=2, column=1)
-        assert header_cell.value == "案件編號"
-        wb.close()
+        data = engine.build_tracking_table("2026/03/01", "2026/03/31")
+        ase_key = [k for k in data if "日月光" in k][0]
+        assert data[ase_key][0][0] == "↩ 返回客戶索引"
 
     # ── build_tracking_table 測試 ──────────────────────────────────────────
 

@@ -154,6 +154,7 @@ class TestReportGenerationWithRealData:
         import openpyxl
         wb = openpyxl.load_workbook(str(report))
         ws = wb["📊 月報摘要"]
-        total = ws.cell(row=4, column=2).value
+        # ReportWriter 寫法：row 1 = 標題列（header），row 2 = 欄位標題，row 3 = 案件總數
+        total = ws.cell(row=3, column=2).value
         assert total >= 2
         wb.close()
