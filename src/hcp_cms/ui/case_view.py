@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
 )
 
 from hcp_cms.core.case_manager import CaseManager
+from hcp_cms.data.fts import FTSManager
 from hcp_cms.data.repositories import CaseRepository, CompanyRepository
 
 _FIXED_COL_COUNT = 9
@@ -60,6 +61,7 @@ class CaseView(QWidget):
         self._search_input = QLineEdit()
         self._search_input.setPlaceholderText("搜尋案件...")
         self._search_input.setFixedWidth(300)
+        self._search_input.returnPressed.connect(self.refresh)
         header.addWidget(self._search_input)
 
         self._filter_combo = QComboBox()
@@ -145,8 +147,26 @@ class CaseView(QWidget):
             return
         try:
             repo = CaseRepository(self._conn)
+            keyword = self._search_input.text().strip()
             status_filter = self._filter_combo.currentText()
-            if status_filter == "全部":
+
+            if keyword:
+                fts = FTSManager(self._conn)
+                matched_ids = {r["case_id"] for r in fts.search_cases(keyword)}
+                # 同時比對公司名稱（含 alias）
+                company_repo = CompanyRepository(self._conn)
+                matched_company_ids = {
+                    c.company_id for c in company_repo.list_all()
+                    if keyword in (c.name or "") or keyword in (c.alias or "")
+                }
+                all_cases = repo.list_all()
+                cases = [
+                    c for c in all_cases
+                    if c.case_id in matched_ids
+                    or c.company_id in matched_company_ids
+                    or keyword in (c.subject or "")
+                ]
+            elif status_filter == "全部":
                 cases = repo.list_all()
             elif status_filter == "最近匯入":
                 cases = repo.list_recently_created(minutes=10)
