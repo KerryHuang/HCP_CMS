@@ -34,7 +34,15 @@ description: "[Project] Use when the user asks to build, package, or create an e
 .venv/Scripts/ruff.exe check src/ tests/
 ```
 
-### 步驟 3：執行建置
+### 步驟 3：清除舊建置產出
+
+MUST 在建置前清除，否則 PyInstaller 遇到舊 dist 目錄會報錯中止：
+
+```bash
+rm -rf build/ dist/ *.spec
+```
+
+### 步驟 4：執行建置
 
 ```bash
 .venv/Scripts/python.exe scripts/build.py
@@ -50,7 +58,7 @@ description: "[Project] Use when the user asks to build, package, or create an e
 | `--add-data` | `i18n`, `resources` | 打包語系檔和資源 |
 | 入口 | `src/hcp_cms/__main__.py` | 程式進入點 |
 
-### 步驟 4：驗證產出
+### 步驟 5：驗證產出
 
 ```bash
 ls dist/HCP_CMS/ 2>/dev/null && echo "建置成功" || echo "建置失敗"
@@ -82,3 +90,4 @@ rm -rf build/ dist/ *.spec
 | 「測試沒過但先打包看看」 | 測試失敗的程式不應打包，先修正 |
 | 「用 --onefile 比較方便」 | 專案用 --onedir，啟動較快且易於除錯 |
 | 「不用打包語系檔」 | 缺少 i18n 檔案會導致介面文字遺失 |
+| 「直接建置不用清除」 | 舊 dist 目錄存在時 PyInstaller 會報錯中止 |
