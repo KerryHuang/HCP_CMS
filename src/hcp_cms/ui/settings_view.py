@@ -142,12 +142,15 @@ class SettingsView(QWidget):
         self._migrate_btn = QPushButton("🔄 舊 DB 遷移")
         self._merge_duplicates_btn = QPushButton("🔧 整合重複案件")
         self._merge_duplicates_btn.clicked.connect(self._on_merge_duplicates)
+        self._clear_all_cases_btn = QPushButton("🗑️ 清除所有案件")
+        self._clear_all_cases_btn.clicked.connect(self._on_clear_all_cases)
         btn_layout.addWidget(self._backup_now_btn)
         btn_layout.addWidget(self._restore_btn)
         btn_layout.addWidget(self._export_btn)
         btn_layout.addWidget(self._import_btn)
         btn_layout.addWidget(self._migrate_btn)
         btn_layout.addWidget(self._merge_duplicates_btn)
+        btn_layout.addWidget(self._clear_all_cases_btn)
         backup_layout.addRow(btn_layout)
         layout.addWidget(backup_group)
 
@@ -336,6 +339,28 @@ class SettingsView(QWidget):
                 QMessageBox.information(self, "整合重複案件", f"已整合 {deleted} 個重複案件。")
         except Exception as e:
             QMessageBox.critical(self, "整合重複案件", f"整合失敗：{e}")
+
+    def _on_clear_all_cases(self) -> None:
+        """清除資料庫中所有案件、對話記錄及已處理信件紀錄，以便重新收信建案。"""
+        if not self._conn:
+            QMessageBox.warning(self, "清除所有案件", "資料庫未連線。")
+            return
+        reply = QMessageBox.warning(
+            self,
+            "清除所有案件",
+            "此操作將刪除所有案件、對話記錄，並重置已處理信件紀錄（使重新收信生效）。\n\n"
+            "⚠️ 刪除後無法復原，請先確認已備份。\n確定繼續？",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            from hcp_cms.core.case_manager import CaseManager
+            deleted = CaseManager(self._conn).delete_all_cases()
+            QMessageBox.information(self, "清除完成", f"已刪除 {deleted} 筆案件，可重新收信建案。")
+        except Exception as e:
+            QMessageBox.critical(self, "清除失敗", f"發生錯誤：{e}")
 
     # ── Mantis 憑證 ────────────────────────────────────────────────────
 

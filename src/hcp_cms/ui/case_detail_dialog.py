@@ -198,7 +198,14 @@ class CaseDetailDialog(QDialog):
         self._log_table.horizontalHeader().setStretchLastSection(True)
         self._log_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._log_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self._log_table.itemSelectionChanged.connect(self._on_log_selected)
         layout.addWidget(self._log_table)
+
+        self._log_content = QTextEdit()
+        self._log_content.setReadOnly(True)
+        self._log_content.setFixedHeight(150)
+        self._log_content.setPlaceholderText("選取上方記錄以檢視完整內容…")
+        layout.addWidget(self._log_content)
 
         return w
 
@@ -210,7 +217,19 @@ class CaseDetailDialog(QDialog):
             self._log_table.setItem(i, 1, QTableWidgetItem(log.direction))
             self._log_table.setItem(i, 2, QTableWidgetItem(log.logged_by or ""))
             self._log_table.setItem(i, 3, QTableWidgetItem(log.mantis_ref or ""))
-            self._log_table.setItem(i, 4, QTableWidgetItem((log.content or "")[:60]))
+            self._log_table.setItem(i, 4, QTableWidgetItem((log.content or "")[:100]))
+        self._log_content.clear()
+
+    def _on_log_selected(self) -> None:
+        """選取記錄列時，於下方顯示完整內容。"""
+        rows = self._log_table.selectionModel().selectedRows()
+        if not rows:
+            self._log_content.clear()
+            return
+        logs = self._manager.list_logs(self._case_id)
+        idx = rows[0].row()
+        if 0 <= idx < len(logs):
+            self._log_content.setPlainText(logs[idx].content or "")
 
     def _on_add_log(self) -> None:
         dlg = CaseLogAddDialog(parent=self)
@@ -693,7 +712,7 @@ class CaseLogAddDialog(QDialog):
         layout = QFormLayout(self)
 
         self._direction = QComboBox()
-        self._direction.addItems(["客戶來信", "HCP 回覆", "CS 回覆", "內部討論"])
+        self._direction.addItems(["客戶來信", "HCP 信件回覆", "HCP 線上回覆", "內部討論"])
         layout.addRow("方向：", self._direction)
 
         self._content = QTextEdit()

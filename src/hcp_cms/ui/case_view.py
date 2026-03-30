@@ -26,10 +26,14 @@ from PySide6.QtWidgets import (
 
 from hcp_cms.core.case_manager import CaseManager
 from hcp_cms.data.fts import FTSManager
-from hcp_cms.data.repositories import CaseRepository, CompanyRepository
+from hcp_cms.data.repositories import CaseLogRepository, CaseRepository, CompanyRepository
 from hcp_cms.ui.theme import ColorPalette, ThemeManager
 
 _FIXED_COL_COUNT = 9
+
+
+def _html_escape(text: str) -> str:
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
 class CaseView(QWidget):
@@ -120,7 +124,8 @@ class CaseView(QWidget):
         self._detail_reply_count = QLabel()
         self._detail_linked_case = QLabel()
         self._detail_progress = QTextEdit()
-        self._detail_progress.setMaximumHeight(80)
+        self._detail_progress.setReadOnly(True)
+        self._detail_progress.setMinimumHeight(200)
 
         detail_layout.addRow("案件編號:", self._detail_id)
         detail_layout.addRow("主旨:", self._detail_subject)
@@ -130,7 +135,7 @@ class CaseView(QWidget):
         detail_layout.addRow("技術人員:", self._detail_handler)
         detail_layout.addRow("來回次數:", self._detail_reply_count)
         detail_layout.addRow("關聯案件:", self._detail_linked_case)
-        detail_layout.addRow("處理進度:", self._detail_progress)
+        detail_layout.addRow("對話記錄:", self._detail_progress)
 
         # Action buttons
         btn_layout = QHBoxLayout()
@@ -196,6 +201,8 @@ class CaseView(QWidget):
             self._table.setHorizontalHeaderLabels(headers)
 
             self._table.setRowCount(len(cases))
+            if not cases:
+                self._clear_detail()
             for i, case in enumerate(cases):
                 self._table.setItem(i, 0, QTableWidgetItem(case.case_id))
                 self._table.setItem(i, 1, QTableWidgetItem(case.status))
@@ -216,6 +223,18 @@ class CaseView(QWidget):
         except Exception:
             pass
 
+    def _clear_detail(self) -> None:
+        """清空下方詳細資訊面板。"""
+        self._detail_id.clear()
+        self._detail_subject.clear()
+        self._detail_status.clear()
+        self._detail_system_product.clear()
+        self._detail_error_type.clear()
+        self._detail_handler.clear()
+        self._detail_reply_count.clear()
+        self._detail_linked_case.clear()
+        self._detail_progress.clear()
+
     def _on_selection_changed(self) -> None:
         rows = self._table.selectionModel().selectedRows()
         if not rows or not hasattr(self, '_cases'):
@@ -233,7 +252,50 @@ class CaseView(QWidget):
         reply_display = str(case.reply_count) if case.reply_count else "0"
         self._detail_reply_count.setText(reply_display)
         self._detail_linked_case.setText(case.linked_case_id or "")
-        self._detail_progress.setPlainText(case.progress or "")
+        self._detail_progress.setHtml(self._build_log_html(case.case_id, case.progress))
+
+    def _build_log_html(self, case_id: str, progress: str | None) -> str:
+        """從 case_logs 建立 HTML 格式的對話時間軸。"""
+        if not self._conn:
+            return progress or ""
+        logs = CaseLogRepository(self._conn).list_by_case(case_id)
+        if not logs and not progress:
+            return "<i style='color:#6b7280'>（尚無對話記錄）</i>"
+
+        direction_color = {
+            "客戶來信": "#f59e0b",
+            "HCP 信件回覆": "#3b82f6",
+            "HCP 線上回覆": "#10b981",
+            "內部討論": "#8b5cf6",
+        }
+        parts: list[str] = []
+
+        if progress:
+            parts.append(
+                f"<div style='background:#1e293b;border-left:3px solid #6b7280;"
+                f"padding:6px 8px;margin-bottom:6px;border-radius:3px;'>"
+                f"<span style='color:#94a3b8;font-size:11px;'>📋 處理進度</span><br>"
+                f"<span style='color:#e2e8f0;white-space:pre-wrap;'>{_html_escape(progress)}</span></div>"
+            )
+
+        for log in logs:
+            color = direction_color.get(log.direction, "#94a3b8")
+            preview = (log.content or "").strip()
+            # 取前 300 字顯示，超過加省略
+            if len(preview) > 300:
+                preview = preview[:300] + "…"
+            parts.append(
+                f"<div style='background:#1e293b;border-left:3px solid {color};"
+                f"padding:6px 8px;margin-bottom:6px;border-radius:3px;'>"
+                f"<span style='color:{color};font-weight:bold;font-size:11px;'>"
+                f"{_html_escape(log.direction)}</span>"
+                f"<span style='color:#64748b;font-size:11px;margin-left:8px;'>"
+                f"{_html_escape(log.logged_at)}</span><br>"
+                f"<span style='color:#e2e8f0;font-size:12px;white-space:pre-wrap;'>"
+                f"{_html_escape(preview)}</span></div>"
+            )
+
+        return "".join(parts) if parts else "<i style='color:#6b7280'>（尚無對話記錄）</i>"
 
     def _on_new_case(self) -> None:
         pass  # Will be implemented with dialog

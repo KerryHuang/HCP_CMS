@@ -36,12 +36,14 @@ def _normalize_sent_time(value: str | None) -> str | None:
 
 
 def _detect_direction(sender: str, subject: str) -> str:
-    """判斷信件方向：優先看寄件者網域，其次看主旨前綴。"""
+    """判斷信件方向：以寄件者網域為唯一依據。
+
+    ⚠ 主旨前綴（RE:/FW:）不列入判斷——客戶回信也帶 RE: 前綴，
+    以前綴判斷會大量誤判客戶來信為 HCP 信件回覆。
+    """
     sender_lower = sender.lower()
     if "@ares.com.tw" in sender_lower or "hcpservice" in sender_lower:
-        return "HCP 回覆"
-    if re.match(r'^(RE|FW|FWD|回覆|轉寄|答覆)\s*:', subject, re.IGNORECASE):
-        return "HCP 回覆"
+        return "HCP 信件回覆"
     return "客戶來信"
 
 
@@ -98,6 +100,8 @@ class CaseManager:
                 )
                 self._log_repo.insert(log)
                 existing.reply_count += 1
+                if progress_note and progress_note.strip():
+                    existing.progress = progress_note.strip()
                 self._case_repo.update(existing)
                 return existing, "merged"
 
@@ -166,6 +170,7 @@ class CaseManager:
             progress=final_progress,
             notes=notes,
             source="email",
+            reply_count=1,  # 第一封信本身算一次往返
         )
 
         # Thread detection（先偵測，設定 linked_case_id，再 insert）
@@ -221,6 +226,10 @@ class CaseManager:
     def delete_case(self, case_id: str) -> None:
         """刪除單一案件（含 KMS 待審查條目）。"""
         self._case_repo.delete(case_id)
+
+    def delete_all_cases(self) -> int:
+        """刪除所有案件並清空 processed_files，回傳刪除筆數。用於重新收信前重置。"""
+        return self._case_repo.delete_all()
 
     def delete_cases_by_date_range(self, start: str, end: str) -> int:
         """刪除指定日期範圍內的案件，回傳刪除筆數。start/end 格式 'YYYY/MM/DD'。"""

@@ -110,6 +110,9 @@ class DeleteCasesDialog(QDialog):
             return
         start = self._start_date.date().toString("yyyy/MM/dd")
         end = self._end_date.date().toString("yyyy/MM/dd")
-        deleted = self._mgr.delete_cases_by_date_range(start, end)
-        QMessageBox.information(self, "完成", f"已刪除 {deleted} 筆案件。")
-        self.accept()
+        try:
+            deleted = self._mgr.delete_cases_by_date_range(start, end)
+            QMessageBox.information(self, "完成", f"已刪除 {deleted} 筆案件。")
+            self.accept()
+        except Exception as e:
+            QMessageBox.critical(self, "刪除失敗", f"發生錯誤：{e}")

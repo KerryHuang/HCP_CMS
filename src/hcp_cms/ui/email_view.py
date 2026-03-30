@@ -553,11 +553,15 @@ class EmailView(QWidget):
         QTableWidget.resizeEvent(self._table, event)
 
     def _toggle_all_checks(self, checked: bool) -> None:
-        """全選或全不選所有列的勾選框。"""
+        """全選或全不選所有列的勾選框。全選時跳過狀態為「已匯入」的列。"""
         state = Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked
         for row in range(self._table.rowCount()):
             item = self._table.item(row, 0)
             if item:
+                if checked:
+                    status_item = self._table.item(row, 4)
+                    if status_item and status_item.text() == "已匯入":
+                        continue
                 item.setCheckState(state)
 
     def _on_import_msg(self) -> None:

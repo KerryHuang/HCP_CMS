@@ -391,8 +391,27 @@ class CaseRepository:
             "UPDATE qa_knowledge SET source_case_id = NULL WHERE source_case_id = :id",
             {"id": case_id},
         )
+        # 解除其他案件對此案件的 linked_case_id FK 參照
+        self._conn.execute(
+            "UPDATE cs_cases SET linked_case_id = NULL WHERE linked_case_id = :id",
+            {"id": case_id},
+        )
         self._conn.execute("DELETE FROM cs_cases WHERE case_id = :id", {"id": case_id})
         self._conn.commit()
+
+    def delete_all(self) -> int:
+        """刪除所有案件（含 cascade），回傳刪除筆數。同時清空 processed_files 讓重收信生效。"""
+        row = self._conn.execute("SELECT COUNT(*) FROM cs_cases").fetchone()
+        count = row[0] if row else 0
+        self._conn.execute("DELETE FROM case_mantis")
+        self._conn.execute("DELETE FROM case_logs")
+        self._conn.execute("DELETE FROM cases_fts")
+        self._conn.execute("DELETE FROM qa_knowledge WHERE status = '待審查'")
+        self._conn.execute("UPDATE qa_knowledge SET source_case_id = NULL WHERE source_case_id IS NOT NULL")
+        self._conn.execute("DELETE FROM cs_cases")
+        self._conn.execute("DELETE FROM processed_files")
+        self._conn.commit()
+        return count
 
     def delete_by_date_range(self, start: str, end: str) -> int:
         """刪除 created_at 在 [start, end] 範圍內的所有案件，回傳刪除筆數。
@@ -404,6 +423,9 @@ class CaseRepository:
         case_ids = [r[0] for r in rows]
         for cid in case_ids:
             self.delete(cid)
+        if case_ids:
+            self._conn.execute("DELETE FROM processed_files")
+            self._conn.commit()
         return len(case_ids)
 
 
