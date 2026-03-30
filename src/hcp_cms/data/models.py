@@ -161,3 +161,4 @@ class CaseLog:
     mantis_ref: str | None = None   # Mantis Issue 編號（可空）
     logged_by: str | None = None    # 記錄人
     logged_at: str = ""             # YYYY/MM/DD HH:MM:SS
+    reply_time: str | None = None   # 回覆時間（YYYY/MM/DD HH:MM）

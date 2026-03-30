@@ -6,7 +6,7 @@ import json
 import sqlite3
 from datetime import datetime
 
-from hcp_cms.core.case_manager import CaseManager
+from hcp_cms.core.case_manager import CaseManager, _calc_elapsed_str
 from hcp_cms.data.models import Case, CaseLog, CaseMantisLink, MantisTicket
 from hcp_cms.data.repositories import (
     CaseLogRepository,
@@ -53,9 +53,23 @@ class CaseDetailManager:
         content: str,
         mantis_ref: str | None = None,
         logged_by: str | None = None,
+        reply_time: str | None = None,
     ) -> CaseLog:
         log_id = self._log_repo.next_log_id()
         now = datetime.now().strftime("%Y/%m/%d %H:%M:%S")
+        # HCP 回覆類型自動計算回應時長（使用者未指定時）
+        if reply_time is None and direction in ("HCP 信件回覆", "HCP 線上回覆"):
+            prior_logs = self._log_repo.list_by_case(case_id)
+            customer_times = [
+                lg.logged_at for lg in prior_logs
+                if lg.direction == "客戶來信" and lg.logged_at
+            ]
+            if customer_times:
+                start_time = max(customer_times)
+            else:
+                case_obj = self._case_repo.get_by_id(case_id)
+                start_time = case_obj.sent_time if case_obj else None
+            reply_time = _calc_elapsed_str(start_time, now)
         log = CaseLog(
             log_id=log_id,
             case_id=case_id,
@@ -64,6 +78,7 @@ class CaseDetailManager:
             mantis_ref=mantis_ref,
             logged_by=logged_by,
             logged_at=now,
+            reply_time=reply_time,
         )
         self._log_repo.insert(log)
         return log

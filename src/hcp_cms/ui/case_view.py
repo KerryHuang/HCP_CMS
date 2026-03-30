@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+from datetime import datetime
 from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
@@ -34,6 +35,27 @@ _FIXED_COL_COUNT = 9
 
 def _html_escape(text: str) -> str:
     return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def _calc_elapsed(sent_time: str | None, end_time: str | None) -> str:
+    """計算案件總處理時長（寄件時間 → end_time；end_time 為 None 則用現在）。"""
+    if not sent_time:
+        return ""
+    fmt = "%Y/%m/%d %H:%M"
+    try:
+        start = datetime.strptime(sent_time[:16], fmt)
+        end_str = (end_time or "")[:16] or datetime.now().strftime(fmt)
+        end = datetime.strptime(end_str, fmt)
+        total_minutes = max(0, int((end - start).total_seconds() / 60))
+        hours, minutes = divmod(total_minutes, 60)
+        days, hours = divmod(hours, 24)
+        if days:
+            return f"{days}天{hours}時" if hours else f"{days}天"
+        if hours:
+            return f"{hours}時{minutes}分" if minutes else f"{hours}時"
+        return f"{minutes}分"
+    except Exception:
+        return ""
 
 
 class CaseView(QWidget):
@@ -102,7 +124,7 @@ class CaseView(QWidget):
         # Case table
         self._table = QTableWidget(0, _FIXED_COL_COUNT)
         self._table.setHorizontalHeaderLabels([
-            "案件編號", "狀態", "優先", "公司", "主旨", "問題類型", "回覆", "來回次數", "時間"
+            "案件編號", "狀態", "優先", "公司", "主旨", "問題類型", "處理時長", "來回次數", "時間"
         ])
         self._table.horizontalHeader().setStretchLastSection(True)
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -196,7 +218,7 @@ class CaseView(QWidget):
 
             total_cols = _FIXED_COL_COUNT + len(visible_cols)
             self._table.setColumnCount(total_cols)
-            headers = ["案件編號", "狀態", "優先", "公司", "主旨", "問題類型", "回覆", "來回次數", "時間"]
+            headers = ["案件編號", "狀態", "優先", "公司", "主旨", "問題類型", "處理時長", "來回次數", "時間"]
             headers += [col.col_label for col in visible_cols]
             self._table.setHorizontalHeaderLabels(headers)
 
@@ -212,7 +234,11 @@ class CaseView(QWidget):
                 self._table.setItem(i, 3, QTableWidgetItem(company_display))
                 self._table.setItem(i, 4, QTableWidgetItem(case.subject or ""))
                 self._table.setItem(i, 5, QTableWidgetItem(case.issue_type or ""))
-                self._table.setItem(i, 6, QTableWidgetItem("是" if case.status == "已回覆" else "否"))
+                # 已完成案件用 updated_at（結案時間），處理中用 None（→ 現在）
+                _end = case.updated_at if case.status in ("已完成", "Closed") else None
+                elapsed_item = QTableWidgetItem(_calc_elapsed(case.sent_time, _end))
+                elapsed_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                self._table.setItem(i, 6, elapsed_item)
                 reply_item = QTableWidgetItem(str(case.reply_count) if case.reply_count else "")
                 reply_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 self._table.setItem(i, 7, reply_item)

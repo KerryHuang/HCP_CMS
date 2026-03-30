@@ -73,7 +73,15 @@ class ReportEngine:
         """
         cases = self._case_repo.list_by_date_range(start_date, end_date)
         qas = self._qa_repo.list_all()
-        companies = self._company_repo.list_all()
+        _all_companies = self._company_repo.list_all()
+        # 過濾掉 domain == name 的無效記錄（信件顯示名稱誤存為公司）
+        # 有效域名特徵：包含 "."、不含空格、不含中文
+        import re as _re
+        _valid_domain = _re.compile(r'^[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$')
+        companies = [
+            c for c in _all_companies
+            if c.domain and _valid_domain.match(c.domain.strip())
+        ]
         mantis_tickets = self._mantis_repo.list_all()
 
         # 建立公司 id → Company 快取

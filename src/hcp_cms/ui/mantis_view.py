@@ -28,7 +28,7 @@ class _SyncWorker(QThread):
     """背景執行 Mantis SOAP 同步的 Worker。"""
 
     log_message = Signal(str)
-    ticket_synced = Signal(str, str, str, str, str)  # ticket_id, summary, status, priority, handler
+    ticket_synced = Signal(str, str, str, str, str, str)  # ticket_id, summary, status, priority, handler, last_updated
     finished = Signal(int, int)  # success, failed
 
     def __init__(
@@ -66,10 +66,13 @@ class _SyncWorker(QThread):
                 priority=issue.priority,
                 handler=issue.handler,
                 synced_at=now_str(),
+                last_updated=issue.last_updated or "",
             )
             self._mantis_repo.upsert(ticket)
             self.log_message.emit(f"  ✅ #{tid} {issue.summary[:30]} [{issue.status}]")
-            self.ticket_synced.emit(tid, issue.summary, issue.status, issue.priority, issue.handler)
+            self.ticket_synced.emit(
+                tid, issue.summary, issue.status, issue.priority, issue.handler, issue.last_updated or ""
+            )
             success += 1
         self.finished.emit(success, failed)
 
@@ -107,6 +110,10 @@ class MantisView(QWidget):
         self._status_label.setStyleSheet("color: #f87171; font-weight: bold;")
         conn_layout.addWidget(self._status_label)
 
+        self._last_sync_label = QLabel("最後同步：—")
+        self._last_sync_label.setStyleSheet("color: #94a3b8;")
+        conn_layout.addWidget(self._last_sync_label)
+
         self._sync_btn = QPushButton("🔄 立即同步全部")
         self._sync_btn.setMinimumWidth(130)
         self._sync_btn.clicked.connect(self._on_sync_all)
@@ -120,16 +127,19 @@ class MantisView(QWidget):
         layout.addWidget(conn_group)
 
         # ── Ticket 清單 ───────────────────────────────────────────
-        self._table = QTableWidget(0, 6)
+        self._table = QTableWidget(0, 7)
         self._table.setHorizontalHeaderLabels(
-            ["票號", "摘要", "狀態", "優先", "負責人", "最後同步"]
+            ["票號", "摘要", "狀態", "優先", "負責人", "Mantis 最後修改", "未處理天數"]
         )
-        self._table.horizontalHeader().setStretchLastSection(True)
+        self._table.horizontalHeader().setStretchLastSection(False)
         self._table.setColumnWidth(0, 80)
-        self._table.setColumnWidth(1, 300)
+        self._table.setColumnWidth(1, 280)
         self._table.setColumnWidth(2, 90)
         self._table.setColumnWidth(3, 60)
         self._table.setColumnWidth(4, 100)
+        self._table.setColumnWidth(5, 140)
+        self._table.setColumnWidth(6, 100)
+        self._table.horizontalHeader().setStretchLastSection(True)
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         layout.addWidget(self._table)
@@ -175,6 +185,35 @@ class MantisView(QWidget):
             path = path[:path.rfind("/")]
         return f"{parsed.scheme}://{parsed.netloc}{path}".rstrip("/")
 
+    # ── 未解決狀態集合（不計算天數的狀態視為已結案）────────────────
+    _RESOLVED_STATUSES = {"resolved", "closed", "已解決", "已關閉"}
+
+    @staticmethod
+    def _calc_unresolved_days(status: str | None, last_updated: str | None) -> str:
+        """計算截至今日尚未處理完成的天數（已解決/已關閉回傳空字串）。"""
+        if not status:
+            return ""
+        if status.lower() in MantisView._RESOLVED_STATUSES:
+            return ""
+        if not last_updated:
+            return ""
+        from datetime import datetime
+        _fmts = [
+            ("%Y-%m-%dT%H:%M:%S", 19),
+            ("%Y/%m/%d %H:%M:%S", 19),
+            ("%Y-%m-%d %H:%M:%S", 19),
+            ("%Y/%m/%d", 10),
+            ("%Y-%m-%d", 10),
+        ]
+        for fmt, length in _fmts:
+            try:
+                dt = datetime.strptime(last_updated[:length], fmt)
+                days = (datetime.now() - dt).days
+                return f"{days} 天" if days >= 0 else ""
+            except ValueError:
+                continue
+        return ""
+
     def refresh(self) -> None:
         """從本地 DB 載入已同步過的 Ticket 到清單。"""
         if not self._conn:
@@ -182,13 +221,19 @@ class MantisView(QWidget):
         repo = MantisRepository(self._conn)
         tickets = repo.list_all()
         self._table.setRowCount(len(tickets))
+        # 更新最後同步標籤（取所有 ticket 中最新的 synced_at）
+        sync_times = [t.synced_at for t in tickets if t.synced_at]
+        if sync_times:
+            self._last_sync_label.setText(f"最後同步：{max(sync_times)}")
         for i, t in enumerate(tickets):
             self._table.setItem(i, 0, QTableWidgetItem(t.ticket_id))
             self._table.setItem(i, 1, QTableWidgetItem(t.summary or ""))
             self._table.setItem(i, 2, QTableWidgetItem(t.status or ""))
             self._table.setItem(i, 3, QTableWidgetItem(t.priority or ""))
             self._table.setItem(i, 4, QTableWidgetItem(t.handler or ""))
-            self._table.setItem(i, 5, QTableWidgetItem(t.synced_at or "（從未同步）"))
+            self._table.setItem(i, 5, QTableWidgetItem(t.last_updated or "—"))
+            days_str = self._calc_unresolved_days(t.status, t.last_updated)
+            self._table.setItem(i, 6, QTableWidgetItem(days_str))
 
     # ── 同步 ──────────────────────────────────────────────────────
 
@@ -245,9 +290,12 @@ class MantisView(QWidget):
         self._worker.start()
 
     def _on_sync_finished(self, success: int, failed: int) -> None:
+        from datetime import datetime
+        now_str = datetime.now().strftime("%Y/%m/%d %H:%M:%S")
         self._sync_btn.setEnabled(True)
         self._status_label.setText("●  已連線")
         self._status_label.setStyleSheet("color: #4ade80; font-weight: bold;")
+        self._last_sync_label.setText(f"最後同步：{now_str}")
         self._log.append(f"\n✅ 完成：{success} 筆成功，{failed} 筆失敗。")
         self.refresh()
 

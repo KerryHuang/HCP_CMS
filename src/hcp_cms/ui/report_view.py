@@ -5,18 +5,22 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-from PySide6.QtCore import QDate
+from PySide6.QtCore import QDate, Qt
 from PySide6.QtWidgets import (
     QComboBox,
     QDateEdit,
+    QDialog,
     QFileDialog,
     QHBoxLayout,
     QLabel,
     QMessageBox,
     QPushButton,
+    QScrollArea,
+    QSizePolicy,
     QTableWidget,
     QTableWidgetItem,
     QTabWidget,
+    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
@@ -151,34 +155,153 @@ class ReportView(QWidget):
     def _fill_preview(self, data: dict[str, list[list]]) -> None:
         """將結構化資料填入 QTabWidget。"""
         self._tab_widget.clear()
+        # 記錄 sheet_name → tab index 供快速連結使用
+        self._sheet_tab_index: dict[str, int] = {}
 
-        for sheet_name, rows in data.items():
+        for tab_idx, (sheet_name, rows) in enumerate(data.items()):
+            self._sheet_tab_index[sheet_name] = tab_idx
             table = QTableWidget()
+            table.setWordWrap(True)
+            table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+            table.setAlternatingRowColors(True)
             if rows:
                 col_count = max(len(r) for r in rows)
 
-                # 判斷第一列是否為正式欄位標題：
-                # 若只有一列、或第一列欄數少於第二列，視為標題列（非標頭），全部列當資料顯示
+                # 判斷第一列是否為正式欄位標題
                 has_proper_header = len(rows) < 2 or len(rows[0]) >= len(rows[1])
 
                 if has_proper_header:
-                    # 第一列作為 QTableWidget 橫向標頭
                     table.setColumnCount(col_count)
                     table.setRowCount(max(0, len(rows) - 1))
                     table.setHorizontalHeaderLabels([str(h) for h in rows[0]])
                     for row_idx, row in enumerate(rows[1:]):
                         for col_idx, value in enumerate(row):
-                            table.setItem(row_idx, col_idx, QTableWidgetItem(str(value) if value else ""))
+                            item = QTableWidgetItem(str(value) if value else "")
+                            # 快速連結欄：藍色文字提示可點擊
+                            if str(rows[0][col_idx]) == "快速連結" and value:
+                                item.setForeground(Qt.GlobalColor.cyan)
+                            table.setItem(row_idx, col_idx, item)
+                    # 「快速連結」欄 index
+                    try:
+                        self._quick_link_col = [str(h) for h in rows[0]].index("快速連結")
+                    except ValueError:
+                        self._quick_link_col = -1
                 else:
-                    # 第一列為標題列（如月報摘要），全部列當資料顯示，使用預設數字標頭
                     table.setColumnCount(col_count)
                     table.setRowCount(len(rows))
                     for row_idx, row in enumerate(rows):
                         for col_idx, value in enumerate(row):
                             table.setItem(row_idx, col_idx, QTableWidgetItem(str(value) if value else ""))
+                    self._quick_link_col = -1
 
                 table.resizeColumnsToContents()
+                table.resizeRowsToContents()
+
+            # 互動連線
+            table.cellDoubleClicked.connect(self._on_cell_double_clicked)
+            if sheet_name == "📋 客戶索引":
+                # 單擊快速連結 → 跳轉公司分頁
+                table.cellClicked.connect(self._on_index_cell_clicked)
+            else:
+                # 公司分頁：單擊「↩ 返回客戶索引」或案件 row → 跳轉 / 開啟案件
+                table.cellClicked.connect(self._on_company_cell_clicked)
+
             self._tab_widget.addTab(table, sheet_name)
+
+    # ── 互動 handler ──────────────────────────────────────────────────
+
+    def _navigate_to_sheet(self, link_text: str) -> bool:
+        """依連結文字模糊比對分頁名稱並跳轉，成功回傳 True。"""
+        company_name = link_text.lstrip("→↩ ").replace("問題記錄", "").replace("返回客戶索引", "").strip()
+        for sheet_name, idx in getattr(self, "_sheet_tab_index", {}).items():
+            if company_name and (company_name in sheet_name or sheet_name.replace("_問題", "") in link_text):
+                self._tab_widget.setCurrentIndex(idx)
+                return True
+        # 「返回客戶索引」直接跳第 0 頁
+        if "客戶索引" in link_text:
+            self._tab_widget.setCurrentIndex(self._sheet_tab_index.get("📋 客戶索引", 0))
+            return True
+        return False
+
+    def _on_index_cell_clicked(self, row: int, col: int) -> None:
+        """客戶索引：單擊快速連結欄跳轉至對應公司分頁。"""
+        table = self.sender()
+        if not isinstance(table, QTableWidget):
+            return
+        # 動態判斷欄位標頭是否為「快速連結」
+        header = table.horizontalHeaderItem(col)
+        if not header or header.text() != "快速連結":
+            return
+        item = table.item(row, col)
+        if item and item.text().strip():
+            self._navigate_to_sheet(item.text().strip())
+
+    def _on_company_cell_clicked(self, row: int, col: int) -> None:
+        """公司分頁：單擊 Row 0（↩ 返回客戶索引）跳回索引。"""
+        table = self.sender()
+        if not isinstance(table, QTableWidget):
+            return
+        item = table.item(row, 0)
+        if item and "返回客戶索引" in item.text():
+            self._tab_widget.setCurrentIndex(self._sheet_tab_index.get("📋 客戶索引", 0))
+
+    def _on_cell_double_clicked(self, row: int, col: int) -> None:
+        """雙擊儲存格：
+        - 客戶索引快速連結欄 → 跳轉（不彈 popup）
+        - 公司分頁案件列（col 0 = case_id）→ 開啟案件詳情
+        - 其他 → 彈出完整內容視窗
+        """
+        table = self.sender()
+        if not isinstance(table, QTableWidget):
+            return
+
+        current_sheet = self._tab_widget.tabText(self._tab_widget.currentIndex())
+
+        # 客戶索引 快速連結欄 → 跳轉（不彈 popup）
+        if current_sheet == "📋 客戶索引":
+            header = table.horizontalHeaderItem(col)
+            if header and header.text() == "快速連結":
+                item = table.item(row, col)
+                if item and item.text().strip():
+                    self._navigate_to_sheet(item.text().strip())
+                return
+
+        # 公司分頁 案件列（row >= 2，col 0 含 case_id）→ 開啟案件詳情
+        if current_sheet not in ("📋 客戶索引", "問題追蹤總表", "QA知識庫", "Mantis提單追蹤"):
+            item0 = table.item(row, 0)
+            if item0 and item0.text().startswith("CS-") and self._conn:
+                case_id = item0.text()
+                self._open_case_detail(case_id)
+                return
+
+        # 預設：彈出完整內容視窗
+        item = table.item(row, col)
+        if not item or not item.text().strip():
+            return
+        header = table.horizontalHeaderItem(col)
+        col_name = header.text() if header else f"欄 {col + 1}"
+        dlg = QDialog(self)
+        dlg.setWindowTitle(f"第 {row + 1} 列 — {col_name}")
+        dlg.setMinimumSize(520, 320)
+        layout = QVBoxLayout(dlg)
+        te = QTextEdit()
+        te.setReadOnly(True)
+        te.setPlainText(item.text())
+        te.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        layout.addWidget(te)
+        close_btn = QPushButton("關閉")
+        close_btn.clicked.connect(dlg.accept)
+        layout.addWidget(close_btn)
+        dlg.exec()
+
+    def _open_case_detail(self, case_id: str) -> None:
+        """從報表中心開啟案件詳情對話框。"""
+        try:
+            from hcp_cms.ui.case_detail_dialog import CaseDetailDialog
+            dlg = CaseDetailDialog(self._conn, case_id, parent=self.window())
+            dlg.exec()
+        except Exception as e:
+            QMessageBox.critical(self, "開啟案件失敗", str(e))
 
     def _on_download(self) -> None:
         if not self._preview_data:

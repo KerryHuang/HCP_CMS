@@ -4,17 +4,24 @@ from __future__ import annotations
 
 import sqlite3
 import threading
+import uuid
 from datetime import datetime
 from typing import cast
 
 from PySide6.QtCore import QDate, Qt, Signal
 from PySide6.QtWidgets import (
     QApplication,
+    QComboBox,
     QDateEdit,
+    QDialog,
     QFileDialog,
+    QFormLayout,
+    QGroupBox,
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QLineEdit,
+    QMessageBox,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
@@ -25,8 +32,120 @@ from PySide6.QtWidgets import (
 
 from hcp_cms.core.excel_exporter import ExcelExporter
 from hcp_cms.core.sent_mail_manager import EnrichedSentMail, SentMailManager
+from hcp_cms.data.models import Company
+from hcp_cms.data.repositories import CompanyRepository
 from hcp_cms.services.mail.base import MailProvider
 from hcp_cms.ui.theme import ColorPalette, ThemeManager
+
+
+class _UnknownCompanyDialog(QDialog):
+    """當收件人公司未知時，讓使用者將 email domain 指定到現有公司或新增公司。"""
+
+    def __init__(
+        self,
+        conn: sqlite3.Connection,
+        domain: str,
+        recipient_email: str,
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self._conn = conn
+        self._domain = domain
+        self._recipient = recipient_email
+        self._companies: list[Company] = []
+        self.setWindowTitle("指定未知公司")
+        self.setMinimumWidth(440)
+        self._setup_ui()
+
+    def _setup_ui(self) -> None:
+        layout = QVBoxLayout(self)
+        layout.setSpacing(12)
+
+        # ── 未識別資訊 ─────────────────────────────────────────────
+        info_box = QGroupBox("未識別的收件人")
+        info_layout = QFormLayout(info_box)
+        info_layout.addRow("Email：", QLabel(self._recipient))
+        domain_lbl = QLabel(f"<b>{self._domain}</b>")
+        domain_lbl.setStyleSheet("color: #fbbf24;")
+        info_layout.addRow("@後方網域：", domain_lbl)
+        layout.addWidget(info_box)
+
+        # ── 指定到現有公司 ─────────────────────────────────────────
+        exist_box = QGroupBox("▸ 指定到現有公司")
+        exist_layout = QVBoxLayout(exist_box)
+
+        repo = CompanyRepository(self._conn)
+        self._companies = repo.list_all()
+
+        self._company_combo = QComboBox()
+        for c in self._companies:
+            label = f"{c.name}（網域：{c.domain or '尚未設定'}）"
+            self._company_combo.addItem(label, c.company_id)
+        exist_layout.addWidget(self._company_combo)
+
+        assign_btn = QPushButton("✅ 將此網域指定到選取公司")
+        assign_btn.clicked.connect(self._on_assign)
+        exist_layout.addWidget(assign_btn)
+        layout.addWidget(exist_box)
+
+        # ── 新增為新公司 ───────────────────────────────────────────
+        new_box = QGroupBox("▸ 新增為新公司")
+        new_layout = QFormLayout(new_box)
+        self._new_name_edit = QLineEdit()
+        self._new_name_edit.setPlaceholderText("請輸入公司名稱")
+        new_layout.addRow("公司名稱：", self._new_name_edit)
+        new_btn = QPushButton("➕ 新增公司並套用此網域")
+        new_btn.clicked.connect(self._on_new_company)
+        new_layout.addRow(new_btn)
+        layout.addWidget(new_box)
+
+        # ── 取消 ───────────────────────────────────────────────────
+        cancel_btn = QPushButton("取消")
+        cancel_btn.clicked.connect(self.reject)
+        layout.addWidget(cancel_btn)
+
+    def _on_assign(self) -> None:
+        idx = self._company_combo.currentIndex()
+        if idx < 0 or idx >= len(self._companies):
+            return
+        company = self._companies[idx]
+        # 若已有不同網域，詢問確認
+        if company.domain and company.domain.lower() != self._domain.lower():
+            ret = QMessageBox.question(
+                self,
+                "確認更換網域",
+                f"公司「{company.name}」目前網域為「{company.domain}」，\n"
+                f"確定要更換為「{self._domain}」嗎？",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            if ret != QMessageBox.StandardButton.Yes:
+                return
+        company.domain = self._domain
+        CompanyRepository(self._conn).update(company)
+        QMessageBox.information(
+            self, "已儲存",
+            f"已將網域「{self._domain}」指定到公司「{company.name}」。\n"
+            "返回後清單將自動重新整理。"
+        )
+        self.accept()
+
+    def _on_new_company(self) -> None:
+        name = self._new_name_edit.text().strip()
+        if not name:
+            QMessageBox.warning(self, "請輸入名稱", "請輸入公司名稱後再新增。")
+            return
+        new_company = Company(
+            company_id=uuid.uuid4().hex[:8],
+            name=name,
+            domain=self._domain,
+        )
+        CompanyRepository(self._conn).insert(new_company)
+        QMessageBox.information(
+            self, "已新增",
+            f"已新增公司「{name}」並設定網域「{self._domain}」。\n"
+            "返回後清單將自動重新整理。"
+        )
+        self.accept()
 
 
 class SentMailTab(QWidget):
@@ -226,16 +345,32 @@ class SentMailTab(QWidget):
 
     # --- 渲染 ---
 
+    @staticmethod
+    def _norm_subject(subject: str) -> str:
+        """正規化主旨以進行 thread 比對：
+        1. 去除 | 前綴
+        2. 去除 RE:/FW: 等前綴
+        3. 去除尾端括號標記（如 (回覆結案)、(RD_XXX)、(** Security C**)）
+        """
+        import re
+
+        from hcp_cms.core.thread_tracker import ThreadTracker
+        s = (subject or "").strip().lstrip("|").strip()
+        s = ThreadTracker.clean_subject(s)
+        # 去除尾端所有括號標記（全形/半形）
+        s = re.sub(r'\s*[\(（][^)）]*[\)）]', '', s).strip()
+        return s.lower()
+
     def _populate_tables(self, mails: list[EnrichedSentMail]) -> None:
-        # 彙總表：以不重複主旨數計算各公司次數，依次數降冪
+        # 彙總表：以該公司總寄件封數計算次數，依次數降冪
         company_names: dict[str, str] = {}
-        company_subjects: dict[str, set[str]] = {}
+        company_counts: dict[str, int] = {}
         for m in mails:
             if m.company_id:
                 company_names.setdefault(m.company_id, m.company_name or m.company_id)
-                company_subjects.setdefault(m.company_id, set()).add(m.subject)
+                company_counts[m.company_id] = company_counts.get(m.company_id, 0) + 1
         ranked = sorted(
-            [(company_names[cid], len(subjects)) for cid, subjects in company_subjects.items()],
+            [(company_names[cid], cnt) for cid, cnt in company_counts.items()],
             key=lambda x: x[1],
             reverse=True,
         )
@@ -246,6 +381,7 @@ class SentMailTab(QWidget):
 
         # 寄件清單
         self._list_table.setRowCount(len(mails))
+        # 第幾封：以 (company_id, 正規化主旨) 為 key，同一 thread 連續計數
         thread_counters: dict[tuple[str, str], int] = {}
         for row, m in enumerate(mails):
             self._list_table.setItem(row, 0, QTableWidgetItem(m.date if m.date else ""))
@@ -258,7 +394,7 @@ class SentMailTab(QWidget):
                 case_item.setToolTip("雙擊複製案件編號")
             self._list_table.setItem(row, 4, case_item)
             if m.company_id:
-                key = (m.company_id, m.subject)
+                key = (m.company_id, self._norm_subject(m.subject))
                 thread_counters[key] = thread_counters.get(key, 0) + 1
                 count_text = str(thread_counters[key])
             else:
@@ -284,7 +420,26 @@ class SentMailTab(QWidget):
 
     def _on_cell_double_clicked(self, row: int, col: int) -> None:
         if col == 4:
+            # 複製案件編號
             item = self._list_table.item(row, col)
             if item and item.text() != "—":
                 QApplication.clipboard().setText(item.text())
                 self._log.append(f"📋 已複製案件編號：{item.text()}")
+        elif col == 3:
+            # 公司欄「未知」→ 開啟維護視窗
+            item = self._list_table.item(row, col)
+            if item and item.text() == "未知" and self._conn:
+                if row < len(self._current_mails):
+                    mail = self._current_mails[row]
+                    recipient = mail.recipients[0] if mail.recipients else ""
+                    domain = recipient.split("@", 1)[1].lower().strip() if "@" in recipient else ""
+                    if not domain:
+                        QMessageBox.information(
+                            self, "無法識別",
+                            f"收件人「{recipient}」無法解析網域。"
+                        )
+                        return
+                    dlg = _UnknownCompanyDialog(self._conn, domain, recipient, self)
+                    if dlg.exec() == QDialog.DialogCode.Accepted:
+                        # 重新抓取並更新清單
+                        self._on_refresh()

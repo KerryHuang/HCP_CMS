@@ -918,8 +918,8 @@ class CaseLogRepository:
     def insert(self, log: CaseLog) -> None:
         self._conn.execute(
             """
-            INSERT INTO case_logs (log_id, case_id, direction, content, mantis_ref, logged_by, logged_at)
-            VALUES (:log_id, :case_id, :direction, :content, :mantis_ref, :logged_by, :logged_at)
+            INSERT INTO case_logs (log_id, case_id, direction, content, mantis_ref, logged_by, logged_at, reply_time)
+            VALUES (:log_id, :case_id, :direction, :content, :mantis_ref, :logged_by, :logged_at, :reply_time)
             """,
             {
                 "log_id": log.log_id,
@@ -929,6 +929,7 @@ class CaseLogRepository:
                 "mantis_ref": log.mantis_ref,
                 "logged_by": log.logged_by,
                 "logged_at": log.logged_at,
+                "reply_time": log.reply_time,
             },
         )
         self._conn.commit()

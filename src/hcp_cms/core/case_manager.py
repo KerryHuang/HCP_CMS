@@ -12,6 +12,32 @@ from hcp_cms.data.models import Case, CaseLog
 from hcp_cms.data.repositories import CaseLogRepository, CaseRepository
 
 _SLASH_FMT = re.compile(r"^\d{4}/\d{2}/\d{2}")
+_FMT_LONG = "%Y/%m/%d %H:%M:%S"
+_FMT_SHORT = "%Y/%m/%d %H:%M"
+
+
+def _parse_dt(s: str) -> datetime:
+    try:
+        return datetime.strptime(s[:19], _FMT_LONG)
+    except ValueError:
+        return datetime.strptime(s[:16], _FMT_SHORT)
+
+
+def _calc_elapsed_str(start: str | None, end: str | None) -> str | None:
+    """計算兩個時間點之間的差距，回傳如 '2時30分' 的字串。差距不足 1 分鐘時回傳 None。"""
+    if not start or not end:
+        return None
+    try:
+        total_minutes = max(0, int((_parse_dt(end) - _parse_dt(start)).total_seconds() / 60))
+        hours, minutes = divmod(total_minutes, 60)
+        days, hours = divmod(hours, 24)
+        if days:
+            return f"{days}天{hours}時" if hours else f"{days}天"
+        if hours:
+            return f"{hours}時{minutes}分" if minutes else f"{hours}時"
+        return f"{minutes}分" if minutes else None
+    except Exception:
+        return None
 
 
 def _normalize_sent_time(value: str | None) -> str | None:
@@ -91,12 +117,23 @@ class CaseManager:
                     log_time = _base if len(_base) >= 19 else f"{_base}:00"
                 else:
                     log_time = datetime.now().strftime("%Y/%m/%d %H:%M:%S")
+                # 計算回應時長：找最近一筆客戶來信的時間點作為起點
+                elapsed: str | None = None
+                if direction == "HCP 信件回覆":
+                    prior_logs = self._log_repo.list_by_case(existing.case_id)
+                    customer_times = [
+                        lg.logged_at for lg in prior_logs
+                        if lg.direction == "客戶來信" and lg.logged_at
+                    ]
+                    start_time = max(customer_times) if customer_times else existing.sent_time
+                    elapsed = _calc_elapsed_str(start_time, log_time)
                 log = CaseLog(
                     log_id=self._log_repo.next_log_id(),
                     case_id=existing.case_id,
                     direction=direction,
                     content=body,
                     logged_at=log_time,
+                    reply_time=elapsed,
                 )
                 self._log_repo.insert(log)
                 existing.reply_count += 1

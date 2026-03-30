@@ -32,6 +32,7 @@ from PySide6.QtWidgets import (
 )
 
 from hcp_cms.core.case_detail_manager import CaseDetailManager
+from hcp_cms.core.case_manager import _calc_elapsed_str
 from hcp_cms.data.models import Case
 from hcp_cms.ui.theme import ColorPalette
 
@@ -69,9 +70,51 @@ class CaseDetailDialog(QDialog):
         self._tabs.addTab(self._build_tab1(), "📋 案件資訊")
         self._tabs.addTab(self._build_tab2(), "📝 補充記錄")
         self._tabs.addTab(self._build_tab3(), "🔧 Mantis 關聯")
-        layout.addWidget(self._tabs)
+        layout.addWidget(self._tabs, stretch=1)
+
+        # ── 對話框層級按鈕列（各分頁皆可存取）────────────────────────
+        btn_row = QHBoxLayout()
+        btn_row.setContentsMargins(8, 4, 8, 8)
+        self._save_btn = QPushButton("💾 儲存")
+        self._save_btn.clicked.connect(self._on_save)
+        self._close_case_btn = QPushButton("🔒 結案")
+        self._close_case_btn.clicked.connect(self._on_close_case)
+        btn_row.addStretch()
+        btn_row.addWidget(self._save_btn)
+        btn_row.addWidget(self._close_case_btn)
+        layout.addLayout(btn_row)
+
         self._load_case()
         self._tabs.currentChanged.connect(self._on_tab_changed)
+
+    def _calc_case_elapsed(self, case: "Case") -> str:
+        """計算案件回應時長：sent_time → 最後一筆 HCP 回覆 log（若無則用現在時間）。"""
+        from datetime import datetime
+        try:
+            logs = self._manager.list_logs(case.case_id)
+            hcp_times = [
+                lg.logged_at for lg in logs
+                if lg.direction in ("HCP 信件回覆", "HCP 線上回覆") and lg.logged_at
+            ]
+            end_time = (
+                max(hcp_times) if hcp_times
+                else datetime.now().strftime("%Y/%m/%d %H:%M:%S")
+            )
+            return _calc_elapsed_str(case.sent_time, end_time) or ""
+        except Exception:
+            return ""
+
+    def _load_status_options(self) -> list[str]:
+        """載入狀態選項：預設值 + DB 中已有的自訂狀態。"""
+        defaults = ["處理中", "已回覆", "已完成", "Closed"]
+        try:
+            rows = self._conn.execute(
+                "SELECT DISTINCT status FROM cs_cases WHERE status IS NOT NULL ORDER BY status"
+            ).fetchall()
+            extra = [r[0] for r in rows if r[0] not in defaults]
+            return defaults + extra
+        except Exception:
+            return defaults
 
     def _build_tab1(self) -> QWidget:
         w = QWidget()
@@ -112,8 +155,8 @@ class CaseDetailDialog(QDialog):
 
         # 右欄
         self._f_status = QComboBox()
-        self._f_status.addItems(["處理中", "已回覆", "已完成", "Closed"])
-        self._f_status.setEnabled(False)
+        self._f_status.setEditable(True)
+        self._f_status.addItems(self._load_status_options())
         self._f_priority = QComboBox()
         self._f_priority.addItems(["高", "中", "低"])
         self._f_issue_type = QLineEdit()
@@ -122,6 +165,9 @@ class CaseDetailDialog(QDialog):
         self._f_rd_assignee = QLineEdit()
         self._f_handler = QLineEdit()
         self._f_reply_time = QLineEdit()
+        self._f_reply_time.setReadOnly(True)
+        self._f_reply_time.setStyleSheet("background:#1e293b; color:#94a3b8;")
+        self._f_reply_time.setPlaceholderText("自動計算")
         self._f_impact_period = QLineEdit()
 
         right.addRow("狀態：", self._f_status)
@@ -131,7 +177,7 @@ class CaseDetailDialog(QDialog):
         right.addRow("系統產品：", self._f_system_product)
         right.addRow("技術負責人：", self._f_rd_assignee)
         right.addRow("處理人員：", self._f_handler)
-        right.addRow("回覆時間：", self._f_reply_time)
+        right.addRow("回應時長：", self._f_reply_time)
         right.addRow("影響期間：", self._f_impact_period)
 
         cols.addLayout(left)
@@ -163,18 +209,6 @@ class CaseDetailDialog(QDialog):
         scroll.setWidget(content)
         outer.addWidget(scroll, stretch=1)
 
-        # 按鈕列（固定在底部，不捲動）
-        btn_row = QHBoxLayout()
-        btn_row.setContentsMargins(8, 4, 8, 4)
-        save_btn = QPushButton("💾 儲存")
-        save_btn.clicked.connect(self._on_save)
-        close_btn = QPushButton("🔒 結案")
-        close_btn.clicked.connect(self._on_close_case)
-        btn_row.addStretch()
-        btn_row.addWidget(save_btn)
-        btn_row.addWidget(close_btn)
-        outer.addLayout(btn_row)
-
         return w
 
     def _build_tab2(self) -> QWidget:
@@ -191,9 +225,9 @@ class CaseDetailDialog(QDialog):
         toolbar.addStretch()
         layout.addLayout(toolbar)
 
-        self._log_table = QTableWidget(0, 5)
+        self._log_table = QTableWidget(0, 6)
         self._log_table.setHorizontalHeaderLabels(
-            ["時間", "方向", "記錄人", "Mantis 參照", "內容摘要"]
+            ["時間", "方向", "回應時長", "記錄人", "Mantis 參照", "內容摘要"]
         )
         self._log_table.horizontalHeader().setStretchLastSection(True)
         self._log_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -215,9 +249,10 @@ class CaseDetailDialog(QDialog):
         for i, log in enumerate(logs):
             self._log_table.setItem(i, 0, QTableWidgetItem(log.logged_at))
             self._log_table.setItem(i, 1, QTableWidgetItem(log.direction))
-            self._log_table.setItem(i, 2, QTableWidgetItem(log.logged_by or ""))
-            self._log_table.setItem(i, 3, QTableWidgetItem(log.mantis_ref or ""))
-            self._log_table.setItem(i, 4, QTableWidgetItem((log.content or "")[:100]))
+            self._log_table.setItem(i, 2, QTableWidgetItem(log.reply_time or ""))
+            self._log_table.setItem(i, 3, QTableWidgetItem(log.logged_by or ""))
+            self._log_table.setItem(i, 4, QTableWidgetItem(log.mantis_ref or ""))
+            self._log_table.setItem(i, 5, QTableWidgetItem((log.content or "")[:100]))
         self._log_content.clear()
 
     def _on_log_selected(self) -> None:
@@ -242,6 +277,7 @@ class CaseDetailDialog(QDialog):
                     content=data["content"],
                     mantis_ref=data["mantis_ref"] or None,
                     logged_by=data["logged_by"] or None,
+                    reply_time=data.get("reply_time"),
                 )
                 self._refresh_log_table()
             except Exception as e:
@@ -619,7 +655,8 @@ class CaseDetailDialog(QDialog):
         self._f_system_product.setText(case.system_product or "")
         self._f_rd_assignee.setText(case.rd_assignee or "")
         self._f_handler.setText(case.handler or "")
-        self._f_reply_time.setText(case.reply_time or "")
+        # 自動計算回應時長：sent_time → 最後一筆 HCP 回覆 log
+        self._f_reply_time.setText(self._calc_case_elapsed(case))
         self._f_impact_period.setText(case.impact_period or "")
         self._f_progress.setPlainText(case.progress or "")
         self._f_notes.setPlainText(case.notes or "")
@@ -681,14 +718,23 @@ class CaseDetailDialog(QDialog):
                 self._manager.update_extra_field(self._case_id, col_key, val)
             self._load_case()
             self.case_updated.emit()
+            QMessageBox.information(self, "儲存成功", f"案件 {self._case_id} 已儲存。")
         except Exception as e:
             QMessageBox.critical(self, "儲存失敗", str(e))
 
     def _on_close_case(self) -> None:
+        reply = QMessageBox.question(
+            self, "確認結案",
+            f"確定要將案件 {self._case_id} 標記為「已完成」並關閉？",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
         try:
             self._manager.close_case(self._case_id)
-            self._load_case()
             self.case_updated.emit()
+            QMessageBox.information(self, "結案完成", f"案件 {self._case_id} 已標記為「已完成」。")
+            self.accept()  # 關閉詳情對話框
         except Exception as e:
             QMessageBox.critical(self, "操作失敗", str(e))
 
@@ -697,6 +743,17 @@ class CaseDetailDialog(QDialog):
             self._refresh_log_table()
         elif index == 2:
             self._refresh_mantis_table()
+            self._autofill_ticket_input()
+
+    def _autofill_ticket_input(self) -> None:
+        """若 Ticket 輸入欄為空且案件 notes 含 ISSUE# 編號，自動帶入。"""
+        import re as _re
+        if self._ticket_input.text().strip():
+            return  # 已有值，不覆蓋
+        if self._case and self._case.notes:
+            m = _re.search(r"ISSUE#(\d+)", self._case.notes)
+            if m:
+                self._ticket_input.setText(m.group(1))
 
 
 class CaseLogAddDialog(QDialog):

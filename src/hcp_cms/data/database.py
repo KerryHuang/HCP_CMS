@@ -199,6 +199,7 @@ class DatabaseManager:
             "ALTER TABLE mantis_tickets ADD COLUMN notes_json TEXT",
             "ALTER TABLE mantis_tickets ADD COLUMN last_updated TEXT",
             "ALTER TABLE mantis_tickets ADD COLUMN notes_count INTEGER",
+            "ALTER TABLE case_logs ADD COLUMN reply_time TEXT",
         ]
         for sql in pending:
             try:

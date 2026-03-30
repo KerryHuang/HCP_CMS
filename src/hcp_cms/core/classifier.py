@@ -8,9 +8,12 @@ from hcp_cms.data.repositories import CompanyRepository, RuleRepository
 
 OUR_DOMAIN = "ares.com.tw"
 
-# 從主旨解析 Mantis ISSUE 資訊：ISSUE_YYYYMMDD_INNNNN_
+# 從主旨/檔名解析 Mantis ISSUE 資訊
+# 支援兩種格式：
+#   舊格式：ISSUE_YYYYMMDD_INNNNN_    → e.g. ISSUE_20260319_I0017445_
+#   新格式：ISSUE_YYYYMM_N_INNNNNNN_  → e.g. ISSUE_202603_5_I0017475_
 _ISSUE_RE = re.compile(
-    r"ISSUE_(\d{8})_I(\d+)_",
+    r"ISSUE_(\d{6,8})_(?:\d+_)?I?(\d+)_",
     re.IGNORECASE,
 )
 
@@ -82,8 +85,8 @@ class Classifier:
         """
         result: dict = {}
 
-        # ISSUE 編號：ISSUE_20260319_0017445_
-        m = re.search(r"ISSUE_\d{8}_(\d+)_", subject, re.IGNORECASE)
+        # ISSUE 編號：舊格式 ISSUE_YYYYMMDD_NNNNNNN_ 或新格式 ISSUE_YYYYMM_N_INNNNNNN_
+        m = re.search(r"ISSUE_\d{6,8}_(?:\d+_)?I?(\d+)_", subject, re.IGNORECASE)
         if m:
             result["issue_number"] = m.group(1)
 
