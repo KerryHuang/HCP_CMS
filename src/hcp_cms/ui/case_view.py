@@ -111,8 +111,16 @@ class CaseView(QWidget):
         import_btn.clicked.connect(self._on_import_csv)
         header.addWidget(import_btn)
 
-        self._delete_btn = QPushButton("🗑 刪除案件")
+        self._delete_selected_btn = QPushButton("🗑 刪除選取")
+        self._delete_selected_btn.setObjectName("dangerBtn")
+        self._delete_selected_btn.setToolTip("刪除目前選取的案件（需先點選一筆）")
+        self._delete_selected_btn.setEnabled(False)
+        self._delete_selected_btn.clicked.connect(self._on_delete_single_case)
+        header.addWidget(self._delete_selected_btn)
+
+        self._delete_btn = QPushButton("🗑 批次刪除")
         self._delete_btn.setObjectName("dangerBtn")
+        self._delete_btn.setToolTip("依日期範圍批次刪除案件")
         self._delete_btn.clicked.connect(self._on_delete_cases)
         header.addWidget(self._delete_btn)
 
@@ -251,6 +259,7 @@ class CaseView(QWidget):
 
     def _clear_detail(self) -> None:
         """清空下方詳細資訊面板。"""
+        self._delete_selected_btn.setEnabled(False)
         self._detail_id.clear()
         self._detail_subject.clear()
         self._detail_status.clear()
@@ -263,6 +272,7 @@ class CaseView(QWidget):
 
     def _on_selection_changed(self) -> None:
         rows = self._table.selectionModel().selectedRows()
+        self._delete_selected_btn.setEnabled(bool(rows))
         if not rows or not hasattr(self, '_cases'):
             return
         row = rows[0].row()
