@@ -65,3 +65,39 @@ class TestReportWriter:
         wb = openpyxl.load_workbook(str(path))
         assert wb["EmptySheet"].max_row == 1
         wb.close()
+
+
+class TestAppendMantisSheet:
+    def test_mantis_sheet_created(self, tmp_path):
+        """append_mantis_sheet() 在既有 workbook 新增工作表。"""
+        path = tmp_path / "report.xlsx"
+        # 先建立一個基礎 workbook
+        ReportWriter.write_excel({"摘要": [["欄位"], ["值"]]}, path)
+
+        mantis_rows = [
+            {"ticket_id": "MT-001", "summary": "問題A", "status": "assigned",
+             "priority": "urgent", "unresolved_days": "5 天",
+             "last_updated": "2026/03/26", "handler": "王小明", "category": "high"},
+        ]
+        ReportWriter.append_mantis_sheet(path, "📌 Mantis 追蹤", mantis_rows)
+
+        wb = openpyxl.load_workbook(str(path))
+        assert "📌 Mantis 追蹤" in wb.sheetnames
+
+    def test_mantis_high_row_fill_color(self, tmp_path):
+        """high 分類的列背景色應為 #450a0a。"""
+        path = tmp_path / "report.xlsx"
+        ReportWriter.write_excel({"摘要": [["欄位"], ["值"]]}, path)
+
+        mantis_rows = [
+            {"ticket_id": "MT-001", "summary": "急件", "status": "assigned",
+             "priority": "urgent", "unresolved_days": "5 天",
+             "last_updated": "2026/03/26", "handler": "王小明", "category": "high"},
+        ]
+        ReportWriter.append_mantis_sheet(path, "📌 Mantis 追蹤", mantis_rows)
+
+        wb = openpyxl.load_workbook(str(path))
+        ws = wb["📌 Mantis 追蹤"]
+        # 第 1 列為表頭，第 2 列為資料
+        fill = ws.cell(row=2, column=1).fill
+        assert fill.fgColor.rgb.upper().endswith("450A0A")

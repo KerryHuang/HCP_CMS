@@ -17,6 +17,14 @@ BORDER_THIN = Border(
     bottom=Side(style="thin", color="CCCCCC"),
 )
 
+# Mantis 追蹤工作表分類色彩（背景色, 字體色）
+_MANTIS_COLORS: dict[str, tuple[str, str]] = {
+    "high": ("450A0A", "FFFFFF"),
+    "salary": ("422006", "FEF08A"),
+    "normal": ("111827", "E2E8F0"),
+    "closed": ("1A1A1A", "4B5563"),
+}
+
 
 class ReportWriter:
     """Writes structured report data to Excel files with styling."""
@@ -70,5 +78,67 @@ class ReportWriter:
                 if adjusted > 0:
                     col_letter = col_cells[0].column_letter
                     ws.column_dimensions[col_letter].width = adjusted
+
+        wb.save(str(path))
+
+    @staticmethod
+    def append_mantis_sheet(
+        path: Path,
+        sheet_name: str,
+        rows: list[dict],
+    ) -> None:
+        """在已存在的 Excel 檔案中新增 Mantis 追蹤工作表（帶分色）。
+
+        Args:
+            path:       已存在的 .xlsx 檔案路徑。
+            sheet_name: 工作表名稱，如「📌 Mantis 追蹤」。
+            rows:       build_mantis_sheet() 回傳的 list[dict]，
+                        每列需含 category 欄位。
+        """
+        headers = ["#", "票號", "摘要", "狀態", "優先", "未處理天數", "最後更新", "負責人"]
+
+        wb = openpyxl.load_workbook(str(path))
+        ws = wb.create_sheet(sheet_name)
+
+        # 表頭列
+        for col, value in enumerate(headers, 1):
+            cell = ws.cell(row=1, column=col, value=value)
+            cell.font = FONT_HEADER
+            cell.fill = FILL_HEADER
+            cell.alignment = Alignment(horizontal="center")
+            cell.border = BORDER_THIN
+
+        # 資料列
+        for row_idx, row in enumerate(rows, 2):
+            bg, fg = _MANTIS_COLORS.get(row.get("category", "normal"), ("111827", "E2E8F0"))
+            fill = PatternFill(start_color=bg, end_color=bg, fill_type="solid")
+            font = Font(name="微軟正黑體", size=10, color=fg)
+            values = [
+                row_idx - 1,
+                row["ticket_id"],
+                row["summary"],
+                row["status"],
+                row["priority"],
+                row["unresolved_days"],
+                row["last_updated"],
+                row["handler"],
+            ]
+            for col, value in enumerate(values, 1):
+                cell = ws.cell(row=row_idx, column=col, value=value)
+                cell.fill = fill
+                cell.font = font
+                cell.border = BORDER_THIN
+
+        # 凍結首列
+        ws.freeze_panes = "A2"
+
+        # 自動調整欄寬
+        for col_cells in ws.columns:
+            max_length = max(
+                (len(str(c.value)) for c in col_cells if c.value), default=0
+            )
+            adjusted = min(max_length + 2, 50)
+            if adjusted > 0:
+                ws.column_dimensions[col_cells[0].column_letter].width = adjusted
 
         wb.save(str(path))
