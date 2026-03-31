@@ -37,7 +37,7 @@ class TestMainWindow:
         from hcp_cms.ui.main_window import MainWindow
 
         window = MainWindow(db.connection)
-        assert window._stack.count() == 8  # 8 views
+        assert window._stack.count() == 9  # 9 views（含客戶管理）
 
     def test_f1_shortcut_exists(self, qapp):
         from hcp_cms.ui.main_window import MainWindow

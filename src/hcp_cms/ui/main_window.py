@@ -27,6 +27,7 @@ from hcp_cms.ui.email_view import EmailView
 from hcp_cms.ui.kms_view import KMSView
 from hcp_cms.ui.mantis_view import MantisView
 from hcp_cms.ui.report_view import ReportView
+from hcp_cms.ui.customer_view import CustomerView
 from hcp_cms.ui.rules_view import RulesView
 from hcp_cms.ui.settings_view import SettingsView
 from hcp_cms.ui.theme import ColorPalette, ThemeManager
@@ -86,6 +87,7 @@ class MainWindow(QMainWindow):
         nav_items = [
             ("📊 儀表板", "dashboard", "⇧H"),
             ("📋 案件管理", "cases", "⇧C"),
+            ("🏢 客戶管理", "customers", "⇧U"),
             ("📚 KMS 知識庫", "kms", "⇧K"),
             ("📧 信件處理", "email", "⇧E"),
             ("🔧 Mantis 同步", "mantis", "⇧M"),
@@ -116,6 +118,7 @@ class MainWindow(QMainWindow):
             "cases": CaseView(
                 self._conn, db_path=self._db_dir / "cs_tracker.db" if self._db_dir else None, theme_mgr=self._theme_mgr
             ),
+            "customers": CustomerView(self._conn, theme_mgr=self._theme_mgr),
             "kms": KMSView(self._conn, kms=kms, db_dir=self._db_dir, theme_mgr=self._theme_mgr),
             "email": EmailView(self._conn, kms=kms, theme_mgr=self._theme_mgr),
             "mantis": MantisView(self._conn, theme_mgr=self._theme_mgr),
@@ -179,7 +182,7 @@ class MainWindow(QMainWindow):
                 if label:
                     label.setStyleSheet(f"color: {selected_color};" if i == index else f"color: {unselected_color};")
         # 切到信件處理頁時自動連線
-        if index == 3:  # 信件處理 = index 3
+        if index == 4:  # 信件處理 = index 4（客戶管理插入後）
             self._views["email"].try_auto_connect()
 
     def _on_navigate_to_recent_cases(self) -> None:
@@ -197,12 +200,13 @@ class MainWindow(QMainWindow):
         shortcuts = [
             ("Ctrl+Shift+H", 0),  # 儀表板
             ("Ctrl+Shift+C", 1),  # 案件管理
-            ("Ctrl+Shift+K", 2),  # KMS 知識庫
-            ("Ctrl+Shift+E", 3),  # 信件處理
-            ("Ctrl+Shift+M", 4),  # Mantis 同步
-            ("Ctrl+Shift+R", 5),  # 報表中心
-            ("Ctrl+Shift+L", 6),  # 規則設定
-            ("Ctrl+Shift+S", 7),  # 系統設定
+            ("Ctrl+Shift+U", 2),  # 客戶管理（新增）
+            ("Ctrl+Shift+K", 3),  # KMS 知識庫
+            ("Ctrl+Shift+E", 4),  # 信件處理
+            ("Ctrl+Shift+M", 5),  # Mantis 同步
+            ("Ctrl+Shift+R", 6),  # 報表中心
+            ("Ctrl+Shift+L", 7),  # 規則設定
+            ("Ctrl+Shift+S", 8),  # 系統設定
         ]
         for key, index in shortcuts:
             action = QAction(key, self)
