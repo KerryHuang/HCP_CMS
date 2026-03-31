@@ -283,6 +283,22 @@ class ReportEngine:
         for it, count in sorted(issue_counts.items(), key=lambda x: -x[1]):
             pct = count / total * 100 if total > 0 else 0
             summary_rows.append([it, count, f"{pct:.1f}%"])
+
+        # ── Mantis 統計 ────────────────────────────────────────────────
+        mantis_rows_all = self.build_mantis_sheet()
+        if mantis_rows_all:
+            mantis_counts: dict[str, int] = {"high": 0, "salary": 0, "normal": 0, "closed": 0}
+            for mr in mantis_rows_all:
+                mantis_counts[mr["category"]] = mantis_counts.get(mr["category"], 0) + 1
+            summary_rows.append([])
+            summary_rows.append(["📌 Mantis 追蹤統計"])
+            summary_rows.append(["分類", "件數"])
+            summary_rows.append(["高優先度 🔴", mantis_counts["high"]])
+            summary_rows.append(["薪資相關 🟡", mantis_counts["salary"]])
+            summary_rows.append(["一般處理中", mantis_counts["normal"]])
+            summary_rows.append(["已結案", mantis_counts["closed"]])
+            summary_rows.append(["合計", len(mantis_rows_all)])
+
         result["📊 月報摘要"] = summary_rows
 
         # ── Sheet 2: 案件明細 ──────────────────────────────────────────

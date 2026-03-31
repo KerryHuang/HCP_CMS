@@ -277,3 +277,24 @@ class TestGenerateMonthlyReportWithMantis:
         # 第 1 列是表頭，第 2 列起是資料
         data_rows = ws.max_row - 1
         assert data_rows == 3
+
+
+class TestBuildMonthlyReportMantisStats:
+    def test_mantis_stats_in_summary_sheet(self, mantis_seeded_db):
+        """build_monthly_report() 的月報摘要應包含 Mantis 統計區段。"""
+        engine = ReportEngine(mantis_seeded_db.connection)
+        data = engine.build_monthly_report("2026/03/01", "2026/03/31")
+        summary_rows = data["📊 月報摘要"]
+        # 檢查是否含有「Mantis 追蹤統計」標題
+        flat = [str(cell) for row in summary_rows for cell in row]
+        assert any("Mantis" in cell for cell in flat)
+
+    def test_mantis_stats_count_correct(self, mantis_seeded_db):
+        """Mantis 統計合計應等於 ticket 總數（3 筆）。"""
+        engine = ReportEngine(mantis_seeded_db.connection)
+        data = engine.build_monthly_report("2026/03/01", "2026/03/31")
+        summary_rows = data["📊 月報摘要"]
+        # 找到「合計」列
+        total_row = next((r for r in summary_rows if r and r[0] == "合計"), None)
+        assert total_row is not None
+        assert total_row[1] == 3
