@@ -7,7 +7,7 @@ import sqlite3
 from datetime import datetime
 
 from hcp_cms.data.models import Company, Staff
-from hcp_cms.data.repositories import CompanyRepository, StaffRepository
+from hcp_cms.data.repositories import CaseRepository, CompanyRepository, StaffRepository
 
 
 def _gen_company_id() -> str:
@@ -25,6 +25,7 @@ class CustomerManager:
         self._conn = conn
         self._company_repo = CompanyRepository(conn)
         self._staff_repo = StaffRepository(conn)
+        self._case_repo = CaseRepository(conn)
 
     # ── 公司 ──────────────────────────────────────────────────────────────
 
@@ -153,3 +154,42 @@ class CustomerManager:
             return None
         staff = self._staff_repo.get_by_id(company.cs_staff_id)
         return staff.name if staff else None
+
+    # ── 案件重新比對 ──────────────────────────────────────────────────────
+
+    def reassociate_case_companies(self) -> int:
+        """嘗試將 company_id 遺失的案件重新比對至正確公司。
+
+        兩種策略：
+        1. contact_person 含 '@' → 擷取網域 → 查詢 companies.domain（含子網域 fallback）
+        2. company_id 為公司名稱（CSV 匯入舊格式，非 COMP- 開頭）→ 比對 companies.name
+
+        Returns:
+            成功比對並更新的案件數
+        """
+        matched = 0
+
+        # 策略 1：contact_person email 網域比對
+        for case_id, contact_person in self._case_repo.list_null_company_with_contact():
+            if not contact_person or "@" not in contact_person:
+                continue
+            domain = contact_person.split("@")[-1].strip().lower()
+            company = self._company_repo.get_by_domain(domain)
+            if not company:
+                parts = domain.split(".")
+                if len(parts) > 2:
+                    company = self._company_repo.get_by_domain(".".join(parts[1:]))
+            if company:
+                self._case_repo.update_company_id(case_id, company.company_id)
+                matched += 1
+
+        # 策略 2：CSV 匯入的 company_id（= 公司名稱）比對正式 company_id
+        name_to_id = {c.name: c.company_id for c in self._company_repo.list_all()}
+        for case_id, stub_id in self._case_repo.list_csv_stub_company_ids():
+            if stub_id in name_to_id and name_to_id[stub_id] != stub_id:
+                self._case_repo.update_company_id(case_id, name_to_id[stub_id])
+                matched += 1
+
+        if matched:
+            self._conn.commit()
+        return matched

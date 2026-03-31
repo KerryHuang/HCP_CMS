@@ -111,6 +111,20 @@ class CustomerView(QWidget):
         self._tabs.addTab(self._build_staff_tab("sales"), "🤝 業務人員")
         layout.addWidget(self._tabs)
 
+        # 全域工具列（不分 tab）
+        global_bar = QWidget()
+        glay = QHBoxLayout(global_bar)
+        glay.setContentsMargins(0, 4, 0, 0)
+        glay.setSpacing(6)
+        reassoc_btn = QPushButton("🔄 重新比對案件公司")
+        reassoc_btn.setToolTip(
+            "將 company_id 遺失的案件，依 contact_person email 網域或公司名稱重新比對"
+        )
+        reassoc_btn.clicked.connect(self._on_reassociate_cases)
+        glay.addWidget(reassoc_btn)
+        glay.addStretch()
+        layout.addWidget(global_bar)
+
         self._tabs.currentChanged.connect(self._on_tab_changed)
         self.refresh()
 
@@ -462,6 +476,29 @@ class CustomerView(QWidget):
                 if staff:
                     mgr.delete_staff(staff.staff_id)
         self.refresh()
+
+    def _on_reassociate_cases(self) -> None:
+        if not self._conn:
+            return
+        mgr = CustomerManager(self._conn)
+        try:
+            count = mgr.reassociate_case_companies()
+        except Exception as exc:
+            QMessageBox.critical(self, "比對失敗", f"比對時發生錯誤：{exc}")
+            return
+        if count:
+            QMessageBox.information(
+                self, "比對完成",
+                f"成功比對 {count} 筆案件的公司對應關係。"
+            )
+        else:
+            QMessageBox.information(
+                self, "比對完成",
+                "沒有找到可比對的案件。\n\n"
+                "可能原因：\n"
+                "• 案件的 contact_person 欄位未填寫 email\n"
+                "• 所有案件的公司對應已完整，無需補齊"
+            )
 
     def _on_tab_changed(self, _index: int) -> None:
         pass

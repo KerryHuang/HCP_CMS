@@ -519,6 +519,31 @@ class CaseRepository:
             self._conn.commit()
         return len(case_ids)
 
+    def list_null_company_with_contact(self) -> list[tuple[str, str]]:
+        """回傳 company_id 為 NULL 且 contact_person 含 '@' 的 (case_id, contact_person)。
+        用於重新比對案件公司：從 contact_person 擷取 email 網域。
+        """
+        rows = self._conn.execute(
+            "SELECT case_id, contact_person FROM cs_cases WHERE company_id IS NULL AND contact_person LIKE '%@%'"
+        ).fetchall()
+        return [(r[0], r[1]) for r in rows]
+
+    def list_csv_stub_company_ids(self) -> list[tuple[str, str]]:
+        """回傳 company_id 不以 'COMP-' 開頭的 (case_id, company_id)。
+        CSV 匯入時 company_id 使用公司名稱作為 ID，此方法用於比對正式公司記錄。
+        """
+        rows = self._conn.execute(
+            "SELECT case_id, company_id FROM cs_cases WHERE company_id IS NOT NULL AND company_id NOT LIKE 'COMP-%'"
+        ).fetchall()
+        return [(r[0], r[1]) for r in rows]
+
+    def update_company_id(self, case_id: str, company_id: str) -> None:
+        """更新單一案件的 company_id（不單獨 commit，由呼叫端批次 commit）。"""
+        self._conn.execute(
+            "UPDATE cs_cases SET company_id = ? WHERE case_id = ?",
+            (company_id, case_id),
+        )
+
 
 # ---------------------------------------------------------------------------
 # QARepository
