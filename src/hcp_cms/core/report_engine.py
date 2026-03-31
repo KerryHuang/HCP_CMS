@@ -6,6 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from hcp_cms.core.mantis_classifier import MantisClassifier
 from hcp_cms.core.report_writer import ReportWriter
 from hcp_cms.data.repositories import (
     CaseMantisRepository,
@@ -334,8 +335,6 @@ class ReportEngine:
             unresolved_days, last_updated, handler, category
             排序：high → salary → normal → closed
         """
-        from hcp_cms.core.mantis_classifier import MantisClassifier
-
         classifier = MantisClassifier()
         tickets = self._mantis_repo.list_all()
 

@@ -286,7 +286,7 @@ class MantisView(QWidget):
             self._table.setItem(i, 3, QTableWidgetItem(t.priority or ""))
             self._table.setItem(i, 4, QTableWidgetItem(t.handler or ""))
             self._table.setItem(i, 5, QTableWidgetItem(t.last_updated or "—"))
-            days_str = self._calc_unresolved_days(t.status, t.last_updated)
+            days_str = classifier.calc_unresolved_days(t)
             self._table.setItem(i, 6, QTableWidgetItem(days_str))
 
             # 套用分色
