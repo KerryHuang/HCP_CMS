@@ -5,12 +5,15 @@ from __future__ import annotations
 import sqlite3
 
 from PySide6.QtCore import QThread, Signal
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
+    QFrame,
     QGroupBox,
     QHBoxLayout,
     QLabel,
     QMessageBox,
     QPushButton,
+    QSizePolicy,
     QTableWidget,
     QTableWidgetItem,
     QTextEdit,
@@ -18,6 +21,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from hcp_cms.core.mantis_classifier import MantisClassifier
 from hcp_cms.data.repositories import MantisRepository
 from hcp_cms.services.credential import CredentialManager
 from hcp_cms.services.mantis.soap import MantisSoapClient
@@ -80,6 +84,34 @@ class _SyncWorker(QThread):
 class MantisView(QWidget):
     """Mantis 同步頁面 — 顯示所有已關聯的 Ticket 並可批次同步。"""
 
+    # 分類色彩：(背景色 hex, 前景色 hex)
+    _CATEGORY_COLORS: dict[str, tuple[str, str]] = {
+        "high":   ("#450a0a", "#ffffff"),
+        "salary": ("#422006", "#fef08a"),
+        "normal": ("#111827", "#e2e8f0"),
+        "closed": ("#1a1a1a", "#4b5563"),
+    }
+
+    @staticmethod
+    def _make_stat_frame(label: str, bg: str, fg: str) -> tuple[QFrame, QLabel]:
+        """建立統計方塊 QFrame，回傳 (frame, value_label)。"""
+        frame = QFrame()
+        frame.setStyleSheet(
+            f"QFrame {{ background: {bg}; border: 1px solid {fg}; border-radius: 6px; }}"
+        )
+        frame.setFixedHeight(56)
+        frame.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        layout = QVBoxLayout(frame)
+        layout.setContentsMargins(12, 4, 12, 4)
+        layout.setSpacing(2)
+        value_lbl = QLabel("0")
+        value_lbl.setStyleSheet(f"color: {fg}; font-size: 18px; font-weight: bold; border: none;")
+        title_lbl = QLabel(label)
+        title_lbl.setStyleSheet(f"color: {fg}; font-size: 10px; border: none;")
+        layout.addWidget(value_lbl)
+        layout.addWidget(title_lbl)
+        return frame, value_lbl
+
     def __init__(self, conn: sqlite3.Connection | None = None, theme_mgr: ThemeManager | None = None) -> None:
         super().__init__()
         self._conn = conn
@@ -125,6 +157,24 @@ class MantisView(QWidget):
         conn_layout.addWidget(hint_btn)
 
         layout.addWidget(conn_group)
+
+        # ── 統計方塊列 ───────────────────────────────────────────
+        stats_widget = QWidget()
+        stats_layout = QHBoxLayout(stats_widget)
+        stats_layout.setContentsMargins(0, 4, 0, 4)
+        stats_layout.setSpacing(8)
+
+        high_frame, self._stat_high_lbl = self._make_stat_frame("高優先度", "#450a0a", "#fca5a5")
+        salary_frame, self._stat_salary_lbl = self._make_stat_frame("薪資相關", "#422006", "#fef08a")
+        open_frame, self._stat_open_lbl = self._make_stat_frame("處理中", "#1e3a5f", "#93c5fd")
+        closed_frame, self._stat_closed_lbl = self._make_stat_frame("已結案", "#1a1a1a", "#6b7280")
+
+        stats_layout.addWidget(high_frame)
+        stats_layout.addWidget(salary_frame)
+        stats_layout.addWidget(open_frame)
+        stats_layout.addWidget(closed_frame)
+        stats_layout.addStretch()
+        layout.addWidget(stats_widget)
 
         # ── Ticket 清單 ───────────────────────────────────────────
         self._table = QTableWidget(0, 7)
@@ -215,16 +265,20 @@ class MantisView(QWidget):
         return ""
 
     def refresh(self) -> None:
-        """從本地 DB 載入已同步過的 Ticket 到清單。"""
+        """從本地 DB 載入已同步過的 Ticket 到清單，並套用分色與更新統計。"""
         if not self._conn:
             return
         repo = MantisRepository(self._conn)
         tickets = repo.list_all()
         self._table.setRowCount(len(tickets))
-        # 更新最後同步標籤（取所有 ticket 中最新的 synced_at）
+        # 更新最後同步標籤
         sync_times = [t.synced_at for t in tickets if t.synced_at]
         if sync_times:
             self._last_sync_label.setText(f"最後同步：{max(sync_times)}")
+
+        classifier = MantisClassifier()
+        counts: dict[str, int] = {"high": 0, "salary": 0, "normal": 0, "closed": 0}
+
         for i, t in enumerate(tickets):
             self._table.setItem(i, 0, QTableWidgetItem(t.ticket_id))
             self._table.setItem(i, 1, QTableWidgetItem(t.summary or ""))
@@ -234,6 +288,25 @@ class MantisView(QWidget):
             self._table.setItem(i, 5, QTableWidgetItem(t.last_updated or "—"))
             days_str = self._calc_unresolved_days(t.status, t.last_updated)
             self._table.setItem(i, 6, QTableWidgetItem(days_str))
+
+            # 套用分色
+            category = classifier.classify(t)
+            counts[category] += 1
+            bg_hex, fg_hex = self._CATEGORY_COLORS[category]
+            bg = QColor(bg_hex)
+            fg = QColor(fg_hex)
+            for col in range(7):
+                item = self._table.item(i, col)
+                if item:
+                    item.setBackground(bg)
+                    item.setForeground(fg)
+
+        # 更新統計方塊
+        self._stat_high_lbl.setText(str(counts["high"]))
+        self._stat_salary_lbl.setText(str(counts["salary"]))
+        open_count = counts["high"] + counts["salary"] + counts["normal"]
+        self._stat_open_lbl.setText(str(open_count))
+        self._stat_closed_lbl.setText(str(counts["closed"]))
 
     # ── 同步 ──────────────────────────────────────────────────────
 
