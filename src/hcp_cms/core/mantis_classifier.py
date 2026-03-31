@@ -25,18 +25,25 @@ class MantisClassifier:
     HIGH_PRIORITY: tuple[str, ...] = ("high", "urgent", "immediate")
     CLOSED_STATUSES: tuple[str, ...] = ("resolved", "closed", "已解決", "已關閉")
 
+    # 預計算小寫集合，避免每次 classify() 呼叫重新建立
+    _CLOSED_LOWER: frozenset[str] = frozenset(
+        s.lower() for s in ("resolved", "closed", "已解決", "已關閉")
+    )
+    _HIGH_LOWER: frozenset[str] = frozenset(p.lower() for p in ("high", "urgent", "immediate"))
+    _SALARY_LOWER: tuple[str, ...] = tuple(
+        kw.lower() for kw in ("薪資", "薪水", "payroll", "工資", "salary")
+    )
+
     def classify(self, ticket: MantisTicket) -> str:
         """回傳 'closed' | 'salary' | 'high' | 'normal'。"""
         status = (ticket.status or "").lower()
-        closed_lower = {s.lower() for s in self.CLOSED_STATUSES}
-        if status in closed_lower:
+        if status in self._CLOSED_LOWER:
             return "closed"
-        summary = ticket.summary or ""
-        if any(kw in summary for kw in self.SALARY_KEYWORDS):
+        summary_lower = (ticket.summary or "").lower()
+        if any(kw in summary_lower for kw in self._SALARY_LOWER):
             return "salary"
         priority = (ticket.priority or "").lower()
-        high_lower = {p.lower() for p in self.HIGH_PRIORITY}
-        if priority in high_lower:
+        if priority in self._HIGH_LOWER:
             return "high"
         return "normal"
 

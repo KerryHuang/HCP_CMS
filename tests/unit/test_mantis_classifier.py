@@ -6,7 +6,8 @@ from hcp_cms.data.models import MantisTicket
 
 def _ticket(**kwargs) -> MantisTicket:
     """快速建立 MantisTicket（只填必要欄位）。"""
-    return MantisTicket(ticket_id="MT-0001", summary=kwargs.get("summary", "一般問題"), **{k: v for k, v in kwargs.items() if k != "summary"})
+    extra = {k: v for k, v in kwargs.items() if k != "summary"}
+    return MantisTicket(ticket_id="MT-0001", summary=kwargs.get("summary", "一般問題"), **extra)
 
 
 class TestMantisClassifier:
@@ -33,6 +34,16 @@ class TestMantisClassifier:
     def test_classify_salary_keyword_english(self):
         t = _ticket(summary="Payroll module error", status="assigned")
         assert self.clf.classify(t) == "salary"
+
+    def test_classify_salary_keyword_lowercase_english(self):
+        """小寫 payroll 同樣應觸發 salary 分類。"""
+        t = _ticket(summary="payroll module error", status="assigned")
+        assert self.clf.classify(t) == "salary"
+
+    def test_classify_closed_yi_jie_jue(self):
+        """「已解決」狀態應分類為 closed。"""
+        t = _ticket(status="已解決")
+        assert self.clf.classify(t) == "closed"
 
     def test_classify_high_urgent(self):
         t = _ticket(priority="urgent", status="assigned")
