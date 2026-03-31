@@ -4,6 +4,7 @@ import re
 import sqlite3
 from email.utils import parseaddr
 
+from hcp_cms.core.customer_manager import CustomerManager
 from hcp_cms.data.repositories import CompanyRepository, RuleRepository
 
 OUR_DOMAIN = "ares.com.tw"
@@ -24,6 +25,7 @@ class Classifier:
     def __init__(self, conn: sqlite3.Connection) -> None:
         self._rule_repo = RuleRepository(conn)
         self._company_repo = CompanyRepository(conn)
+        self._customer_mgr = CustomerManager(conn)
 
     def classify(self, subject: str, body: str, sender_email: str = "", to_recipients: list[str] | None = None) -> dict:
         """
@@ -52,6 +54,31 @@ class Classifier:
             mantis_ticket_id = m_issue.group(2)  # "0017475"
             mantis_issue_date = f"{raw_date[:4]}/{raw_date[4:6]}/{raw_date[6:]}"
 
+        # handler 優先序：① 主旨 (RD_XXX) ② 寄件人 domain → 公司 → 客服 ③ 分類規則
+        subject_handler = tags.get("handler")
+        domain_handler: str | None = None
+        if not subject_handler:
+            _, saddr = parseaddr(sender_email)
+            if not saddr:
+                saddr = sender_email
+            saddr = saddr.lower()
+            sender_domain = saddr.split("@")[1] if "@" in saddr else ""
+            if sender_domain == OUR_DOMAIN or sender_domain.endswith(f".{OUR_DOMAIN}"):
+                # 我方寄出 → 從收件人中找客戶 domain
+                for r in (to_recipients or []):
+                    _, raddr = parseaddr(r)
+                    if not raddr:
+                        raddr = r
+                    raddr = raddr.lower()
+                    if "@" in raddr:
+                        rdomain = raddr.split("@")[1]
+                        if rdomain != OUR_DOMAIN and not rdomain.endswith(f".{OUR_DOMAIN}"):
+                            domain_handler = self._resolve_handler_from_domain(r)
+                            if domain_handler:
+                                break
+            else:
+                domain_handler = self._resolve_handler_from_domain(sender_email)
+
         result = {
             "system_product": self._match_rules("product", text, "HCP"),
             "issue_type": self._match_rules("issue", text, "OTH"),
@@ -60,8 +87,11 @@ class Classifier:
             "company_id": company_id,          # FK 安全值（已知公司 ID 或 None）
             "company_display": company_display,  # 顯示用（公司中文名或 domain fallback）
             "is_broadcast": self._check_broadcast(text),
-            # 主旨標記優先，其次才是 DB 規則
-            "handler": tags.get("handler") or self._match_rules("handler", text, "") or None,
+            # 主旨標記優先，其次 domain 查公司客服，最後才是 DB 規則
+            "handler": subject_handler
+                       or domain_handler
+                       or self._match_rules("handler", text, "")
+                       or None,
             "progress": tags.get("progress") or self._match_rules("progress", text, "") or None,
             "issue_number": tags.get("issue_number"),
             "mantis_ticket_id": mantis_ticket_id,
@@ -161,6 +191,31 @@ class Classifier:
             if company:
                 return company.company_id, company.name
         return None, fallback_domain
+
+    def _resolve_handler_from_domain(self, sender_email: str) -> str | None:
+        """從寄件人 domain 查公司，再取公司的負責客服名稱。
+
+        支援子網域 fallback：mail.abc.com.tw → abc.com.tw。
+        """
+        if not sender_email or "@" not in sender_email:
+            return None
+        _, addr = parseaddr(sender_email)
+        if not addr:
+            addr = sender_email
+        addr = addr.lower().strip()
+        if "@" not in addr:
+            return None
+        domain = addr.split("@")[1]
+        # 直接查詢
+        handler = self._customer_mgr.resolve_handler_by_domain(domain)
+        if handler:
+            return handler
+        # 子網域 fallback：mail.abc.com.tw → abc.com.tw
+        parts = domain.split(".")
+        if len(parts) > 2:
+            parent_domain = ".".join(parts[1:])
+            handler = self._customer_mgr.resolve_handler_by_domain(parent_domain)
+        return handler
 
     def _check_broadcast(self, text: str) -> bool:
         """Check if email is a broadcast/announcement."""
