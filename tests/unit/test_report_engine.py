@@ -214,3 +214,47 @@ class TestReportEngine:
         summary = data["📊 月報摘要"]
         total_row = summary[2]
         assert total_row[1] == 0
+
+
+from hcp_cms.data.models import MantisTicket
+from hcp_cms.data.repositories import MantisRepository
+
+
+@pytest.fixture
+def mantis_seeded_db(db: DatabaseManager) -> DatabaseManager:
+    repo = MantisRepository(db.connection)
+    repo.upsert(MantisTicket(
+        ticket_id="MT-0001", summary="系統當機", status="assigned",
+        priority="urgent", handler="王小明", last_updated="2026/03/13 10:00:00",
+    ))
+    repo.upsert(MantisTicket(
+        ticket_id="MT-0002", summary="薪資計算錯誤", status="assigned",
+        priority="normal", handler="李大華", last_updated="2026/03/24 10:00:00",
+    ))
+    repo.upsert(MantisTicket(
+        ticket_id="MT-0003", summary="登入頁跑版", status="resolved",
+        priority="low", handler="張三", last_updated="2026/03/10 10:00:00",
+    ))
+    return db
+
+
+class TestBuildMantisSheet:
+    def test_returns_list_of_dicts(self, mantis_seeded_db):
+        engine = ReportEngine(mantis_seeded_db.connection)
+        rows = engine.build_mantis_sheet()
+        assert isinstance(rows, list)
+        assert len(rows) == 3
+
+    def test_each_row_has_category(self, mantis_seeded_db):
+        engine = ReportEngine(mantis_seeded_db.connection)
+        rows = engine.build_mantis_sheet()
+        for row in rows:
+            assert "category" in row
+            assert row["category"] in ("closed", "salary", "high", "normal")
+
+    def test_sorting_high_before_closed(self, mantis_seeded_db):
+        """high 優先度排在 closed 之前。"""
+        engine = ReportEngine(mantis_seeded_db.connection)
+        rows = engine.build_mantis_sheet()
+        categories = [r["category"] for r in rows]
+        assert categories.index("high") < categories.index("closed")

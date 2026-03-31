@@ -325,6 +325,39 @@ class ReportEngine:
 
         return result
 
+    def build_mantis_sheet(self) -> list[dict]:
+        """組裝 Mantis 追蹤工作表資料列。
+
+        Returns:
+            list of dict，每列含：
+            ticket_id, summary, status, priority,
+            unresolved_days, last_updated, handler, category
+            排序：high → salary → normal → closed
+        """
+        from hcp_cms.core.mantis_classifier import MantisClassifier
+
+        classifier = MantisClassifier()
+        tickets = self._mantis_repo.list_all()
+
+        _SORT_ORDER = {"high": 0, "salary": 1, "normal": 2, "closed": 3}
+
+        rows = []
+        for ticket in tickets:
+            category = classifier.classify(ticket)
+            rows.append({
+                "ticket_id": ticket.ticket_id,
+                "summary": _clean(ticket.summary or ""),
+                "status": ticket.status or "",
+                "priority": ticket.priority or "",
+                "unresolved_days": classifier.calc_unresolved_days(ticket),
+                "last_updated": ticket.last_updated or "",
+                "handler": ticket.handler or "",
+                "category": category,
+            })
+
+        rows.sort(key=lambda r: _SORT_ORDER[r["category"]])
+        return rows
+
     def generate_monthly_report(self, start_date: str, end_date: str, output_path: Path) -> Path:
         """Generate monthly report Excel with KPI summary."""
         data = self.build_monthly_report(start_date, end_date)
