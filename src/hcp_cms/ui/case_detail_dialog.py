@@ -87,7 +87,7 @@ class CaseDetailDialog(QDialog):
         self._load_case()
         self._tabs.currentChanged.connect(self._on_tab_changed)
 
-    def _calc_case_elapsed(self, case: "Case") -> str:
+    def _calc_case_elapsed(self, case: Case) -> str:
         """計算案件回應時長：sent_time → 最後一筆 HCP 回覆 log（若無則用現在時間）。"""
         from datetime import datetime
         try:
@@ -640,7 +640,14 @@ class CaseDetailDialog(QDialog):
         self._case = case
         self._f_case_id.setText(case.case_id)
         self._f_subject.setText(case.subject or "")
-        self._f_company.setText(case.company_id or "")
+        # 顯示公司名稱而非 company_id UUID
+        company_display = case.company_id or ""
+        if case.company_id:
+            from hcp_cms.data.repositories import CompanyRepository
+            comp = CompanyRepository(self._conn).get_by_id(case.company_id)
+            if comp:
+                company_display = comp.name
+        self._f_company.setText(company_display)
         self._f_contact.setText(case.contact_person or "")
         self._f_sent_time.setText(case.sent_time or "")
         idx = self._f_contact_method.findText(case.contact_method or "Email")
@@ -687,7 +694,20 @@ class CaseDetailDialog(QDialog):
             raise RuntimeError("案件資料尚未載入")
         case = self._case
         case.subject = self._f_subject.text()
-        case.company_id = self._f_company.text() or None
+        # 將公司名稱轉換回 company_id；若輸入值已是 company_id（COMP-開頭）則直接使用
+        company_text = self._f_company.text().strip()
+        if company_text:
+            if company_text.startswith("COMP-"):
+                case.company_id = company_text
+            else:
+                from hcp_cms.data.repositories import CompanyRepository
+                repo = CompanyRepository(self._conn)
+                # 先嘗試以名稱查詢，找不到再以別名查詢
+                all_comps = repo.list_all()
+                matched = next((c for c in all_comps if c.name == company_text), None)
+                case.company_id = matched.company_id if matched else case.company_id
+        else:
+            case.company_id = None
         case.contact_person = self._f_contact.text() or None
         case.sent_time = self._f_sent_time.text() or None
         case.contact_method = self._f_contact_method.currentText()

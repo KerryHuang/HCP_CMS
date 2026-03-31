@@ -8,8 +8,13 @@ from pathlib import Path
 from hcp_cms.core.classifier import Classifier
 from hcp_cms.core.thread_tracker import ThreadTracker
 from hcp_cms.data.fts import FTSManager
-from hcp_cms.data.models import Case, CaseLog
-from hcp_cms.data.repositories import CaseLogRepository, CaseRepository
+from hcp_cms.data.models import Case, CaseLog, CaseMantisLink
+from hcp_cms.data.repositories import (
+    CaseLogRepository,
+    CaseMantisRepository,
+    CaseRepository,
+    MantisTicketRepository,
+)
 
 _SLASH_FMT = re.compile(r"^\d{4}/\d{2}/\d{2}")
 _FMT_LONG = "%Y/%m/%d %H:%M:%S"
@@ -81,6 +86,8 @@ class CaseManager:
         self._fts = FTSManager(conn)
         self._classifier = Classifier(conn)
         self._tracker = ThreadTracker(conn)
+        self._mantis_repo = MantisTicketRepository(conn)
+        self._case_mantis_repo = CaseMantisRepository(conn)
 
     def import_email(
         self,
@@ -177,6 +184,9 @@ class CaseManager:
             fn_tags = self._classifier.parse_tags(stem)
             if fn_tags.get("issue_number") and not classification.get("issue_number"):
                 classification["issue_number"] = fn_tags["issue_number"]
+            # 若主旨未解析到 mantis_ticket_id，補用檔名的 issue_number
+            if fn_tags.get("issue_number") and not classification.get("mantis_ticket_id"):
+                classification["mantis_ticket_id"] = fn_tags["issue_number"]
             if fn_tags.get("handler") and not classification.get("handler"):
                 classification["handler"] = fn_tags["handler"]
             if fn_tags.get("progress") and not classification.get("progress"):
@@ -219,6 +229,13 @@ class CaseManager:
 
         self._case_repo.insert(case)
         self._fts.index_case(case_id, subject, None, None)
+
+        # 自動建立 Mantis 關聯（若檔名/主旨解析到 ticket ID 且票單存在於本地）
+        auto_ticket_id = classification.get("mantis_ticket_id")
+        if auto_ticket_id and self._mantis_repo.get_by_id(auto_ticket_id) is not None:
+            self._case_mantis_repo.link(
+                CaseMantisLink(case_id=case_id, ticket_id=auto_ticket_id)
+            )
 
         # link_to_parent 需要子案件已在 DB 中才能更新，故在 insert 後執行
         if parent:
