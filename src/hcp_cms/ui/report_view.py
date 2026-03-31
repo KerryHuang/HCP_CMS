@@ -15,7 +15,6 @@ from PySide6.QtWidgets import (
     QLabel,
     QMessageBox,
     QPushButton,
-    QScrollArea,
     QSizePolicy,
     QTableWidget,
     QTableWidgetItem,
@@ -26,7 +25,6 @@ from PySide6.QtWidgets import (
 )
 
 from hcp_cms.core.report_engine import ReportEngine
-from hcp_cms.core.report_writer import ReportWriter
 from hcp_cms.ui.theme import ColorPalette, ThemeManager
 from hcp_cms.ui.utils import open_file
 
@@ -328,7 +326,11 @@ class ReportView(QWidget):
             return
 
         try:
-            ReportWriter.write_excel(self._preview_data, Path(path))
+            engine = ReportEngine(self._conn)
+            if report_type == "追蹤表":
+                engine.generate_tracking_table(start, end, Path(path))
+            else:
+                engine.generate_monthly_report(start, end, Path(path))
             self._status.setText(f"✅ 報表已儲存：{path}")
 
             reply = QMessageBox.question(
