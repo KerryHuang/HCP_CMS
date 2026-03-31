@@ -151,6 +151,13 @@ class MantisView(QWidget):
         self._sync_btn.clicked.connect(self._on_sync_all)
         conn_layout.addWidget(self._sync_btn)
 
+        self._auto_link_btn = QPushButton("🔗 批次自動連結案件")
+        self._auto_link_btn.setToolTip(
+            "掃描所有備註含 ISSUE# 的案件，自動建立 Mantis 關聯（不需逐筆手動連結）"
+        )
+        self._auto_link_btn.clicked.connect(self._on_auto_link_cases)
+        conn_layout.addWidget(self._auto_link_btn)
+
         hint_btn = QPushButton("⚙ 設定帳密")
         hint_btn.setToolTip("請至「系統設定」→「Mantis SOAP 連線設定」填寫帳號密碼")
         hint_btn.clicked.connect(self._on_goto_settings)
@@ -370,6 +377,48 @@ class MantisView(QWidget):
         self._status_label.setStyleSheet("color: #4ade80; font-weight: bold;")
         self._last_sync_label.setText(f"最後同步：{now_str}")
         self._log.append(f"\n✅ 完成：{success} 筆成功，{failed} 筆失敗。")
+        self.refresh()
+
+    def _on_auto_link_cases(self) -> None:
+        """掃描所有 notes 含 ISSUE# 的案件，自動建立 Mantis 關聯。"""
+        if not self._conn:
+            return
+        import re
+
+        from hcp_cms.data.models import CaseMantisLink
+        from hcp_cms.data.repositories import CaseMantisRepository, CaseRepository, MantisRepository
+
+        case_repo = CaseRepository(self._conn)
+        mantis_repo = MantisRepository(self._conn)
+        link_repo = CaseMantisRepository(self._conn)
+
+        issue_re = re.compile(r"ISSUE#(\d+)")
+        linked = skipped = not_found = 0
+
+        for case in case_repo.list_all():
+            if not case.notes:
+                continue
+            m = issue_re.search(case.notes)
+            if not m:
+                continue
+            ticket_id = m.group(1)
+            # 確認票單存在
+            if mantis_repo.get_by_id(ticket_id) is None:
+                not_found += 1
+                continue
+            # 確認尚未連結
+            existing = link_repo.list_by_case_id(case.case_id)
+            if any(lk.ticket_id == ticket_id for lk in existing):
+                skipped += 1
+                continue
+            link_repo.link(CaseMantisLink(case_id=case.case_id, ticket_id=ticket_id))
+            linked += 1
+
+        msg = f"完成批次連結：\n• 新建連結：{linked} 筆\n• 已存在跳過：{skipped} 筆"
+        if not_found:
+            msg += f"\n• 票單不在本地（需先同步）：{not_found} 筆"
+        from PySide6.QtWidgets import QMessageBox
+        QMessageBox.information(self, "批次自動連結", msg)
         self.refresh()
 
     def _on_goto_settings(self) -> None:
