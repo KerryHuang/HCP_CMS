@@ -469,8 +469,28 @@ class CaseRepository:
 
     def delete(self, case_id: str) -> None:
         """刪除單一案件，含 cascade 清除。KMS 僅刪除 status='待審查' 的條目；
-        已審核條目的 source_case_id 設為 NULL 以解除 FK 約束。"""
+        已審核條目的 source_case_id 設為 NULL 以解除 FK 約束。
+        Mantis tickets 若僅與此案件關聯（無其他案件連結）則一併刪除。"""
+        # 找出「只屬於此案件」的 mantis ticket（不被其他案件引用）
+        orphan_tickets = self._conn.execute(
+            """SELECT ticket_id FROM case_mantis WHERE case_id = :id
+               AND ticket_id NOT IN (
+                   SELECT ticket_id FROM case_mantis WHERE case_id != :id
+               )""",
+            {"id": case_id},
+        ).fetchall()
+        orphan_ids = [r[0] for r in orphan_tickets]
+
         self._conn.execute("DELETE FROM case_mantis WHERE case_id = :id", {"id": case_id})
+
+        # 刪除孤立的 mantis_tickets
+        if orphan_ids:
+            placeholders = ",".join("?" * len(orphan_ids))
+            self._conn.execute(
+                f"DELETE FROM mantis_tickets WHERE ticket_id IN ({placeholders})",
+                orphan_ids,
+            )
+
         self._conn.execute("DELETE FROM case_logs WHERE case_id = :id", {"id": case_id})
         self._conn.execute("DELETE FROM cases_fts WHERE case_id = :id", {"id": case_id})
         # 刪除「待審查」KMS；其餘已審核條目解除案件關聯（source_case_id → NULL）
@@ -495,6 +515,7 @@ class CaseRepository:
         row = self._conn.execute("SELECT COUNT(*) FROM cs_cases").fetchone()
         count = row[0] if row else 0
         self._conn.execute("DELETE FROM case_mantis")
+        self._conn.execute("DELETE FROM mantis_tickets")
         self._conn.execute("DELETE FROM case_logs")
         self._conn.execute("DELETE FROM cases_fts")
         self._conn.execute("DELETE FROM qa_knowledge WHERE status = '待審查'")
