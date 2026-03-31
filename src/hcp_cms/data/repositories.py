@@ -109,6 +109,10 @@ class CompanyRepository:
         self._conn.commit()
 
     def delete(self, company_id: str) -> None:
+        # 先解除 FK 參照，避免外鍵約束錯誤（company_id 在各表為可空欄位）
+        self._conn.execute("UPDATE cs_cases SET company_id = NULL WHERE company_id = ?", (company_id,))
+        self._conn.execute("UPDATE mantis_tickets SET company_id = NULL WHERE company_id = ?", (company_id,))
+        self._conn.execute("UPDATE qa_knowledge SET company_id = NULL WHERE company_id = ?", (company_id,))
         self._conn.execute("DELETE FROM companies WHERE company_id = ?", (company_id,))
         self._conn.commit()
 

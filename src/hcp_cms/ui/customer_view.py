@@ -417,12 +417,15 @@ class CustomerView(QWidget):
         if reply != QMessageBox.StandardButton.Yes:
             return
         mgr = CustomerManager(self._conn)
-        for index in sorted(rows, key=lambda i: i.row(), reverse=True):
-            domain_item = tbl.item(index.row(), 1)
-            if domain_item:
-                company = mgr.get_company_by_domain(domain_item.text().strip())
-                if company:
-                    mgr.delete_company(company.company_id)
+        try:
+            for index in sorted(rows, key=lambda i: i.row(), reverse=True):
+                domain_item = tbl.item(index.row(), 1)
+                if domain_item:
+                    company = mgr.get_company_by_domain(domain_item.text().strip())
+                    if company:
+                        mgr.delete_company(company.company_id)
+        except Exception as exc:
+            QMessageBox.critical(self, "刪除失敗", f"刪除時發生錯誤：{exc}")
         self.refresh()
 
     def _on_delete_cs_staff(self) -> None:
