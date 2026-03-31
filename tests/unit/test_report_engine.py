@@ -254,3 +254,26 @@ class TestBuildMantisSheet:
         rows = engine.build_mantis_sheet()
         categories = [r["category"] for r in rows]
         assert categories.index("high") < categories.index("closed")
+
+
+class TestGenerateMonthlyReportWithMantis:
+    def test_monthly_report_has_mantis_sheet(self, mantis_seeded_db, tmp_path):
+        """generate_monthly_report() 生成的 Excel 應包含 Mantis 追蹤工作表。"""
+        engine = ReportEngine(mantis_seeded_db.connection)
+        path = engine.generate_monthly_report(
+            "2026/03/01", "2026/03/31", tmp_path / "monthly.xlsx"
+        )
+        wb = openpyxl.load_workbook(str(path))
+        assert "📌 Mantis 追蹤" in wb.sheetnames
+
+    def test_mantis_sheet_row_count(self, mantis_seeded_db, tmp_path):
+        """Mantis 工作表的資料列數應等於 ticket 總數。"""
+        engine = ReportEngine(mantis_seeded_db.connection)
+        path = engine.generate_monthly_report(
+            "2026/03/01", "2026/03/31", tmp_path / "monthly.xlsx"
+        )
+        wb = openpyxl.load_workbook(str(path))
+        ws = wb["📌 Mantis 追蹤"]
+        # 第 1 列是表頭，第 2 列起是資料
+        data_rows = ws.max_row - 1
+        assert data_rows == 3

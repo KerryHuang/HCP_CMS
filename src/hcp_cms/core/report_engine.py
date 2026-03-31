@@ -359,7 +359,9 @@ class ReportEngine:
         return rows
 
     def generate_monthly_report(self, start_date: str, end_date: str, output_path: Path) -> Path:
-        """Generate monthly report Excel with KPI summary."""
+        """Generate monthly report Excel with KPI summary and Mantis tracking sheet."""
         data = self.build_monthly_report(start_date, end_date)
         ReportWriter.write_excel(data, output_path)
+        mantis_rows = self.build_mantis_sheet()
+        ReportWriter.append_mantis_sheet(output_path, "📌 Mantis 追蹤", mantis_rows)
         return output_path
