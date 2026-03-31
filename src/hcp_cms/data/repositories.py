@@ -16,6 +16,7 @@ from hcp_cms.data.models import (
     MantisTicket,
     ProcessedFile,
     QAKnowledge,
+    Staff,
     Synonym,
 )
 
@@ -50,8 +51,12 @@ class CompanyRepository:
         company.created_at = _now()
         self._conn.execute(
             """
-            INSERT INTO companies (company_id, name, domain, alias, contact_info, created_at)
-            VALUES (:company_id, :name, :domain, :alias, :contact_info, :created_at)
+            INSERT INTO companies
+                (company_id, name, domain, alias, contact_info,
+                 cs_staff_id, sales_staff_id, created_at)
+            VALUES
+                (:company_id, :name, :domain, :alias, :contact_info,
+                 :cs_staff_id, :sales_staff_id, :created_at)
             """,
             {
                 "company_id": company.company_id,
@@ -59,6 +64,8 @@ class CompanyRepository:
                 "domain": company.domain,
                 "alias": company.alias,
                 "contact_info": company.contact_info,
+                "cs_staff_id": company.cs_staff_id,
+                "sales_staff_id": company.sales_staff_id,
                 "created_at": company.created_at,
             },
         )
@@ -85,7 +92,8 @@ class CompanyRepository:
             """
             UPDATE companies
             SET name = :name, domain = :domain, alias = :alias,
-                contact_info = :contact_info
+                contact_info = :contact_info,
+                cs_staff_id = :cs_staff_id, sales_staff_id = :sales_staff_id
             WHERE company_id = :company_id
             """,
             {
@@ -94,6 +102,8 @@ class CompanyRepository:
                 "domain": company.domain,
                 "alias": company.alias,
                 "contact_info": company.contact_info,
+                "cs_staff_id": company.cs_staff_id,
+                "sales_staff_id": company.sales_staff_id,
             },
         )
         self._conn.commit()
@@ -101,6 +111,83 @@ class CompanyRepository:
     def delete(self, company_id: str) -> None:
         self._conn.execute("DELETE FROM companies WHERE company_id = ?", (company_id,))
         self._conn.commit()
+
+
+# ---------------------------------------------------------------------------
+# StaffRepository
+# ---------------------------------------------------------------------------
+
+
+class StaffRepository:
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self._conn = conn
+
+    def insert(self, staff: Staff) -> None:
+        staff.created_at = _now()
+        self._conn.execute(
+            """
+            INSERT INTO staff (staff_id, name, email, role, phone, notes, created_at)
+            VALUES (:staff_id, :name, :email, :role, :phone, :notes, :created_at)
+            """,
+            {
+                "staff_id": staff.staff_id,
+                "name": staff.name,
+                "email": staff.email,
+                "role": staff.role,
+                "phone": staff.phone,
+                "notes": staff.notes,
+                "created_at": staff.created_at,
+            },
+        )
+        self._conn.commit()
+
+    def get_by_id(self, staff_id: str) -> Staff | None:
+        row = self._conn.execute("SELECT * FROM staff WHERE staff_id = ?", (staff_id,)).fetchone()
+        return Staff(**dict(row)) if row else None
+
+    def get_by_email(self, email: str) -> Staff | None:
+        row = self._conn.execute("SELECT * FROM staff WHERE lower(email) = lower(?)", (email,)).fetchone()
+        return Staff(**dict(row)) if row else None
+
+    def list_all(self) -> list[Staff]:
+        rows = self._conn.execute("SELECT * FROM staff ORDER BY role, name").fetchall()
+        return [Staff(**dict(row)) for row in rows]
+
+    def list_by_role(self, role: str) -> list[Staff]:
+        rows = self._conn.execute("SELECT * FROM staff WHERE role = ? ORDER BY name", (role,)).fetchall()
+        return [Staff(**dict(row)) for row in rows]
+
+    def update(self, staff: Staff) -> None:
+        self._conn.execute(
+            """
+            UPDATE staff
+            SET name = :name, email = :email, role = :role,
+                phone = :phone, notes = :notes
+            WHERE staff_id = :staff_id
+            """,
+            {
+                "staff_id": staff.staff_id,
+                "name": staff.name,
+                "email": staff.email,
+                "role": staff.role,
+                "phone": staff.phone,
+                "notes": staff.notes,
+            },
+        )
+        self._conn.commit()
+
+    def delete(self, staff_id: str) -> None:
+        self._conn.execute("DELETE FROM staff WHERE staff_id = ?", (staff_id,))
+        self._conn.commit()
+
+    def upsert(self, staff: Staff) -> None:
+        """依 email 判斷：已存在則更新，否則新增。"""
+        existing = self.get_by_email(staff.email)
+        if existing:
+            staff.staff_id = existing.staff_id
+            self.update(staff)
+        else:
+            self.insert(staff)
 
 
 # ---------------------------------------------------------------------------
