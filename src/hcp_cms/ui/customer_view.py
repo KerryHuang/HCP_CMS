@@ -313,6 +313,8 @@ class CustomerView(QWidget):
         self.refresh()
 
     def _on_paste_companies(self) -> None:
+        if not self._conn:
+            return
         hint = "公司名稱\t網域（@後）\t別名\t聯絡資訊"
         dlg = PasteImportDialog(hint, parent=self)
         if dlg.exec() != QDialog.DialogCode.Accepted:
@@ -342,6 +344,8 @@ class CustomerView(QWidget):
         self._paste_staff("sales")
 
     def _paste_staff(self, role: str) -> None:
+        if not self._conn:
+            return
         hint = "姓名\tEmail\t電話\t備註"
         dlg = PasteImportDialog(hint, parent=self)
         if dlg.exec() != QDialog.DialogCode.Accepted:
@@ -378,7 +382,7 @@ class CustomerView(QWidget):
         for index in sorted(rows, key=lambda i: i.row(), reverse=True):
             domain_item = tbl.item(index.row(), 1)
             if domain_item:
-                company = mgr._company_repo.get_by_domain(domain_item.text().strip())
+                company = mgr.get_company_by_domain(domain_item.text().strip())
                 if company:
                     mgr.delete_company(company.company_id)
         self.refresh()
@@ -402,13 +406,11 @@ class CustomerView(QWidget):
         )
         if reply != QMessageBox.StandardButton.Yes:
             return
-        from hcp_cms.data.repositories import StaffRepository
-        repo = StaffRepository(self._conn)
         mgr = CustomerManager(self._conn)
         for index in sorted(rows, key=lambda i: i.row(), reverse=True):
             email_item = tbl.item(index.row(), 1)
             if email_item:
-                staff = repo.get_by_email(email_item.text().strip())
+                staff = mgr.get_staff_by_email(email_item.text().strip())
                 if staff:
                     mgr.delete_staff(staff.staff_id)
         self.refresh()

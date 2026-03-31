@@ -120,6 +120,14 @@ class CustomerManager:
     def delete_staff(self, staff_id: str) -> None:
         self._staff_repo.delete(staff_id)
 
+    def get_company_by_domain(self, domain: str) -> "Company | None":
+        """依 domain 查詢公司，供 UI 層刪除時使用。"""
+        return self._company_repo.get_by_domain(domain)
+
+    def get_staff_by_email(self, email: str) -> "Staff | None":
+        """依 email 查詢人員，供 UI 層刪除時使用。"""
+        return self._staff_repo.get_by_email(email)
+
     # ── 分案解析 ──────────────────────────────────────────────────────────
 
     def resolve_handler_by_domain(self, domain: str) -> str | None:
