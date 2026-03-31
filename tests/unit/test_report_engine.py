@@ -7,8 +7,8 @@ import pytest
 
 from hcp_cms.core.report_engine import ReportEngine
 from hcp_cms.data.database import DatabaseManager
-from hcp_cms.data.models import Case, Company, QAKnowledge
-from hcp_cms.data.repositories import CaseRepository, CompanyRepository, QARepository
+from hcp_cms.data.models import Case, Company, MantisTicket, QAKnowledge
+from hcp_cms.data.repositories import CaseRepository, CompanyRepository, MantisRepository, QARepository
 
 
 @pytest.fixture
@@ -214,10 +214,6 @@ class TestReportEngine:
         summary = data["📊 月報摘要"]
         total_row = summary[2]
         assert total_row[1] == 0
-
-
-from hcp_cms.data.models import MantisTicket
-from hcp_cms.data.repositories import MantisRepository
 
 
 @pytest.fixture
