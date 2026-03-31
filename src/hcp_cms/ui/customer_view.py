@@ -150,6 +150,10 @@ class CustomerView(QWidget):
         self._company_table.setHorizontalHeaderLabels(headers)
         self._company_table.horizontalHeader().setStretchLastSection(True)
         self._company_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        # 設定各欄初始寬度：公司名稱、網域、別名、聯絡資訊、負責客服、負責業務
+        for col, width in enumerate([180, 160, 120, 200, 130, 130]):
+            self._company_table.setColumnWidth(col, width)
+        self._company_table.verticalHeader().setDefaultSectionSize(28)
         layout.addWidget(self._company_table)
         return w
 
@@ -166,6 +170,10 @@ class CustomerView(QWidget):
             self._cs_table.setHorizontalHeaderLabels([c[0] for c in _STAFF_COLS])
             self._cs_table.horizontalHeader().setStretchLastSection(True)
             self._cs_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+            # 設定各欄寬：姓名、Email、電話、備註
+            for col, width in enumerate([150, 220, 140, 300]):
+                self._cs_table.setColumnWidth(col, width)
+            self._cs_table.verticalHeader().setDefaultSectionSize(28)
             layout.addWidget(toolbar)
             layout.addWidget(self._cs_table)
         else:
@@ -177,6 +185,10 @@ class CustomerView(QWidget):
             self._sales_table.setHorizontalHeaderLabels([c[0] for c in _STAFF_COLS])
             self._sales_table.horizontalHeader().setStretchLastSection(True)
             self._sales_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+            # 設定各欄寬：姓名、Email、電話、備註
+            for col, width in enumerate([150, 220, 140, 300]):
+                self._sales_table.setColumnWidth(col, width)
+            self._sales_table.verticalHeader().setDefaultSectionSize(28)
             layout.addWidget(toolbar)
             layout.addWidget(self._sales_table)
         return w
@@ -315,26 +327,52 @@ class CustomerView(QWidget):
     def _on_paste_companies(self) -> None:
         if not self._conn:
             return
-        hint = "公司名稱\t網域（@後）\t別名\t聯絡資訊"
+        hint = (
+            "公司名稱\t網域（@後）\t別名\t聯絡資訊\t負責客服姓名\t負責業務姓名\n"
+            "（後兩欄可省略，省略時保留現有指派）"
+        )
         dlg = PasteImportDialog(hint, parent=self)
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
         paste_rows = dlg.get_rows()
         if not paste_rows:
             return
+
+        # 建立姓名 → staff_id 對照表（略過「未指定」選項）
+        cs_by_name = {name: sid for name, sid in self._cs_staff_options if sid}
+        sales_by_name = {name: sid for name, sid in self._sales_staff_options if sid}
+
         col_keys = [c[1] for c in _COMPANY_FIXED_COLS]
-        rows = []
+        rows: list[dict] = []
+        unmatched: list[str] = []
         for pr in paste_rows:
             row: dict = {"cs_staff_id": None, "sales_staff_id": None}
             for i, key in enumerate(col_keys):
                 row[key] = pr[i].strip() if i < len(pr) else ""
+            # 第 5 欄：負責客服姓名
+            if len(pr) >= 5 and pr[4].strip():
+                cs_name = pr[4].strip()
+                if cs_name in cs_by_name:
+                    row["cs_staff_id"] = cs_by_name[cs_name]
+                else:
+                    unmatched.append(f"客服「{cs_name}」")
+            # 第 6 欄：負責業務姓名
+            if len(pr) >= 6 and pr[5].strip():
+                sales_name = pr[5].strip()
+                if sales_name in sales_by_name:
+                    row["sales_staff_id"] = sales_by_name[sales_name]
+                else:
+                    unmatched.append(f"業務「{sales_name}」")
             rows.append(row)
+
         mgr = CustomerManager(self._conn)
         inserted, updated = mgr.bulk_upsert_companies(rows)
-        QMessageBox.information(
-            self, "批次貼上完成",
-            f"新增 {inserted} 筆，更新 {updated} 筆。\n負責客服/業務請在表格中手動選取後再儲存。"
-        )
+
+        msg = f"新增 {inserted} 筆，更新 {updated} 筆。"
+        if unmatched:
+            msg += "\n\n⚠ 以下姓名找不到對應人員，該欄位未指派：\n" + "\n".join(unmatched)
+            msg += "\n\n請先至「客服人員」或「業務人員」頁籤新增人員後，再重新貼上。"
+        QMessageBox.information(self, "批次貼上完成", msg)
         self.refresh()
 
     def _on_paste_cs_staff(self) -> None:
