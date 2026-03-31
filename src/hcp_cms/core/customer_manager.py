@@ -40,13 +40,23 @@ class CustomerManager:
         """
         inserted = updated = 0
         for row in rows:
-            domain = (row.get("domain") or "").strip().lower()
             name = (row.get("name") or "").strip()
-            if not domain or not name:
+            domain = (row.get("domain") or "").strip().lower()
+            company_id = (row.get("company_id") or "").strip()
+            if not name:
                 continue
-            existing = self._company_repo.get_by_domain(domain)
+
+            # 查找現有記錄：優先用 company_id（表格編輯），其次用 domain（批次貼上）
+            existing = None
+            if company_id:
+                existing = self._company_repo.get_by_id(company_id)
+            if not existing and domain:
+                existing = self._company_repo.get_by_domain(domain)
+
             if existing:
                 existing.name = name
+                if domain:
+                    existing.domain = domain
                 existing.alias = (row.get("alias") or "").strip() or existing.alias
                 existing.contact_info = (row.get("contact_info") or "").strip() or existing.contact_info
                 if "cs_staff_id" in row:
@@ -55,7 +65,8 @@ class CustomerManager:
                     existing.sales_staff_id = row["sales_staff_id"] or None
                 self._company_repo.update(existing)
                 updated += 1
-            else:
+            elif domain:
+                # 新增時仍需要 domain（作為唯一識別）
                 company = Company(
                     company_id=_gen_company_id(),
                     name=name,
@@ -67,6 +78,7 @@ class CustomerManager:
                 )
                 self._company_repo.insert(company)
                 inserted += 1
+            # domain 與 company_id 皆無 → 跳過
         return inserted, updated
 
     def list_companies(self) -> list[Company]:
@@ -120,11 +132,11 @@ class CustomerManager:
     def delete_staff(self, staff_id: str) -> None:
         self._staff_repo.delete(staff_id)
 
-    def get_company_by_domain(self, domain: str) -> "Company | None":
+    def get_company_by_domain(self, domain: str) -> Company | None:
         """依 domain 查詢公司，供 UI 層刪除時使用。"""
         return self._company_repo.get_by_domain(domain)
 
-    def get_staff_by_email(self, email: str) -> "Staff | None":
+    def get_staff_by_email(self, email: str) -> Staff | None:
         """依 email 查詢人員，供 UI 層刪除時使用。"""
         return self._staff_repo.get_by_email(email)
 

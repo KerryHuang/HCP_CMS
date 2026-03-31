@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import sqlite3
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -215,9 +216,13 @@ class CustomerView(QWidget):
         for comp in companies:
             row = tbl.rowCount()
             tbl.insertRow(row)
-            vals = [comp.name, comp.domain, comp.alias or "", comp.contact_info or ""]
+            vals = [comp.name, comp.domain or "", comp.alias or "", comp.contact_info or ""]
             for col, val in enumerate(vals):
-                tbl.setItem(row, col, QTableWidgetItem(val))
+                item = QTableWidgetItem(val)
+                if col == 0:
+                    # 將 company_id 藏入 UserRole，供儲存時直接定位記錄
+                    item.setData(Qt.ItemDataRole.UserRole, comp.company_id)
+                tbl.setItem(row, col, item)
             cs_cb = self._make_staff_combo(self._cs_staff_options, comp.cs_staff_id)
             tbl.setCellWidget(row, 4, cs_cb)
             sales_cb = self._make_staff_combo(self._sales_staff_options, comp.sales_staff_id)
@@ -275,10 +280,12 @@ class CustomerView(QWidget):
         tbl = self._company_table
         rows = []
         for r in range(tbl.rowCount()):
+            name_item = tbl.item(r, 0)
             cs_cb = tbl.cellWidget(r, 4)
             sales_cb = tbl.cellWidget(r, 5)
             rows.append({
-                "name":          (tbl.item(r, 0).text() if tbl.item(r, 0) else "").strip(),
+                "company_id":    name_item.data(Qt.ItemDataRole.UserRole) if name_item else None,
+                "name":          (name_item.text() if name_item else "").strip(),
                 "domain":        (tbl.item(r, 1).text() if tbl.item(r, 1) else "").strip(),
                 "alias":         (tbl.item(r, 2).text() if tbl.item(r, 2) else "").strip(),
                 "contact_info":  (tbl.item(r, 3).text() if tbl.item(r, 3) else "").strip(),
