@@ -100,4 +100,4 @@ class TestAppendMantisSheet:
         ws = wb["📌 Mantis 追蹤"]
         # 第 1 列為表頭，第 2 列為資料
         fill = ws.cell(row=2, column=1).fill
-        assert fill.fgColor.rgb.upper().endswith("450A0A")
+        assert fill.fgColor.rgb.upper().endswith("FECACA")

@@ -19,10 +19,10 @@ BORDER_THIN = Border(
 
 # Mantis 追蹤工作表分類色彩（背景色, 字體色）
 _MANTIS_COLORS: dict[str, tuple[str, str]] = {
-    "high": ("450A0A", "FFFFFF"),
-    "salary": ("422006", "FEF08A"),
-    "normal": ("111827", "E2E8F0"),
-    "closed": ("1A1A1A", "4B5563"),
+    "high":   ("FECACA", "7F1D1D"),
+    "salary": ("FEF3C7", "78350F"),
+    "normal": ("FFFFFF", "111827"),
+    "closed": ("F3F4F6", "6B7280"),
 }
 
 
