@@ -134,6 +134,23 @@ class ReportView(QWidget):
                 data = engine.build_tracking_table(start, end)
             else:
                 data = engine.build_monthly_report(start, end)
+                # 加入 Mantis 預覽分頁
+                mantis_dict_rows = engine.build_mantis_sheet()
+                if mantis_dict_rows:
+                    _headers = ["#", "票號", "摘要", "狀態", "優先", "未處理天數", "最後更新", "負責人"]
+                    _mantis_preview: list[list] = [_headers]
+                    for _i, _r in enumerate(mantis_dict_rows, 1):
+                        _mantis_preview.append([
+                            _i,
+                            _r["ticket_id"],
+                            _r["summary"],
+                            _r["status"],
+                            _r["priority"],
+                            _r["unresolved_days"],
+                            _r["last_updated"],
+                            _r["handler"],
+                        ])
+                    data["📌 Mantis 追蹤"] = _mantis_preview
 
             has_data = any(len(rows) > 1 for rows in data.values())
 
