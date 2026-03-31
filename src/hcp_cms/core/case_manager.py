@@ -13,7 +13,7 @@ from hcp_cms.data.repositories import (
     CaseLogRepository,
     CaseMantisRepository,
     CaseRepository,
-    MantisTicketRepository,
+    MantisRepository,
 )
 
 _SLASH_FMT = re.compile(r"^\d{4}/\d{2}/\d{2}")
@@ -86,7 +86,7 @@ class CaseManager:
         self._fts = FTSManager(conn)
         self._classifier = Classifier(conn)
         self._tracker = ThreadTracker(conn)
-        self._mantis_repo = MantisTicketRepository(conn)
+        self._mantis_repo = MantisRepository(conn)
         self._case_mantis_repo = CaseMantisRepository(conn)
 
     def import_email(
