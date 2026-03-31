@@ -127,6 +127,16 @@ CREATE VIRTUAL TABLE IF NOT EXISTS qa_fts USING fts5(
     keywords
 );
 
+CREATE TABLE IF NOT EXISTS staff (
+    staff_id   TEXT PRIMARY KEY,
+    name       TEXT NOT NULL,
+    email      TEXT NOT NULL UNIQUE,
+    role       TEXT NOT NULL DEFAULT 'cs',
+    phone      TEXT,
+    notes      TEXT,
+    created_at TEXT
+);
+
 CREATE TABLE IF NOT EXISTS case_logs (
     log_id     TEXT PRIMARY KEY,
     case_id    TEXT NOT NULL REFERENCES cs_cases(case_id),
@@ -200,6 +210,8 @@ class DatabaseManager:
             "ALTER TABLE mantis_tickets ADD COLUMN last_updated TEXT",
             "ALTER TABLE mantis_tickets ADD COLUMN notes_count INTEGER",
             "ALTER TABLE case_logs ADD COLUMN reply_time TEXT",
+            "ALTER TABLE companies ADD COLUMN cs_staff_id TEXT",
+            "ALTER TABLE companies ADD COLUMN sales_staff_id TEXT",
         ]
         for sql in pending:
             try:

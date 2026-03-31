@@ -57,6 +57,8 @@ class Company:
     domain: str
     alias: str | None = None
     contact_info: str | None = None
+    cs_staff_id: str | None = None      # FK → staff.staff_id（負責客服）
+    sales_staff_id: str | None = None   # FK → staff.staff_id（負責業務）
     created_at: str | None = None
 
 
@@ -162,3 +164,15 @@ class CaseLog:
     logged_by: str | None = None    # 記錄人
     logged_at: str = ""             # YYYY/MM/DD HH:MM:SS
     reply_time: str | None = None   # 回覆時間（YYYY/MM/DD HH:MM）
+
+
+@dataclass
+class Staff:
+    """人員資料 — staff table."""
+    staff_id: str          # 自動產生：STAFF-YYYYMMDDHHMMSS
+    name: str              # 顯示名稱（如 JILL）
+    email: str             # 完整 Email（如 jill@ares.com.tw）
+    role: str              # 'cs'（客服）| 'sales'（業務）
+    phone: str | None = None
+    notes: str | None = None
+    created_at: str | None = None
