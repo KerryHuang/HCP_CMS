@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import sqlite3
 
-from PySide6.QtCore import QThread, Signal
-from PySide6.QtGui import QColor
+from PySide6.QtCore import Qt, QThread, QUrl, Signal
+from PySide6.QtGui import QColor, QDesktopServices
 from PySide6.QtWidgets import (
     QFrame,
     QGroupBox,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QMessageBox,
     QPushButton,
     QSizePolicy,
@@ -26,6 +27,19 @@ from hcp_cms.data.repositories import MantisRepository
 from hcp_cms.services.credential import CredentialManager
 from hcp_cms.services.mantis.soap import MantisSoapClient
 from hcp_cms.ui.theme import ColorPalette, ThemeManager
+
+
+class _SortableItem(QTableWidgetItem):
+    """支援數字排序的 QTableWidgetItem（用於「未處理天數」欄）。"""
+
+    def __init__(self, text: str, sort_key: int) -> None:
+        super().__init__(text)
+        self._sort_key = sort_key
+
+    def __lt__(self, other: QTableWidgetItem) -> bool:
+        if isinstance(other, _SortableItem):
+            return self._sort_key < other._sort_key
+        return super().__lt__(other)
 
 
 class _SyncWorker(QThread):
@@ -183,6 +197,14 @@ class MantisView(QWidget):
         stats_layout.addStretch()
         layout.addWidget(stats_widget)
 
+        # ── 搜尋列 ───────────────────────────────────────────────
+        self._search_edit = QLineEdit()
+        self._search_edit.setPlaceholderText("🔍  搜尋票號或摘要...")
+        self._search_edit.setClearButtonEnabled(True)
+        self._search_edit.setMaximumWidth(400)
+        self._search_edit.textChanged.connect(self._apply_filter)
+        layout.addWidget(self._search_edit)
+
         # ── Ticket 清單 ───────────────────────────────────────────
         self._table = QTableWidget(0, 7)
         self._table.setHorizontalHeaderLabels(
@@ -190,15 +212,18 @@ class MantisView(QWidget):
         )
         self._table.horizontalHeader().setStretchLastSection(False)
         self._table.setColumnWidth(0, 80)
-        self._table.setColumnWidth(1, 280)
+        self._table.setColumnWidth(1, 320)
         self._table.setColumnWidth(2, 90)
         self._table.setColumnWidth(3, 60)
-        self._table.setColumnWidth(4, 100)
-        self._table.setColumnWidth(5, 140)
-        self._table.setColumnWidth(6, 100)
+        self._table.setColumnWidth(4, 90)
+        self._table.setColumnWidth(5, 120)
+        self._table.setColumnWidth(6, 80)
         self._table.horizontalHeader().setStretchLastSection(True)
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self._table.setSortingEnabled(True)
+        self._table.sortByColumn(5, Qt.SortOrder.DescendingOrder)
+        self._table.cellDoubleClicked.connect(self._on_row_double_clicked)
         layout.addWidget(self._table)
 
         # ── 同步記錄 ─────────────────────────────────────────────
@@ -243,7 +268,31 @@ class MantisView(QWidget):
         return f"{parsed.scheme}://{parsed.netloc}{path}".rstrip("/")
 
     # ── 未解決狀態集合（不計算天數的狀態視為已結案）────────────────
-    _RESOLVED_STATUSES = {"resolved", "closed", "已解決", "已關閉"}
+    _RESOLVED_STATUSES = {"resolved", "closed", "已解決", "已關閉", "已結案"}
+
+    @staticmethod
+    def _fmt_last_updated(raw: str | None) -> str:
+        """將 ISO 8601 或其他格式的時間字串轉為 YYYY/MM/DD HH:MM 顯示。"""
+        if not raw:
+            return "—"
+        from datetime import datetime
+        _fmts = [
+            "%Y-%m-%dT%H:%M:%S%z",
+            "%Y-%m-%dT%H:%M:%S",
+            "%Y/%m/%d %H:%M:%S",
+            "%Y-%m-%d %H:%M:%S",
+            "%Y/%m/%d",
+            "%Y-%m-%d",
+        ]
+        for fmt in _fmts:
+            try:
+                dt = datetime.strptime(raw.strip(), fmt)
+                if dt.tzinfo is not None:
+                    dt = dt.astimezone(tz=None).replace(tzinfo=None)
+                return dt.strftime("%Y/%m/%d %H:%M")
+            except ValueError:
+                continue
+        return raw
 
     @staticmethod
     def _calc_unresolved_days(status: str | None, last_updated: str | None) -> str:
@@ -277,43 +326,92 @@ class MantisView(QWidget):
             return
         repo = MantisRepository(self._conn)
         tickets = repo.list_all()
-        self._table.setRowCount(len(tickets))
+
         # 更新最後同步標籤
         sync_times = [t.synced_at for t in tickets if t.synced_at]
         if sync_times:
             self._last_sync_label.setText(f"最後同步：{max(sync_times)}")
 
         classifier = MantisClassifier()
-        counts: dict[str, int] = {"high": 0, "salary": 0, "normal": 0, "closed": 0}
+
+        # 填入資料前暫停排序，避免插入時觸發不必要的重排
+        self._table.setSortingEnabled(False)
+        self._table.setRowCount(len(tickets))
 
         for i, t in enumerate(tickets):
-            self._table.setItem(i, 0, QTableWidgetItem(t.ticket_id))
+            ticket_item = QTableWidgetItem(t.ticket_id)
+            # 將分類存入 UserRole，供 _apply_filter 計算統計用
+            category = classifier.classify(t)
+            ticket_item.setData(Qt.ItemDataRole.UserRole, category)
+            self._table.setItem(i, 0, ticket_item)
             self._table.setItem(i, 1, QTableWidgetItem(t.summary or ""))
             self._table.setItem(i, 2, QTableWidgetItem(t.status or ""))
             self._table.setItem(i, 3, QTableWidgetItem(t.priority or ""))
             self._table.setItem(i, 4, QTableWidgetItem(t.handler or ""))
-            self._table.setItem(i, 5, QTableWidgetItem(t.last_updated or "—"))
+            self._table.setItem(i, 5, QTableWidgetItem(self._fmt_last_updated(t.last_updated)))
+
             days_str = classifier.calc_unresolved_days(t)
-            self._table.setItem(i, 6, QTableWidgetItem(days_str))
+            try:
+                days_num = int(days_str.split()[0]) if days_str else -1
+            except (ValueError, IndexError):
+                days_num = -1
+            self._table.setItem(i, 6, _SortableItem(days_str, days_num))
 
             # 套用分色
-            category = classifier.classify(t)
-            counts[category] += 1
-            bg_hex, fg_hex = self._CATEGORY_COLORS[category]
-            bg = QColor(bg_hex)
-            fg = QColor(fg_hex)
+            bg = QColor(self._CATEGORY_COLORS[category][0])
+            fg = QColor(self._CATEGORY_COLORS[category][1])
             for col in range(7):
                 item = self._table.item(i, col)
                 if item:
                     item.setBackground(bg)
                     item.setForeground(fg)
 
-        # 更新統計方塊
+        # 重新啟用排序（Qt 會依目前 header 排序指示重新排列）
+        self._table.setSortingEnabled(True)
+
+        # 套用目前搜尋關鍵字過濾並更新統計
+        self._apply_filter(self._search_edit.text())
+
+    def _apply_filter(self, text: str = "") -> None:
+        """依搜尋文字即時過濾列，並僅計算可見列的統計數字。"""
+        kw = text.strip().lower()
+        counts: dict[str, int] = {"high": 0, "salary": 0, "normal": 0, "closed": 0}
+
+        for row in range(self._table.rowCount()):
+            ticket_item = self._table.item(row, 0)
+            summary_item = self._table.item(row, 1)
+
+            if kw:
+                ticket_text = (ticket_item.text() if ticket_item else "").lower()
+                summary_text = (summary_item.text() if summary_item else "").lower()
+                visible = kw in ticket_text or kw in summary_text
+            else:
+                visible = True
+
+            self._table.setRowHidden(row, not visible)
+
+            if visible and ticket_item:
+                category = ticket_item.data(Qt.ItemDataRole.UserRole) or "normal"
+                counts[category] += 1
+
         self._stat_high_lbl.setText(str(counts["high"]))
         self._stat_salary_lbl.setText(str(counts["salary"]))
         open_count = counts["high"] + counts["salary"] + counts["normal"]
         self._stat_open_lbl.setText(str(open_count))
         self._stat_closed_lbl.setText(str(counts["closed"]))
+
+    def _on_row_double_clicked(self, row: int, _col: int) -> None:
+        """雙擊列 → 在預設瀏覽器開啟對應 Mantis 票單頁面。"""
+        ticket_item = self._table.item(row, 0)
+        if not ticket_item:
+            return
+        ticket_id = ticket_item.text().strip()
+        url = self._creds.retrieve("mantis_url") or ""
+        if not url:
+            QMessageBox.information(self, "尚未設定", "請先設定 Mantis 連線網址。")
+            return
+        base = self._extract_base_url(url)
+        QDesktopServices.openUrl(QUrl(f"{base}/view.php?id={ticket_id}"))
 
     # ── 同步 ──────────────────────────────────────────────────────
 
@@ -393,7 +491,7 @@ class MantisView(QWidget):
         link_repo = CaseMantisRepository(self._conn)
 
         issue_re = re.compile(r"ISSUE#(\d+)")
-        linked = skipped = not_found = 0
+        linked = skipped = stub_created = 0
 
         for case in case_repo.list_all():
             if not case.notes:
@@ -402,21 +500,22 @@ class MantisView(QWidget):
             if not m:
                 continue
             ticket_id = m.group(1)
-            # 確認票單存在
-            if mantis_repo.get_by_id(ticket_id) is None:
-                not_found += 1
-                continue
             # 確認尚未連結
             existing = link_repo.list_by_case_id(case.case_id)
             if any(lk.ticket_id == ticket_id for lk in existing):
                 skipped += 1
                 continue
+            # 若票單不在本地，先建立 stub（待同步後覆蓋）
+            if mantis_repo.get_by_id(ticket_id) is None:
+                from hcp_cms.data.models import MantisTicket
+                mantis_repo.upsert(MantisTicket(ticket_id=ticket_id, summary=f"#{ticket_id}（待同步）"))
+                stub_created += 1
             link_repo.link(CaseMantisLink(case_id=case.case_id, ticket_id=ticket_id))
             linked += 1
 
         msg = f"完成批次連結：\n• 新建連結：{linked} 筆\n• 已存在跳過：{skipped} 筆"
-        if not_found:
-            msg += f"\n• 票單不在本地（需先同步）：{not_found} 筆"
+        if stub_created:
+            msg += f"\n• 新建暫存票單（需同步補全）：{stub_created} 筆"
         from PySide6.QtWidgets import QMessageBox
         QMessageBox.information(self, "批次自動連結", msg)
         self.refresh()

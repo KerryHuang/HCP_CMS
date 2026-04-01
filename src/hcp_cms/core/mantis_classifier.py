@@ -23,11 +23,11 @@ class MantisClassifier:
 
     SALARY_KEYWORDS: tuple[str, ...] = ("薪資", "薪水", "Payroll", "工資", "salary")
     HIGH_PRIORITY: tuple[str, ...] = ("high", "urgent", "immediate")
-    CLOSED_STATUSES: tuple[str, ...] = ("resolved", "closed", "已解決", "已關閉")
+    CLOSED_STATUSES: tuple[str, ...] = ("resolved", "closed", "已解決", "已關閉", "已結案")
 
     # 預計算小寫集合，避免每次 classify() 呼叫重新建立
     _CLOSED_LOWER: frozenset[str] = frozenset(
-        s.lower() for s in ("resolved", "closed", "已解決", "已關閉")
+        s.lower() for s in ("resolved", "closed", "已解決", "已關閉", "已結案")
     )
     _HIGH_LOWER: frozenset[str] = frozenset(p.lower() for p in ("high", "urgent", "immediate"))
     _SALARY_LOWER: tuple[str, ...] = tuple(

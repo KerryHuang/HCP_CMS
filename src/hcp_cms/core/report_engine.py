@@ -27,6 +27,32 @@ def _clean(v: Any) -> Any:
     return v
 
 
+def _fmt_last_updated(raw: str | None) -> str:
+    """將 ISO 8601 或其他格式的時間字串轉為 YYYY/MM/DD HH:MM。
+
+    與 MantisView._fmt_last_updated 邏輯相同，Core 層獨立實作避免跨層依賴。
+    """
+    if not raw:
+        return ""
+    _fmts = [
+        "%Y-%m-%dT%H:%M:%S%z",
+        "%Y-%m-%dT%H:%M:%S",
+        "%Y/%m/%d %H:%M:%S",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y/%m/%d",
+        "%Y-%m-%d",
+    ]
+    for fmt in _fmts:
+        try:
+            dt = datetime.strptime(raw.strip(), fmt)
+            if dt.tzinfo is not None:
+                dt = dt.astimezone(tz=None).replace(tzinfo=None)
+            return dt.strftime("%Y/%m/%d %H:%M")
+        except ValueError:
+            continue
+    return raw
+
+
 def _clean_row(row: list[Any]) -> list[Any]:
     """對整列每個值套用 _clean()。"""
     return [_clean(v) for v in row]
@@ -365,7 +391,7 @@ class ReportEngine:
                 "status": ticket.status or "",
                 "priority": ticket.priority or "",
                 "unresolved_days": classifier.calc_unresolved_days(ticket),
-                "last_updated": ticket.last_updated or "",
+                "last_updated": _fmt_last_updated(ticket.last_updated),
                 "handler": ticket.handler or "",
                 "category": category,
             })

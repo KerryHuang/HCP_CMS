@@ -45,6 +45,16 @@ class TestMantisClassifier:
         t = _ticket(status="已解決")
         assert self.clf.classify(t) == "closed"
 
+    def test_classify_closed_yi_jie_an(self):
+        """「已結案」狀態應分類為 closed。"""
+        t = _ticket(status="已結案")
+        assert self.clf.classify(t) == "closed"
+
+    def test_classify_closed_beats_salary_keyword(self):
+        """已結案 + 薪資關鍵字：應分類為 closed，不應標橙色薪資色。"""
+        t = _ticket(status="已結案", summary="HRCF004薪資結算超過15分鐘")
+        assert self.clf.classify(t) == "closed"
+
     def test_classify_high_urgent(self):
         t = _ticket(priority="urgent", status="assigned")
         assert self.clf.classify(t) == "high"

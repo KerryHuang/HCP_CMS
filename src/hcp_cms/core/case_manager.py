@@ -8,7 +8,7 @@ from pathlib import Path
 from hcp_cms.core.classifier import Classifier
 from hcp_cms.core.thread_tracker import ThreadTracker
 from hcp_cms.data.fts import FTSManager
-from hcp_cms.data.models import Case, CaseLog, CaseMantisLink
+from hcp_cms.data.models import Case, CaseLog, CaseMantisLink, MantisTicket
 from hcp_cms.data.repositories import (
     CaseLogRepository,
     CaseMantisRepository,
@@ -89,6 +89,29 @@ class CaseManager:
         self._mantis_repo = MantisRepository(conn)
         self._case_mantis_repo = CaseMantisRepository(conn)
 
+    def _ensure_mantis_link(self, case_id: str, ticket_id: str) -> bool:
+        """確保案件與 Mantis 票單已建立關聯。
+
+        若票單不在 mantis_tickets 中，先建立 stub 暫存（待同步後覆蓋）。
+        若關聯已存在則不重複建立。
+
+        Returns:
+            True  — 本次建立了新關聯
+            False — 關聯已存在或票號為空
+        """
+        if not ticket_id:
+            return False
+        # 確保 mantis_tickets 中有此票單（FK 約束要求）
+        if self._mantis_repo.get_by_id(ticket_id) is None:
+            stub = MantisTicket(ticket_id=ticket_id, summary=f"#{ticket_id}（待同步）")
+            self._mantis_repo.upsert(stub)
+        # 確保 case_mantis 中有此關聯
+        existing_links = self._case_mantis_repo.list_by_case_id(case_id)
+        if any(lk.ticket_id == ticket_id for lk in existing_links):
+            return False
+        self._case_mantis_repo.link(CaseMantisLink(case_id=case_id, ticket_id=ticket_id))
+        return True
+
     def import_email(
         self,
         subject: str,
@@ -147,6 +170,16 @@ class CaseManager:
                 if progress_note and progress_note.strip():
                     existing.progress = progress_note.strip()
                 self._case_repo.update(existing)
+                # 重新匯入時也補建 Mantis 關聯（若尚未連結）
+                auto_ticket_id: str | None = None
+                if source_filename:
+                    stem = Path(source_filename).stem
+                    fn_tags = self._classifier.parse_tags(stem)
+                    auto_ticket_id = fn_tags.get("issue_number") or classification.get("mantis_ticket_id")
+                if not auto_ticket_id:
+                    auto_ticket_id = classification.get("mantis_ticket_id")
+                if auto_ticket_id:
+                    self._ensure_mantis_link(existing.case_id, auto_ticket_id)
                 return existing, "merged"
 
         # 沒有 existing → 原有建案流程（不變）
@@ -230,12 +263,10 @@ class CaseManager:
         self._case_repo.insert(case)
         self._fts.index_case(case_id, subject, None, None)
 
-        # 自動建立 Mantis 關聯（若檔名/主旨解析到 ticket ID 且票單存在於本地）
+        # 自動建立 Mantis 關聯（若檔名/主旨解析到 ticket ID）
         auto_ticket_id = classification.get("mantis_ticket_id")
-        if auto_ticket_id and self._mantis_repo.get_by_id(auto_ticket_id) is not None:
-            self._case_mantis_repo.link(
-                CaseMantisLink(case_id=case_id, ticket_id=auto_ticket_id)
-            )
+        if auto_ticket_id:
+            self._ensure_mantis_link(case_id, auto_ticket_id)
 
         # link_to_parent 需要子案件已在 DB 中才能更新，故在 insert 後執行
         if parent:
