@@ -558,7 +558,14 @@ class EmailView(QWidget):
         self._mail_arrived.connect(on_mail, Qt.ConnectionType.QueuedConnection)
 
         def do_fetch() -> dict:
-            emails = provider.fetch_messages(since=since, until=until, on_message=self._mail_arrived.emit)
+            # 每次呼叫時重新對 self._mail_arrived 求值，避免 PySide6 BoundSignal
+            # 暫存物件被 GC 回收後拋出「Signal source has been deleted」
+            def _emit_mail(mail: object) -> None:
+                try:
+                    self._mail_arrived.emit(mail)
+                except RuntimeError:
+                    pass  # widget 已關閉，靜默略過
+            emails = provider.fetch_messages(since=since, until=until, on_message=_emit_mail)
             return {"count": len(emails)}
 
         def on_done(result: object) -> None:
