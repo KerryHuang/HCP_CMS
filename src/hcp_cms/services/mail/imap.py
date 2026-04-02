@@ -54,7 +54,6 @@ class IMAPProvider(MailProvider):
     ) -> list[RawEmail]:
         if not self._conn:
             return []
-        import sys
         try:
             self._conn.select(folder)
             criteria = "ALL"
@@ -67,10 +66,8 @@ class IMAPProvider(MailProvider):
                 before_date = until + timedelta(days=1)
                 criteria = f'(SINCE "{since.strftime("%d-%b-%Y")}" BEFORE "{before_date.strftime("%d-%b-%Y")}")'
 
-            print(f"[DEBUG fetch] folder={folder!r} criteria={criteria!r}", file=sys.stderr, flush=True)
             _, msg_nums = self._conn.search(None, criteria)
             nums = msg_nums[0].split()
-            print(f"[DEBUG fetch] {len(nums)} message(s) found", file=sys.stderr, flush=True)
             results = []
             for num in nums:
                 _, data = self._conn.fetch(num, "(RFC822)")
@@ -82,32 +79,26 @@ class IMAPProvider(MailProvider):
                 if on_message:
                     on_message(parsed)
             return results
-        except Exception as e:
-            import sys
-            print(f"[DEBUG fetch] Exception: {e}", file=sys.stderr, flush=True)
+        except Exception:
             return []
 
     def fetch_sent_messages(self, since: datetime | None = None) -> list[RawEmail]:
-        import sys
         folder = self._find_sent_folder()
-        print(f"[DEBUG sent] found folder={folder!r}", file=sys.stderr, flush=True)
         if not folder:
-            print("[DEBUG sent] no sent folder found", file=sys.stderr, flush=True)
             return []
-        results = self.fetch_messages(since=since, folder=folder)
-        print(f"[DEBUG sent] fetched {len(results)} messages", file=sys.stderr, flush=True)
-        return results
+        return self.fetch_messages(since=since, folder=folder)
 
     def _find_sent_folder(self) -> str | None:
         """找出 IMAP 伺服器的寄件夾名稱。
         1. LIST 找 \\Sent 旗標
-        2. LIST 解碼後名稱含「寄件」或「sent」關鍵字
-        3. 逐一嘗試常見英文名稱"""
-        if not self._conn:
-            return None
+        2. LIST 解碼後名稱含寄件／sent／已傳送等關鍵字
+        3. 逐一嘗試常見英文／中文名稱"""
         import re
 
-        sent_keywords = ("寄件", "sent")
+        if not self._conn:
+            return None
+
+        sent_keywords = ("寄件", "sent", "已傳送", "已發送", "傳送")
 
         def _extract_name(line: str) -> str | None:
             m = re.search(r'"([^"]+)"\s*$|(\S+)\s*$', line)
@@ -121,13 +112,11 @@ class IMAPProvider(MailProvider):
                     if not item:
                         continue
                     decoded = item.decode("utf-8", errors="replace") if isinstance(item, bytes) else item
-                    # 優先：有 \Sent 旗標
-                    if r"\Sent" in decoded:
-                        name = _extract_name(decoded)
-                        if name:
-                            return name
-                    # 備選：解碼後名稱含寄件/sent 關鍵字
                     name_raw = _extract_name(decoded)
+                    # 優先：有 \Sent 旗標
+                    if r"\Sent" in decoded and name_raw:
+                        return name_raw
+                    # 備選：解碼後名稱含寄件/sent 關鍵字
                     if name_raw:
                         name_decoded = self._decode_imap_utf7(name_raw)
                         folder_leaf = name_decoded.rsplit("/", 1)[-1].lower()
@@ -141,8 +130,20 @@ class IMAPProvider(MailProvider):
                     return keyword_candidates[0]
         except Exception:
             pass
-        # 3. 逐一嘗試常見英文名稱，以 select 回傳碼判斷是否存在
-        for folder in ('"[Gmail]/Sent Mail"', "Sent", "INBOX.Sent", '"Sent Items"', "Sent Messages"):
+
+        # 3. 逐一嘗試常見英文／中文名稱，以 select 回傳碼判斷是否存在
+        for folder in (
+            "Sent",
+            "Sent Items",
+            "INBOX.Sent",
+            "Sent Messages",
+            "[Gmail]/Sent Mail",
+            "已傳送",
+            "已發送",
+            "寄件備份",
+            "已傳送郵件",
+            "傳送郵件",
+        ):
             try:
                 typ, _ = self._conn.select(folder, readonly=True)
                 if typ == "OK":
