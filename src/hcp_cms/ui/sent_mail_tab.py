@@ -223,6 +223,25 @@ class SentMailTab(QWidget):
         filter_layout.addStretch()
         layout.addLayout(filter_layout)
 
+        # 自訂區間列 — 起 [DateEdit] ~ 迄 [DateEdit] [載入]
+        range_layout = QHBoxLayout()
+        range_layout.addWidget(QLabel("區間：起"))
+        self._range_start_edit = QDateEdit(QDate.currentDate().addDays(-30))
+        self._range_start_edit.setCalendarPopup(True)
+        self._range_start_edit.setDisplayFormat("yyyy/MM/dd")
+        range_layout.addWidget(self._range_start_edit)
+        range_layout.addWidget(QLabel("~  迄"))
+        self._range_end_edit = QDateEdit(QDate.currentDate())
+        self._range_end_edit.setCalendarPopup(True)
+        self._range_end_edit.setDisplayFormat("yyyy/MM/dd")
+        range_layout.addWidget(self._range_end_edit)
+        range_load_btn = QPushButton("🔄 載入區間")
+        range_load_btn.setToolTip("依指定起迄日期載入寄件備份")
+        range_load_btn.clicked.connect(self._on_range_fetch)
+        range_layout.addWidget(range_load_btn)
+        range_layout.addStretch()
+        layout.addLayout(range_layout)
+
         # --- 公司彙總表 ---
         self._summary_label = QLabel("公司彙總")
         layout.addWidget(self._summary_label)
@@ -294,6 +313,20 @@ class SentMailTab(QWidget):
     def _on_today(self) -> None:
         self._date_edit.setDate(QDate.currentDate())
         self._on_refresh()
+
+    def _on_range_fetch(self) -> None:
+        """依自訂起迄日期載入寄件備份。"""
+        if not self._provider:
+            return
+        s = self._range_start_edit.date()
+        e = self._range_end_edit.date()
+        if s > e:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.warning(self.parent(), "日期錯誤", "起始日期不可晚於迄日期。")
+            return
+        since = datetime(s.year(), s.month(), s.day())
+        until = datetime(e.year(), e.month(), e.day(), 23, 59, 59)
+        self._fetch(since=since, until=until)
 
     def _on_refresh(self) -> None:
         d = self._date_edit.date()

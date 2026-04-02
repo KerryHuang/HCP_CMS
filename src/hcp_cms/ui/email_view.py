@@ -189,6 +189,25 @@ class EmailView(QWidget):
 
         inbox_layout.addLayout(filter_layout)
 
+        # 自訂區間列 — 起 [DateEdit] ~ 迄 [DateEdit] [載入]
+        range_layout = QHBoxLayout()
+        range_layout.addWidget(QLabel("區間：起"))
+        self._range_start_edit = QDateEdit(QDate.currentDate().addDays(-30))
+        self._range_start_edit.setCalendarPopup(True)
+        self._range_start_edit.setDisplayFormat("yyyy/MM/dd")
+        range_layout.addWidget(self._range_start_edit)
+        range_layout.addWidget(QLabel("~  迄"))
+        self._range_end_edit = QDateEdit(QDate.currentDate())
+        self._range_end_edit.setCalendarPopup(True)
+        self._range_end_edit.setDisplayFormat("yyyy/MM/dd")
+        range_layout.addWidget(self._range_end_edit)
+        range_load_btn = QPushButton("📥 載入區間")
+        range_load_btn.setToolTip("依指定起迄日期載入信件")
+        range_load_btn.clicked.connect(self._on_range_fetch)
+        range_layout.addWidget(range_load_btn)
+        range_layout.addStretch()
+        inbox_layout.addLayout(range_layout)
+
         # Email list — 5 columns: checkbox + 寄件人 + 主旨 + 日期 + 狀態
         self._table = QTableWidget(0, 5)
         self._table.setHorizontalHeaderLabels(["✓", "寄件人", "主旨", "日期", "狀態"])
@@ -463,6 +482,21 @@ class EmailView(QWidget):
         self._date_edit.setDate(QDate.currentDate())
         if self._provider:
             self._on_fetch()
+
+    def _on_range_fetch(self) -> None:
+        """依自訂起迄日期載入信件。"""
+        if not self._provider:
+            return
+        from datetime import datetime
+        s = self._range_start_edit.date()
+        e = self._range_end_edit.date()
+        if s > e:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "日期錯誤", "起始日期不可晚於迄日期。")
+            return
+        since = datetime(s.year(), s.month(), s.day())
+        until = datetime(e.year(), e.month(), e.day(), 23, 59, 59)
+        self._on_fetch(since=since, until=until)
 
     def _on_fetch(
         self,
