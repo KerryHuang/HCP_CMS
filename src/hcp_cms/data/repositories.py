@@ -578,6 +578,18 @@ class CaseRepository:
             (company_id, case_id),
         )
 
+    def bulk_update_company_id(self, case_ids: list[str], company_id: str) -> int:
+        """批次更新多筆案件的 company_id，回傳實際更新筆數。"""
+        updated = 0
+        for cid in case_ids:
+            cursor = self._conn.execute(
+                "UPDATE cs_cases SET company_id = ? WHERE case_id = ?",
+                (company_id, cid),
+            )
+            updated += cursor.rowcount
+        self._conn.commit()
+        return updated
+
 
 # ---------------------------------------------------------------------------
 # QARepository

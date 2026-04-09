@@ -300,23 +300,22 @@ class CaseManager:
         Returns:
             {"updated": 成功更新 company_id 筆數, "merged": 設定 linked_case_id 筆數}
         """
-        updated = 0
-        for cid in case_ids:
-            self._case_repo.update_company_id(cid, company_id)
-            updated += 1
-        self._conn.commit()
+        updated = self._case_repo.bulk_update_company_id(case_ids, company_id)
 
         # 按 clean_subject 分組
-        groups: dict[str, list[Case]] = {}
+        groups: dict[str, tuple[str, list[Case]]] = {}
         for cid in case_ids:
             case = self._case_repo.get_by_id(cid)
             if not case:
                 continue
-            key = ThreadTracker.clean_subject(case.subject).lower()
-            groups.setdefault(key, []).append(case)
+            clean_subj = ThreadTracker.clean_subject(case.subject)
+            group_key = clean_subj.lower()
+            if group_key not in groups:
+                groups[group_key] = (clean_subj, [])
+            groups[group_key][1].append(case)
 
         merged = 0
-        for clean_subj, group_cases in groups.items():
+        for group_key, (clean_subj, group_cases) in groups.items():
             if len(group_cases) < 2:
                 continue
             # 找同公司同主旨全部案件（含非選取的舊案件）
