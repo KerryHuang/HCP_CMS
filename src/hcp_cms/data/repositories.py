@@ -335,6 +335,19 @@ class CaseRepository:
                 return case
         return None
 
+    def list_by_company_and_subject(self, company_id: str, clean_subject: str) -> list[Case]:
+        """回傳同公司、同主旨（去前綴後）的所有案件，按 sent_time ASC 排序。"""
+        rows = self._conn.execute(
+            self._build_select() + " WHERE company_id = ? ORDER BY sent_time ASC, case_id ASC",
+            (company_id,),
+        ).fetchall()
+        result = []
+        for row in rows:
+            case = self._row_to_case(row)
+            if _clean_subject(case.subject) == clean_subject:
+                result.append(case)
+        return result
+
     def list_by_status(self, status: str) -> list[Case]:
         rows = self._conn.execute(self._build_select() + " WHERE status = ?", (status,)).fetchall()
         return [self._row_to_case(r) for r in rows]
