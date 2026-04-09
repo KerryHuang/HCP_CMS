@@ -118,6 +118,12 @@ class CaseView(QWidget):
         self._delete_selected_btn.clicked.connect(self._on_delete_single_case)
         header.addWidget(self._delete_selected_btn)
 
+        self._assign_company_btn = QPushButton("🏢 指定公司")
+        self._assign_company_btn.setToolTip("為選取的案件批次指定公司，並自動整併同主旨案件")
+        self._assign_company_btn.setEnabled(False)
+        self._assign_company_btn.clicked.connect(self._on_assign_company)
+        header.addWidget(self._assign_company_btn)
+
         self._delete_btn = QPushButton("🗑 批次刪除")
         self._delete_btn.setObjectName("dangerBtn")
         self._delete_btn.setToolTip("依日期範圍批次刪除案件")
@@ -260,6 +266,7 @@ class CaseView(QWidget):
     def _clear_detail(self) -> None:
         """清空下方詳細資訊面板。"""
         self._delete_selected_btn.setEnabled(False)
+        self._assign_company_btn.setEnabled(False)
         self._detail_id.clear()
         self._detail_subject.clear()
         self._detail_status.clear()
@@ -273,6 +280,7 @@ class CaseView(QWidget):
     def _on_selection_changed(self) -> None:
         rows = self._table.selectionModel().selectedRows()
         self._delete_selected_btn.setEnabled(bool(rows))
+        self._assign_company_btn.setEnabled(bool(rows))
         if not rows or not hasattr(self, '_cases'):
             return
         row = rows[0].row()
@@ -363,6 +371,43 @@ class CaseView(QWidget):
         action = menu.exec(self._table.viewport().mapToGlobal(pos))
         if action == delete_action:
             self._on_delete_single_case()
+
+    def _on_assign_company(self) -> None:
+        """批次指定公司並整併同主旨案件。"""
+        if not self._conn:
+            return
+        rows = self._table.selectionModel().selectedRows()
+        if not rows:
+            return
+
+        case_ids = []
+        for idx in rows:
+            row = idx.row()
+            if 0 <= row < len(self._cases):
+                case_ids.append(self._cases[row].case_id)
+        if not case_ids:
+            return
+
+        from hcp_cms.ui.assign_company_dialog import AssignCompanyDialog
+        dlg = AssignCompanyDialog(self._conn, len(case_ids), parent=self)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        company_id = dlg.selected_company_id
+        if not company_id:
+            return
+
+        result = CaseManager(self._conn).batch_assign_company_and_merge(case_ids, company_id)
+
+        updated = result["updated"]
+        merged = result["merged"]
+        QMessageBox.information(
+            self,
+            "完成",
+            f"已更新 {updated} 筆案件的公司。\n成功整併 {merged} 筆為同主旨根案件的子案件。",
+        )
+        self.refresh()
+        self.cases_changed.emit()
 
     def _on_delete_single_case(self) -> None:
         """單筆刪除目前選取的案件。"""
