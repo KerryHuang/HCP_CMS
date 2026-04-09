@@ -24,20 +24,23 @@ class AssignCompanyDialog(QDialog):
         self.setWindowTitle("指定公司")
         self.setMinimumWidth(340)
         self._selected_company_id: str | None = None
-
+        self._case_count = case_count
         companies = CompanyRepository(conn).list_all()
+        self._companies = sorted(companies, key=lambda c: c.name)
+        self._setup_ui()
 
+    def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
-        form = QFormLayout()
 
-        info = QLabel(f"已選取 <b>{case_count}</b> 筆案件，請選擇要指定的公司：")
+        info = QLabel(f"已選取 <b>{self._case_count}</b> 筆案件，請選擇要指定的公司：")
         info.setWordWrap(True)
         layout.addWidget(info)
 
+        form = QFormLayout()
         self._combo = QComboBox()
         self._combo.addItem("-- 請選擇 --", None)
-        for company in sorted(companies, key=lambda c: c.name):
-            self._combo.addItem(f"{company.name}（{company.domain}）", company.company_id)
+        for company in self._companies:
+            self._combo.addItem(f"{company.name}（{company.domain or ''}）", company.company_id)
         form.addRow("公司：", self._combo)
         layout.addLayout(form)
 

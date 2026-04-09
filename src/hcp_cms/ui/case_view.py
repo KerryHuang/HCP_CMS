@@ -380,6 +380,8 @@ class CaseView(QWidget):
         if not rows:
             return
 
+        if not hasattr(self, '_cases'):
+            return
         case_ids = []
         for idx in rows:
             row = idx.row()
@@ -401,10 +403,15 @@ class CaseView(QWidget):
 
         updated = result["updated"]
         merged = result["merged"]
+        merge_msg = (
+            f"成功整併 {merged} 筆為同主旨根案件的子案件。"
+            if merged > 0
+            else "無需整併同主旨案件。"
+        )
         QMessageBox.information(
             self,
             "完成",
-            f"已更新 {updated} 筆案件的公司。\n成功整併 {merged} 筆為同主旨根案件的子案件。",
+            f"已更新 {updated} 筆案件的公司。\n{merge_msg}",
         )
         self.refresh()
         self.cases_changed.emit()
