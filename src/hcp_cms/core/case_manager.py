@@ -289,6 +289,50 @@ class CaseManager:
             case.reply_count += 1
             self._case_repo.update(case)
 
+    def batch_assign_company_and_merge(
+        self, case_ids: list[str], company_id: str
+    ) -> dict[str, int]:
+        """批次設定 company_id 並整併同公司同主旨的案件。
+
+        1. 更新指定案件的 company_id。
+        2. 以 clean_subject 分組，每組取最早案件為根，其餘設 linked_case_id。
+
+        Returns:
+            {"updated": 成功更新 company_id 筆數, "merged": 設定 linked_case_id 筆數}
+        """
+        updated = 0
+        for cid in case_ids:
+            self._case_repo.update_company_id(cid, company_id)
+            updated += 1
+        self._conn.commit()
+
+        # 按 clean_subject 分組
+        groups: dict[str, list[Case]] = {}
+        for cid in case_ids:
+            case = self._case_repo.get_by_id(cid)
+            if not case:
+                continue
+            key = ThreadTracker.clean_subject(case.subject).lower()
+            groups.setdefault(key, []).append(case)
+
+        merged = 0
+        for clean_subj, group_cases in groups.items():
+            if len(group_cases) < 2:
+                continue
+            # 找同公司同主旨全部案件（含非選取的舊案件）
+            all_matching = self._case_repo.list_by_company_and_subject(company_id, clean_subj)
+            if not all_matching:
+                all_matching = sorted(group_cases, key=lambda c: (c.sent_time or "", c.case_id))
+
+            root = all_matching[0]
+            for case in all_matching[1:]:
+                if case.linked_case_id:
+                    continue  # 已連結，跳過
+                self._tracker.link_to_parent(case.case_id, root.case_id)
+                merged += 1
+
+        return {"updated": updated, "merged": merged}
+
     def reopen_case(self, case_id: str, reason: str = "") -> None:
         """Reopen a replied case back to processing.
 

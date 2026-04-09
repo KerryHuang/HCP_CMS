@@ -241,6 +241,67 @@ class TestCaseManager:
         stored = CaseRepository(seeded_db.connection).get_by_id(case.case_id)
         assert stored.sent_time == "2026/03/17 14:22"
 
+    def test_batch_assign_company_and_merge_links_cases(self, seeded_db):
+        """5 筆孤兒案件（無公司），批次指定公司後應整併為 1 根 + 4 子。"""
+        CompanyRepository(seeded_db.connection).insert(
+            Company(company_id="C-CHI", name="群光", domain="chicony.com")
+        )
+        mgr = CaseManager(seeded_db.connection)
+        repo = CaseRepository(seeded_db.connection)
+
+        # 建立 5 筆孤兒案件，主旨去前綴後相同
+        case_ids = []
+        subjects = [
+            "HCP 緊急聯絡人資訊 如何匯出",
+            "RE: HCP 緊急聯絡人資訊 如何匯出",
+            "RE: HCP 緊急聯絡人資訊 如何匯出",
+            "RE: HCP 緊急聯絡人資訊 如何匯出",
+            "RE: HCP 緊急聯絡人資訊 如何匯出",
+        ]
+        for i, subj in enumerate(subjects):
+            case = mgr.create_case(
+                subject=subj,
+                body="測試內容",
+                sent_time=f"2026/04/0{i+1} 10:00:00",
+            )
+            case_ids.append(case.case_id)
+
+        result = mgr.batch_assign_company_and_merge(case_ids, "C-CHI")
+
+        assert result["updated"] == 5
+
+        cases = [repo.get_by_id(cid) for cid in case_ids]
+        assert all(c.company_id == "C-CHI" for c in cases)
+
+        root = min(cases, key=lambda c: c.sent_time or "")
+        linked = [c for c in cases if c.case_id != root.case_id]
+        assert all(c.linked_case_id == root.case_id for c in linked)
+        assert result["merged"] == 4
+
+    def test_batch_assign_company_and_merge_skips_already_linked(self, seeded_db):
+        """已有 linked_case_id 的案件不重複連結。"""
+        CompanyRepository(seeded_db.connection).insert(
+            Company(company_id="C-CHI", name="群光", domain="chicony.com")
+        )
+        mgr = CaseManager(seeded_db.connection)
+        repo = CaseRepository(seeded_db.connection)
+
+        c1 = mgr.create_case(subject="問題 X", body="", sent_time="2026/04/01 10:00:00")
+        c2 = mgr.create_case(subject="問題 X", body="", sent_time="2026/04/02 10:00:00")
+        c3 = mgr.create_case(subject="問題 X", body="", sent_time="2026/04/03 10:00:00")
+
+        # c3 已手動連結至 c2（非正常狀況，但要能容忍）
+        c3_obj = repo.get_by_id(c3.case_id)
+        c3_obj.linked_case_id = c2.case_id
+        repo.update(c3_obj)
+
+        result = mgr.batch_assign_company_and_merge([c1.case_id, c2.case_id, c3.case_id], "C-CHI")
+
+        assert result["updated"] == 3
+        c3_after = repo.get_by_id(c3.case_id)
+        # c3 已有 linked_case_id，不應被覆蓋
+        assert c3_after.linked_case_id == c2.case_id
+
 
 class TestImportEmail:
     """測試 import_email() 智慧派送邏輯。"""
