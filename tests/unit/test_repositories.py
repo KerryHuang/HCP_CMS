@@ -190,44 +190,6 @@ class TestCaseRepository:
         assert repo.count_by_month(2026, 6) == 1
         assert repo.count_by_month(2026, 7) == 0
 
-    def test_list_by_company_and_subject_returns_all_matches(self, db):
-        repo = CaseRepository(db.connection)
-        comp_repo = CompanyRepository(db.connection)
-        comp_repo.insert(Company(company_id="C-CHI", name="群光", domain="chicony.com"))
-
-        from hcp_cms.data.models import Case
-        for i, (cid, subj) in enumerate([
-            ("CS-2026-001", "HCP 緊急聯絡人資訊 如何匯出"),
-            ("CS-2026-002", "RE: HCP 緊急聯絡人資訊 如何匯出"),
-            ("CS-2026-003", "HCP 緊急聯絡人資訊 如何匯出"),
-            ("CS-2026-004", "完全不同的主旨"),
-        ]):
-            repo.insert(Case(case_id=cid, subject=subj, company_id="C-CHI",
-                             sent_time=f"2026/04/0{i+1} 10:00:00"))
-
-        results = repo.list_by_company_and_subject("C-CHI", "HCP 緊急聯絡人資訊 如何匯出")
-        assert len(results) == 3
-        assert all(c.company_id == "C-CHI" for c in results)
-        case_ids = [c.case_id for c in results]
-        assert "CS-2026-001" in case_ids
-        assert "CS-2026-002" in case_ids
-        assert "CS-2026-003" in case_ids
-        assert "CS-2026-004" not in case_ids
-
-    def test_list_by_company_and_subject_sorted_by_sent_time(self, db):
-        repo = CaseRepository(db.connection)
-        CompanyRepository(db.connection).insert(
-            Company(company_id="C-CHI", name="群光", domain="chicony.com")
-        )
-        from hcp_cms.data.models import Case
-        for cid, t in [("CS-2026-010", "2026/04/03 10:00:00"),
-                       ("CS-2026-011", "2026/04/01 10:00:00"),
-                       ("CS-2026-012", "2026/04/02 10:00:00")]:
-            repo.insert(Case(case_id=cid, subject="主旨 A", company_id="C-CHI", sent_time=t))
-
-        results = repo.list_by_company_and_subject("C-CHI", "主旨 A")
-        assert [c.case_id for c in results] == ["CS-2026-011", "CS-2026-012", "CS-2026-010"]
-
 
 # ---------------------------------------------------------------------------
 # TestQARepository
@@ -638,6 +600,52 @@ class TestCaseRepositoryFindByCompanyAndSubject:
         result = repo.find_by_company_and_subject("C001", "薪資問題")
         assert result is not None
         assert result.case_id == "CS-2026-010"
+
+
+# ---------------------------------------------------------------------------
+# TestCaseRepositoryListByCompanyAndSubject
+# ---------------------------------------------------------------------------
+
+
+class TestCaseRepositoryListByCompanyAndSubject:
+    @pytest.fixture(autouse=True)
+    def _seed_companies(self, db: DatabaseManager) -> None:
+        """預先插入測試用公司，避免 FOREIGN KEY 違反。"""
+        co_repo = CompanyRepository(db.connection)
+        co_repo.insert(Company(company_id="C-CHI", name="群光", domain="chicony.com"))
+
+    def test_list_by_company_and_subject_returns_all_matches(self, db: DatabaseManager) -> None:
+        repo = CaseRepository(db.connection)
+
+        from hcp_cms.data.models import Case
+        for i, (cid, subj) in enumerate([
+            ("CS-2026-001", "HCP 緊急聯絡人資訊 如何匯出"),
+            ("CS-2026-002", "RE: HCP 緊急聯絡人資訊 如何匯出"),
+            ("CS-2026-003", "HCP 緊急聯絡人資訊 如何匯出"),
+            ("CS-2026-004", "完全不同的主旨"),
+        ]):
+            repo.insert(Case(case_id=cid, subject=subj, company_id="C-CHI",
+                             sent_time=f"2026/04/0{i+1} 10:00:00"))
+
+        results = repo.list_by_company_and_subject("C-CHI", "HCP 緊急聯絡人資訊 如何匯出")
+        assert len(results) == 3
+        assert all(c.company_id == "C-CHI" for c in results)
+        case_ids = [c.case_id for c in results]
+        assert "CS-2026-001" in case_ids
+        assert "CS-2026-002" in case_ids
+        assert "CS-2026-003" in case_ids
+        assert "CS-2026-004" not in case_ids
+
+    def test_list_by_company_and_subject_sorted_by_sent_time(self, db: DatabaseManager) -> None:
+        repo = CaseRepository(db.connection)
+        from hcp_cms.data.models import Case
+        for cid, t in [("CS-2026-010", "2026/04/03 10:00:00"),
+                       ("CS-2026-011", "2026/04/01 10:00:00"),
+                       ("CS-2026-012", "2026/04/02 10:00:00")]:
+            repo.insert(Case(case_id=cid, subject="主旨 A", company_id="C-CHI", sent_time=t))
+
+        results = repo.list_by_company_and_subject("C-CHI", "主旨 A")
+        assert [c.case_id for c in results] == ["CS-2026-011", "CS-2026-012", "CS-2026-010"]
 
 
 # ---------------------------------------------------------------------------
