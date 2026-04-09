@@ -336,7 +336,7 @@ class CaseRepository:
         return None
 
     def list_by_company_and_subject(self, company_id: str, clean_subject: str) -> list[Case]:
-        """回傳同公司、同主旨（去前綴後）的所有案件，按 sent_time ASC 排序。"""
+        """回傳同公司、同主旨（去前綴後，大小寫不敏感）的所有案件，按 sent_time ASC 排序。"""
         rows = self._conn.execute(
             self._build_select() + " WHERE company_id = ? ORDER BY sent_time ASC, case_id ASC",
             (company_id,),
@@ -344,7 +344,7 @@ class CaseRepository:
         result = []
         for row in rows:
             case = self._row_to_case(row)
-            if _clean_subject(case.subject) == clean_subject:
+            if _clean_subject(case.subject).lower() == clean_subject.lower():
                 result.append(case)
         return result
 
@@ -572,7 +572,11 @@ class CaseRepository:
         return [(r[0], r[1]) for r in rows]
 
     def update_company_id(self, case_id: str, company_id: str) -> None:
-        """更新單一案件的 company_id（不單獨 commit，由呼叫端批次 commit）。"""
+        """更新單一案件的 company_id（不含 commit）。
+
+        此方法刻意不呼叫 commit，供需要批次操作的呼叫端自行控制交易時機。
+        若需單筆更新並自動 commit，請改用 bulk_update_company_id([case_id], company_id)。
+        """
         self._conn.execute(
             "UPDATE cs_cases SET company_id = ? WHERE case_id = ?",
             (company_id, case_id),
