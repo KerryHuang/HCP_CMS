@@ -164,3 +164,96 @@ class TestGenerateNotifyHtml:
         path = eng.generate_notify_html(pid, output_dir=str(tmp_path), month_str="202604")
         assert "202604" in Path(path).name
         assert "大PATCH更新通知" in Path(path).name
+
+
+class TestScanMonthlyDir:
+    def test_engine_stores_conn(self, conn):
+        eng = MonthlyPatchEngine(conn)
+        assert eng._conn is conn
+
+    def test_detect_structure_mode_a(self, conn, tmp_path):
+        (tmp_path / "11G").mkdir()
+        eng = MonthlyPatchEngine(conn)
+        assert eng._detect_structure(tmp_path) == "A"
+
+    def test_detect_structure_mode_b(self, conn, tmp_path):
+        (tmp_path / "01.IP_20241128_0016552_11G.7z").write_bytes(b"")
+        eng = MonthlyPatchEngine(conn)
+        assert eng._detect_structure(tmp_path) == "B"
+
+    def test_reorganize_to_mode_a(self, conn, tmp_path):
+        (tmp_path / "01.IP_20241128_0016552_11G.7z").write_bytes(b"dummy")
+        (tmp_path / "01.IP_20241128_0016552_12C.zip").write_bytes(b"dummy")
+        (tmp_path / "01.IP_20241204_0016552_TESTREPORT_11G.doc").write_bytes(b"dummy")
+        (tmp_path / "01.IP_20241204_0016552_TESTREPORT_12C.doc").write_bytes(b"dummy")
+
+        eng = MonthlyPatchEngine(conn)
+        eng._reorganize_to_mode_a(tmp_path)
+
+        assert (tmp_path / "11G" / "01.IP_20241128_0016552_11G.7z").exists()
+        assert (tmp_path / "12C" / "01.IP_20241128_0016552_12C.zip").exists()
+        assert (tmp_path / "11G" / "測試報告" / "01.IP_20241204_0016552_TESTREPORT_11G.doc").exists()
+        assert (tmp_path / "12C" / "測試報告" / "01.IP_20241204_0016552_TESTREPORT_12C.doc").exists()
+
+    def test_scan_monthly_dir_mode_a(self, conn, tmp_path, monkeypatch):
+        import json
+        import py7zr
+        from hcp_cms.core.monthly_patch_engine import MonthlyPatchEngine
+        from hcp_cms.data.repositories import PatchRepository
+
+        # 建立模式 A 結構：11G/ 含一個 .7z
+        ver_dir = tmp_path / "11G"
+        ver_dir.mkdir()
+        archive = ver_dir / "01.IP_20241128_0016552_11G.7z"
+        # 建立包含 form/ sql/ 的 .7z
+        extracted_stub = tmp_path / "_stub"
+        extracted_stub.mkdir()
+        (extracted_stub / "form").mkdir()
+        (extracted_stub / "form" / "HRWF304.fmb").write_bytes(b"")
+        (extracted_stub / "sql").mkdir()
+        (extracted_stub / "sql" / "pk_test.sql").write_bytes(b"")
+        with py7zr.SevenZipFile(str(archive), "w") as z:
+            for f in extracted_stub.rglob("*"):
+                if f.is_file():
+                    z.write(str(f), str(f.relative_to(extracted_stub)))
+
+        # mock _read_release_note 回傳固定資料
+        def fake_release(self_inner, path):
+            return [{"issue_no": "0016552", "issue_type": "BugFix",
+                     "description": "測試說明", "region": "共用"}]
+        monkeypatch.setattr(MonthlyPatchEngine, "_read_release_note", fake_release)
+
+        eng = MonthlyPatchEngine(conn)
+        result = eng.scan_monthly_dir(str(tmp_path), "202412")
+
+        assert "11G" in result
+        repo = PatchRepository(conn)
+        issues = repo.list_issues_by_patch(result["11G"])
+        assert len(issues) == 1
+        assert issues[0].issue_no == "0016552"
+        meta = json.loads(issues[0].mantis_detail)
+        assert "HRWF304" in meta["form_files"]
+        assert "pk_test" in meta["sql_files"]
+
+    def test_scan_monthly_dir_mode_b_reorganizes(self, conn, tmp_path, monkeypatch):
+        from hcp_cms.core.monthly_patch_engine import MonthlyPatchEngine
+
+        archive_11g = tmp_path / "01.IP_20241128_0016552_11G.7z"
+        archive_11g.write_bytes(b"dummy")
+        report = tmp_path / "01.IP_20241204_0016552_TESTREPORT_11G.doc"
+        report.write_bytes(b"dummy")
+
+        def fake_extract(self_inner, archive, extract_dir):
+            extract_dir.mkdir(parents=True, exist_ok=True)
+
+        def fake_release(self_inner, path):
+            return []
+
+        monkeypatch.setattr(MonthlyPatchEngine, "_extract_archive", fake_extract)
+        monkeypatch.setattr(MonthlyPatchEngine, "_read_release_note", fake_release)
+
+        eng = MonthlyPatchEngine(conn)
+        eng.scan_monthly_dir(str(tmp_path), "202412")
+
+        assert (tmp_path / "11G" / "01.IP_20241128_0016552_11G.7z").exists()
+        assert (tmp_path / "11G" / "測試報告" / "01.IP_20241204_0016552_TESTREPORT_11G.doc").exists()

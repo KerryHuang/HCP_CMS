@@ -25,6 +25,7 @@ _TXT_FIELDS = [
 
 class MonthlyPatchEngine:
     def __init__(self, conn: sqlite3.Connection) -> None:
+        self._conn = conn
         self._repo = PatchRepository(conn)
 
     # ── Issue 載入 ───────────────────────────────────────────────────────────
@@ -76,6 +77,142 @@ class MonthlyPatchEngine:
     def get_issues(self, patch_id: int) -> list[PatchIssue]:
         """回傳 Patch 的 Issue 清單。"""
         return self._repo.list_issues_by_patch(patch_id)
+
+    # ── 資料夾掃描 ────────────────────────────────────────────────────────────
+
+    _ARCHIVE_RE = re.compile(r"\d{2}\.IP_\d{8}_(\d{7})_", re.IGNORECASE)
+
+    def _detect_structure(self, base: Path) -> str:
+        """回傳 'A'（有 11G/12C 子目錄）或 'B'（平坦）。"""
+        if (base / "11G").exists() or (base / "12C").exists():
+            return "A"
+        return "B"
+
+    def _reorganize_to_mode_a(self, base: Path) -> None:
+        """將模式 B 平坦結構整理至 11G/12C 子目錄。"""
+        import shutil
+        for version in ("11G", "12C"):
+            ver_dir = base / version
+            report_dir = ver_dir / "測試報告"
+            ver_dir.mkdir(exist_ok=True)
+            report_dir.mkdir(exist_ok=True)
+            v_upper = version.upper()
+            for f in list(base.iterdir()):
+                if not f.is_file():
+                    continue
+                name_upper = f.name.upper()
+                if f"_{v_upper}" not in name_upper:
+                    continue
+                if "TESTREPORT" in name_upper:
+                    shutil.move(str(f), str(report_dir / f.name))
+                elif f.suffix.lower() in (".7z", ".zip", ".rar"):
+                    shutil.move(str(f), str(ver_dir / f.name))
+
+    def _extract_archive(self, archive: Path, extract_dir: Path) -> None:
+        """解壓 .7z 或 .zip 至 extract_dir。"""
+        extract_dir.mkdir(parents=True, exist_ok=True)
+        suffix = archive.suffix.lower()
+        if suffix == ".7z":
+            import py7zr
+            with py7zr.SevenZipFile(str(archive), mode="r") as z:
+                z.extractall(path=str(extract_dir))
+        elif suffix == ".zip":
+            import zipfile
+            with zipfile.ZipFile(str(archive), "r") as z:
+                z.extractall(path=str(extract_dir))
+
+    def _list_files(self, directory: Path, extensions: list[str], keep_ext: bool = False) -> list[str]:
+        """列出目錄內符合副檔名的檔案，keep_ext=False 則去副檔名。"""
+        if not directory.exists():
+            return []
+        return [
+            f.name if keep_ext else f.stem
+            for f in sorted(directory.iterdir())
+            if f.is_file() and f.suffix.lower() in extensions
+        ]
+
+    def _extract_issue_no(self, filename: str) -> str | None:
+        """從封存檔名解析 7 位數 Issue No，如 '01.IP_20241128_0016552_11G.7z' → '0016552'。"""
+        m = self._ARCHIVE_RE.search(filename)
+        return m.group(1) if m else None
+
+    def _read_release_note(self, extract_dir: Path) -> list[dict[str, str]]:
+        """在解壓資料夾尋找 ReleaseNote，委託 SinglePatchEngine 解析。"""
+        from hcp_cms.core.patch_engine import SinglePatchEngine
+        for f in extract_dir.iterdir():
+            if not f.is_file():
+                continue
+            low = f.name.lower()
+            if "releasenote" in low or "release_note" in low:
+                return SinglePatchEngine(self._conn).read_release_doc(str(f))
+        return []
+
+    def scan_monthly_dir(self, patch_dir: str, month_str: str) -> dict[str, int]:
+        """掃描月份資料夾，建立各版本 PatchRecord 並匯入 Issues。
+
+        自動偵測模式 A（11G/12C 子目錄）或模式 B（平坦），模式 B 時自動整理。
+        回傳 {"11G": patch_id, "12C": patch_id}（版本不存在則無對應 key）。
+        """
+        base = Path(patch_dir)
+        patch_ids: dict[str, int] = {}
+
+        if self._detect_structure(base) == "B":
+            self._reorganize_to_mode_a(base)
+
+        for version in ("11G", "12C"):
+            version_dir = base / version
+            if not version_dir.exists():
+                continue
+            archives = sorted(version_dir.glob("*.7z")) + sorted(version_dir.glob("*.zip"))
+            if not archives:
+                continue
+
+            patch = PatchRecord(type="monthly", month_str=month_str, patch_dir=patch_dir)
+            patch_id = self._repo.insert_patch(patch)
+            patch_ids[version] = patch_id
+
+            for idx, archive in enumerate(archives):
+                issue_no = self._extract_issue_no(archive.name)
+                extract_dir = version_dir / f"_extracted_{archive.stem}"
+                try:
+                    self._extract_archive(archive, extract_dir)
+                except Exception as e:
+                    logging.warning("解壓縮失敗 [%s]: %s", archive.name, e)
+                    continue
+
+                raw_issues = self._read_release_note(extract_dir)
+                form_files = self._list_files(extract_dir / "form", [".fmb", ".rdf", ".fmx"])
+                sql_files = self._list_files(extract_dir / "sql", [".sql"])
+                muti_files = self._list_files(extract_dir / "muti", [".sql"], keep_ext=True)
+                scan_meta = json.dumps({
+                    "form_files": form_files,
+                    "sql_files": sql_files,
+                    "muti_files": muti_files,
+                    "archive_name": archive.name,
+                })
+
+                if raw_issues:
+                    for raw_idx, raw in enumerate(raw_issues):
+                        self._repo.insert_issue(PatchIssue(
+                            patch_id=patch_id,
+                            issue_no=raw.get("issue_no", issue_no or ""),
+                            issue_type=raw.get("issue_type", "BugFix"),
+                            region=raw.get("region", "共用"),
+                            description=raw.get("description"),
+                            source="scan",
+                            sort_order=idx * 100 + raw_idx,
+                            mantis_detail=scan_meta,
+                        ))
+                elif issue_no:
+                    self._repo.insert_issue(PatchIssue(
+                        patch_id=patch_id,
+                        issue_no=issue_no,
+                        source="scan",
+                        sort_order=idx,
+                        mantis_detail=scan_meta,
+                    ))
+
+        return patch_ids
 
     # ── 測試報告整理 ─────────────────────────────────────────────────────────
 
