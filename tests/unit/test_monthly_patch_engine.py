@@ -197,7 +197,9 @@ class TestScanMonthlyDir:
 
     def test_scan_monthly_dir_mode_a(self, conn, tmp_path, monkeypatch):
         import json
+
         import py7zr
+
         from hcp_cms.core.monthly_patch_engine import MonthlyPatchEngine
         from hcp_cms.data.repositories import PatchRepository
 
@@ -284,10 +286,11 @@ class TestGeneratePatchListFromDir:
 
     def test_generate_patch_list_from_dir_creates_files(self, conn, tmp_path):
         import json
+
         from hcp_cms.data.repositories import PatchRepository
 
         repo = PatchRepository(conn)
-        from hcp_cms.data.models import PatchRecord, PatchIssue
+        from hcp_cms.data.models import PatchIssue, PatchRecord
         pid_11g = repo.insert_patch(PatchRecord(type="monthly", month_str="202412", patch_dir=str(tmp_path)))
         repo.insert_issue(PatchIssue(
             patch_id=pid_11g, issue_no="0016552", issue_type="BugFix",
@@ -322,9 +325,11 @@ class TestGeneratePatchListFromDir:
 
     def test_generate_sheet_names(self, conn, tmp_path):
         import json
+
         from openpyxl import load_workbook
+
+        from hcp_cms.data.models import PatchIssue, PatchRecord
         from hcp_cms.data.repositories import PatchRepository
-        from hcp_cms.data.models import PatchRecord, PatchIssue
 
         repo = PatchRepository(conn)
         pid = repo.insert_patch(PatchRecord(type="monthly", month_str="202412", patch_dir=str(tmp_path)))
@@ -344,9 +349,11 @@ class TestGeneratePatchListFromDir:
 
     def test_generate_it_sheet_form_files(self, conn, tmp_path):
         import json
+
         from openpyxl import load_workbook
+
+        from hcp_cms.data.models import PatchIssue, PatchRecord
         from hcp_cms.data.repositories import PatchRepository
-        from hcp_cms.data.models import PatchRecord, PatchIssue
 
         repo = PatchRepository(conn)
         pid = repo.insert_patch(PatchRecord(type="monthly", month_str="202412", patch_dir=str(tmp_path)))
@@ -369,9 +376,11 @@ class TestGeneratePatchListFromDir:
 
     def test_generate_test_report_hyperlink(self, conn, tmp_path):
         import json
+
         from openpyxl import load_workbook
+
+        from hcp_cms.data.models import PatchIssue, PatchRecord
         from hcp_cms.data.repositories import PatchRepository
-        from hcp_cms.data.models import PatchRecord, PatchIssue
 
         repo = PatchRepository(conn)
         pid = repo.insert_patch(PatchRecord(type="monthly", month_str="202412", patch_dir=str(tmp_path)))
@@ -397,9 +406,11 @@ class TestGeneratePatchListFromDir:
 
     def test_it_sheet_column_names(self, conn, tmp_path):
         import json
+
         from openpyxl import load_workbook
+
+        from hcp_cms.data.models import PatchIssue, PatchRecord
         from hcp_cms.data.repositories import PatchRepository
-        from hcp_cms.data.models import PatchRecord, PatchIssue
 
         repo = PatchRepository(conn)
         pid = repo.insert_patch(PatchRecord(type="monthly", month_str="202604", patch_dir=str(tmp_path)))
@@ -418,11 +429,36 @@ class TestGeneratePatchListFromDir:
         headers = [ws_it.cell(1, c).value for c in range(1, 9)]
         assert headers == ["Issue No", "類型", "程式代號", "說明", "FORM 目錄", "DB 物件", "多語更新", "備註"]
 
+    def test_hr_sheet_column_names(self, conn, tmp_path):
+        import json
+
+        from openpyxl import load_workbook
+
+        from hcp_cms.data.models import PatchIssue, PatchRecord
+        from hcp_cms.data.repositories import PatchRepository
+
+        repo = PatchRepository(conn)
+        pid = repo.insert_patch(PatchRecord(type="monthly", month_str="202604", patch_dir=str(tmp_path)))
+        repo.insert_issue(PatchIssue(
+            patch_id=pid, issue_no="0016552", source="scan",
+            mantis_detail=json.dumps({"form_files": [], "sql_files": [], "muti_files": []})
+        ))
+        (tmp_path / "11G").mkdir()
+
+        eng = MonthlyPatchEngine(conn)
+        paths = eng.generate_patch_list_from_dir({"11G": pid}, str(tmp_path), "202604")
+
+        wb = load_workbook(paths[0])
+        ws_hr = wb["HR 發行通知"]
+        assert ws_hr.cell(1, 4).value == "程式代號"
+
     def test_it_sheet_issue_no_hyperlink(self, conn, tmp_path):
         import json
+
         from openpyxl import load_workbook
+
+        from hcp_cms.data.models import PatchIssue, PatchRecord
         from hcp_cms.data.repositories import PatchRepository
-        from hcp_cms.data.models import PatchRecord, PatchIssue
 
         repo = PatchRepository(conn)
         pid = repo.insert_patch(PatchRecord(type="monthly", month_str="202604", patch_dir=str(tmp_path)))
@@ -445,13 +481,18 @@ class TestGeneratePatchListFromDir:
 
     def test_supplement_sheet_7_columns(self, conn, tmp_path):
         import json
+
         from openpyxl import load_workbook
+
+        from hcp_cms.data.models import PatchIssue, PatchRecord
         from hcp_cms.data.repositories import PatchRepository
-        from hcp_cms.data.models import PatchRecord, PatchIssue
 
         repo = PatchRepository(conn)
         pid = repo.insert_patch(PatchRecord(type="monthly", month_str="202604", patch_dir=str(tmp_path)))
-        supplement = {"修改原因": "原因說明", "原問題": "問題描述", "範例說明": "", "修正後": "修正說明", "注意事項": ""}
+        supplement = {
+            "修改原因": "原因說明", "原問題": "問題描述",
+            "範例說明": "", "修正後": "修正說明", "注意事項": "",
+        }
         repo.insert_issue(PatchIssue(
             patch_id=pid, issue_no="0016552", source="scan",
             mantis_detail=json.dumps({
@@ -482,8 +523,9 @@ class TestGenerateNotifyHtmlFromDir:
 
     def test_generates_html_per_version(self, conn, tmp_path):
         from pathlib import Path
+
+        from hcp_cms.data.models import PatchIssue, PatchRecord
         from hcp_cms.data.repositories import PatchRepository
-        from hcp_cms.data.models import PatchRecord, PatchIssue
 
         repo = PatchRepository(conn)
         pid_11g = repo.insert_patch(PatchRecord(type="monthly", month_str="202412", patch_dir=str(tmp_path)))

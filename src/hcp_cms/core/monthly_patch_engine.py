@@ -427,6 +427,10 @@ class MonthlyPatchEngine:
 
         for version, patch_id in patch_ids.items():
             issues = self._repo.list_issues_by_patch(patch_id)
+            report_cache: dict[str, str | None] = {
+                iss.issue_no: self._find_test_report(base, version, iss.issue_no)
+                for iss in issues
+            }
             wb = Workbook()
 
             # ① IT 發行通知
@@ -437,8 +441,9 @@ class MonthlyPatchEngine:
             )
             for i, iss in enumerate(issues, start=2):
                 meta = self._parse_scan_meta(iss)
-                report_path = self._find_test_report(base, version, iss.issue_no)
-                row_fill = PatternFill("solid", fgColor=self._CLR_ENH if iss.issue_type == "Enhancement" else self._CLR_BUG)
+                report_path = report_cache[iss.issue_no]
+                clr = self._CLR_ENH if iss.issue_type == "Enhancement" else self._CLR_BUG
+                row_fill = PatternFill("solid", fgColor=clr)
                 if report_path:
                     _set_hyperlink_cell(ws_it.cell(i, 1), iss.issue_no, "file:///" + report_path.replace("\\", "/"))
                 else:
@@ -465,7 +470,7 @@ class MonthlyPatchEngine:
                 region_fill = PatternFill("solid", fgColor={
                     "TW": self._CLR_TW, "CN": self._CLR_CN
                 }.get(iss.region or "", self._CLR_BOTH))
-                report_path = self._find_test_report(base, version, iss.issue_no)
+                report_path = report_cache[iss.issue_no]
                 if report_path:
                     _set_hyperlink_cell(ws_hr.cell(i, 1), iss.issue_no, "file:///" + report_path.replace("\\", "/"))
                 else:
@@ -493,7 +498,7 @@ class MonthlyPatchEngine:
                 meta = self._parse_scan_meta(iss)
                 supplement = meta.get("supplement") or {}
                 _set_data_cell(ws_supp.cell(i, 1), iss.issue_no)
-                report_path = self._find_test_report(base, version, iss.issue_no)
+                report_path = report_cache[iss.issue_no]
                 cell2 = ws_supp.cell(i, 2)
                 if report_path:
                     _set_hyperlink_cell(cell2, iss.issue_no, "file:///" + report_path.replace("\\", "/"))
