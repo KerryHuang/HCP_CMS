@@ -395,6 +395,82 @@ class TestGeneratePatchListFromDir:
         hyperlink_target = cell.hyperlink.target if hasattr(cell.hyperlink, "target") else str(cell.hyperlink)
         assert "0016552" in hyperlink_target
 
+    def test_it_sheet_column_names(self, conn, tmp_path):
+        import json
+        from openpyxl import load_workbook
+        from hcp_cms.data.repositories import PatchRepository
+        from hcp_cms.data.models import PatchRecord, PatchIssue
+
+        repo = PatchRepository(conn)
+        pid = repo.insert_patch(PatchRecord(type="monthly", month_str="202604", patch_dir=str(tmp_path)))
+        repo.insert_issue(PatchIssue(
+            patch_id=pid, issue_no="0016552", issue_type="BugFix",
+            region="共用", description="測試", source="scan",
+            mantis_detail=json.dumps({"form_files": [], "sql_files": [], "muti_files": []})
+        ))
+        (tmp_path / "11G").mkdir()
+
+        eng = MonthlyPatchEngine(conn)
+        paths = eng.generate_patch_list_from_dir({"11G": pid}, str(tmp_path), "202604")
+
+        wb = load_workbook(paths[0])
+        ws_it = wb["IT 發行通知"]
+        headers = [ws_it.cell(1, c).value for c in range(1, 9)]
+        assert headers == ["Issue No", "類型", "程式代號", "說明", "FORM 目錄", "DB 物件", "多語更新", "備註"]
+
+    def test_it_sheet_issue_no_hyperlink(self, conn, tmp_path):
+        import json
+        from openpyxl import load_workbook
+        from hcp_cms.data.repositories import PatchRepository
+        from hcp_cms.data.models import PatchRecord, PatchIssue
+
+        repo = PatchRepository(conn)
+        pid = repo.insert_patch(PatchRecord(type="monthly", month_str="202604", patch_dir=str(tmp_path)))
+        repo.insert_issue(PatchIssue(
+            patch_id=pid, issue_no="0016552", source="scan",
+            mantis_detail=json.dumps({"form_files": [], "sql_files": [], "muti_files": []})
+        ))
+        report_dir = tmp_path / "11G" / "測試報告"
+        report_dir.mkdir(parents=True)
+        (report_dir / "01.IP_20241128_0016552_TESTREPORT_11G.docx").write_bytes(b"")
+
+        eng = MonthlyPatchEngine(conn)
+        paths = eng.generate_patch_list_from_dir({"11G": pid}, str(tmp_path), "202604")
+
+        wb = load_workbook(paths[0])
+        ws_it = wb["IT 發行通知"]
+        cell = ws_it.cell(2, 1)
+        assert cell.hyperlink is not None
+        assert "0016552" in str(cell.hyperlink.target if hasattr(cell.hyperlink, "target") else cell.hyperlink)
+
+    def test_supplement_sheet_7_columns(self, conn, tmp_path):
+        import json
+        from openpyxl import load_workbook
+        from hcp_cms.data.repositories import PatchRepository
+        from hcp_cms.data.models import PatchRecord, PatchIssue
+
+        repo = PatchRepository(conn)
+        pid = repo.insert_patch(PatchRecord(type="monthly", month_str="202604", patch_dir=str(tmp_path)))
+        supplement = {"修改原因": "原因說明", "原問題": "問題描述", "範例說明": "", "修正後": "修正說明", "注意事項": ""}
+        repo.insert_issue(PatchIssue(
+            patch_id=pid, issue_no="0016552", source="scan",
+            mantis_detail=json.dumps({
+                "form_files": [], "sql_files": [], "muti_files": [],
+                "supplement": supplement,
+            })
+        ))
+        (tmp_path / "11G").mkdir()
+
+        eng = MonthlyPatchEngine(conn)
+        paths = eng.generate_patch_list_from_dir({"11G": pid}, str(tmp_path), "202604")
+
+        wb = load_workbook(paths[0])
+        ws = wb["問題修正補充說明"]
+        headers = [ws.cell(1, c).value for c in range(1, 8)]
+        assert headers == ["Issue No", "測試報告", "修改原因", "原問題", "範例說明", "修正後", "注意事項"]
+        assert ws.cell(2, 3).value == "原因說明"
+        assert ws.cell(2, 4).value == "問題描述"
+
 
 class TestGenerateNotifyHtmlFromDir:
     @pytest.fixture

@@ -408,10 +408,22 @@ class MonthlyPatchEngine:
     ) -> list[str]:
         """依 patch_ids 各版本產 PATCH_LIST_{month_str}_{VER}.xlsx（IT/HR/補充說明格式），存至版本子目錄。"""
         from openpyxl import Workbook
-        from openpyxl.styles import Font, PatternFill
+        from openpyxl.styles import Alignment, Font, PatternFill
 
         base = Path(patch_dir)
         paths: list[str] = []
+        data_font = Font(name="微軟正黑體", size=11)
+        data_align = Alignment(vertical="center", wrap_text=True)
+
+        def _set_data_cell(cell, value):
+            cell.value = value
+            cell.font = data_font
+            cell.alignment = data_align
+
+        def _set_hyperlink_cell(cell, value, target):
+            _set_data_cell(cell, value)
+            cell.hyperlink = target
+            cell.font = Font(name="微軟正黑體", size=11, color="0563C1", underline="single")
 
         for version, patch_id in patch_ids.items():
             issues = self._repo.list_issues_by_patch(patch_id)
@@ -421,59 +433,77 @@ class MonthlyPatchEngine:
             ws_it = wb.active
             ws_it.title = "IT 發行通知"
             self._write_patch_header(
-                ws_it, ["Issue No", "類型", "程式代碼", "說明", "FORM目錄", "DB物件", "多語更新", "備註"]
+                ws_it, ["Issue No", "類型", "程式代號", "說明", "FORM 目錄", "DB 物件", "多語更新", "備註"]
             )
             for i, iss in enumerate(issues, start=2):
                 meta = self._parse_scan_meta(iss)
-                ws_it.cell(i, 1).value = iss.issue_no
-                ws_it.cell(i, 2).value = iss.issue_type
-                ws_it.cell(i, 3).value = iss.program_code
-                ws_it.cell(i, 4).value = iss.description
-                ws_it.cell(i, 5).value = "、".join(meta.get("form_files") or [])
-                ws_it.cell(i, 6).value = "、".join(meta.get("sql_files") or [])
-                ws_it.cell(i, 7).value = "\n".join(meta.get("muti_files") or [])
-                row_fill = self._CLR_ENH if iss.issue_type == "Enhancement" else self._CLR_BUG
+                report_path = self._find_test_report(base, version, iss.issue_no)
+                row_fill = PatternFill("solid", fgColor=self._CLR_ENH if iss.issue_type == "Enhancement" else self._CLR_BUG)
+                if report_path:
+                    _set_hyperlink_cell(ws_it.cell(i, 1), iss.issue_no, "file:///" + report_path.replace("\\", "/"))
+                else:
+                    _set_data_cell(ws_it.cell(i, 1), iss.issue_no)
+                _set_data_cell(ws_it.cell(i, 2), iss.issue_type)
+                _set_data_cell(ws_it.cell(i, 3), iss.program_code)
+                _set_data_cell(ws_it.cell(i, 4), iss.description)
+                _set_data_cell(ws_it.cell(i, 5), "、".join(meta.get("form_files") or []))
+                _set_data_cell(ws_it.cell(i, 6), "、".join(meta.get("sql_files") or []))
+                _set_data_cell(ws_it.cell(i, 7), "\n".join(meta.get("muti_files") or []))
+                _set_data_cell(ws_it.cell(i, 8), None)
                 for c in range(1, 9):
-                    ws_it.cell(i, c).fill = PatternFill("solid", fgColor=row_fill)
+                    ws_it.cell(i, c).fill = row_fill
 
             # ② HR 發行通知
             ws_hr = wb.create_sheet("HR 發行通知")
             self._write_patch_header(ws_hr, [
-                "Issue No", "計區域", "類型", "程式代碼", "程式名稱",
+                "Issue No", "計區域", "類型", "程式代號", "程式名稱",
                 "功能說明", "影響說明/用途", "相關程式(FORM)",
                 "上線所需動作", "測試方向及注意事項", "備註",
             ])
             for i, iss in enumerate(issues, start=2):
                 meta = self._parse_scan_meta(iss)
-                region_fill = {"TW": self._CLR_TW, "CN": self._CLR_CN}.get(iss.region or "", self._CLR_BOTH)
-                ws_hr.cell(i, 1).value = iss.issue_no
-                ws_hr.cell(i, 2).value = iss.region
-                ws_hr.cell(i, 3).value = iss.issue_type
-                ws_hr.cell(i, 4).value = iss.program_code
-                ws_hr.cell(i, 5).value = iss.program_name
-                ws_hr.cell(i, 6).value = iss.description
-                ws_hr.cell(i, 7).value = iss.impact
-                ws_hr.cell(i, 8).value = "、".join(meta.get("form_files") or [])
-                ws_hr.cell(i, 9).value = "請與資訊單位確認是否已完成更新，確認更新完成再進行測試"
-                ws_hr.cell(i, 10).value = iss.test_direction
-                for c in range(1, 12):
-                    ws_hr.cell(i, c).fill = PatternFill("solid", fgColor=region_fill)
+                region_fill = PatternFill("solid", fgColor={
+                    "TW": self._CLR_TW, "CN": self._CLR_CN
+                }.get(iss.region or "", self._CLR_BOTH))
+                report_path = self._find_test_report(base, version, iss.issue_no)
+                if report_path:
+                    _set_hyperlink_cell(ws_hr.cell(i, 1), iss.issue_no, "file:///" + report_path.replace("\\", "/"))
+                else:
+                    _set_data_cell(ws_hr.cell(i, 1), iss.issue_no)
+                _set_data_cell(ws_hr.cell(i, 2), iss.region)
+                _set_data_cell(ws_hr.cell(i, 3), iss.issue_type)
+                _set_data_cell(ws_hr.cell(i, 4), iss.program_code)
+                _set_data_cell(ws_hr.cell(i, 5), iss.program_name)
+                _set_data_cell(ws_hr.cell(i, 6), iss.description)
+                _set_data_cell(ws_hr.cell(i, 7), iss.impact)
+                _set_data_cell(ws_hr.cell(i, 8), "、".join(meta.get("form_files") or []))
+                _set_data_cell(ws_hr.cell(i, 9), "請與資訊單位確認是否已完成更新\n確認更新完成再進行測試")
+                ws_hr.cell(i, 9).fill = PatternFill("solid", fgColor="FFF9C4")
+                _set_data_cell(ws_hr.cell(i, 10), iss.test_direction)
+                _set_data_cell(ws_hr.cell(i, 11), None)
+                for c in [1, 2, 3, 4, 5, 6, 7, 8, 10, 11]:
+                    ws_hr.cell(i, c).fill = region_fill
 
-            # ③ 問題修正補充說明（含測試報告超連結與更新物件清單）
+            # ③ 問題修正補充說明（7 欄，含 Mantis supplement）
             ws_supp = wb.create_sheet("問題修正補充說明")
-            self._write_patch_header(ws_supp, ["Issue No", "測試報告", "FORM目錄", "DB物件", "多語更新"])
+            self._write_patch_header(ws_supp, [
+                "Issue No", "測試報告", "修改原因", "原問題", "範例說明", "修正後", "注意事項"
+            ])
             for i, iss in enumerate(issues, start=2):
                 meta = self._parse_scan_meta(iss)
-                ws_supp.cell(i, 1).value = iss.issue_no
+                supplement = meta.get("supplement") or {}
+                _set_data_cell(ws_supp.cell(i, 1), iss.issue_no)
                 report_path = self._find_test_report(base, version, iss.issue_no)
                 cell2 = ws_supp.cell(i, 2)
-                cell2.value = iss.issue_no
                 if report_path:
-                    cell2.hyperlink = "file:///" + report_path.replace("\\", "/")
-                    cell2.font = Font(color="0563C1", underline="single")
-                ws_supp.cell(i, 3).value = "、".join(meta.get("form_files") or [])
-                ws_supp.cell(i, 4).value = "、".join(meta.get("sql_files") or [])
-                ws_supp.cell(i, 5).value = "\n".join(meta.get("muti_files") or [])
+                    _set_hyperlink_cell(cell2, iss.issue_no, "file:///" + report_path.replace("\\", "/"))
+                else:
+                    _set_data_cell(cell2, iss.issue_no)
+                _set_data_cell(ws_supp.cell(i, 3), supplement.get("修改原因", ""))
+                _set_data_cell(ws_supp.cell(i, 4), supplement.get("原問題", ""))
+                _set_data_cell(ws_supp.cell(i, 5), supplement.get("範例說明", ""))
+                _set_data_cell(ws_supp.cell(i, 6), supplement.get("修正後", ""))
+                _set_data_cell(ws_supp.cell(i, 7), supplement.get("注意事項", ""))
 
             fname = f"PATCH_LIST_{month_str}_{version}.xlsx"
             out_path = base / version / fname
