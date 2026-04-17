@@ -8,7 +8,6 @@ from PySide6.QtWidgets import QLabel, QTabWidget, QVBoxLayout, QWidget
 
 from hcp_cms.ui.patch_monthly_tab import MonthlyPatchTab
 from hcp_cms.ui.patch_single_tab import SinglePatchTab
-from hcp_cms.ui.theme import ThemeManager
 
 
 class PatchView(QWidget):
@@ -17,7 +16,7 @@ class PatchView(QWidget):
     def __init__(
         self,
         conn: sqlite3.Connection | None = None,
-        theme_mgr: ThemeManager | None = None,
+        theme_mgr: object | None = None,
     ) -> None:
         super().__init__()
         self._conn = conn
