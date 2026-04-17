@@ -90,3 +90,4 @@ class PlaywrightMantisService:
             self._page = None
             self._browser = None
             self._playwright = None
+            self._login_event.clear()

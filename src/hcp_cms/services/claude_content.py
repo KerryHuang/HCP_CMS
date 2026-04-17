@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+try:
+    from anthropic import Anthropic
+except ImportError:
+    Anthropic = None  # type: ignore[assignment,misc]
+
 _MODEL = "claude-sonnet-4-6"
 _MAX_RETRIES = 3
 
@@ -10,8 +15,7 @@ class ClaudeContentService:
     def __init__(self) -> None:
         from hcp_cms.services.credential import CredentialManager
         api_key = CredentialManager().retrieve("claude_api_key")
-        if api_key:
-            from anthropic import Anthropic
+        if api_key and Anthropic is not None:
             self._client = Anthropic(api_key=api_key)
         else:
             self._client = None
