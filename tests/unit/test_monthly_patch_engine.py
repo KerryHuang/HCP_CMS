@@ -543,3 +543,39 @@ class TestGenerateNotifyHtmlFromDir:
         assert any("12C" in p for p in paths)
         for p in paths:
             assert Path(p).exists()
+
+
+class TestRunS2T:
+    def test_converts_simplified_docx(self, conn, tmp_path):
+        import docx as python_docx
+        doc = python_docx.Document()
+        doc.add_paragraph("这是简体中文内容")
+        report_dir = tmp_path / "11G" / "測試報告"
+        report_dir.mkdir(parents=True)
+        f = report_dir / "01.IP_20241128_0016552_TESTREPORT_11G.docx"
+        doc.save(str(f))
+
+        eng = MonthlyPatchEngine(conn)
+        result = eng.run_s2t(str(tmp_path))
+
+        assert "01.IP_20241128_0016552_TESTREPORT_11G.docx" in result
+        assert result["01.IP_20241128_0016552_TESTREPORT_11G.docx"] > 0
+
+    def test_skips_traditional_docx(self, conn, tmp_path):
+        import docx as python_docx
+        doc = python_docx.Document()
+        doc.add_paragraph("這是繁體中文內容")
+        report_dir = tmp_path / "12C" / "測試報告"
+        report_dir.mkdir(parents=True)
+        f = report_dir / "01.IP_20241128_0016552_TESTREPORT_12C.docx"
+        doc.save(str(f))
+
+        eng = MonthlyPatchEngine(conn)
+        result = eng.run_s2t(str(tmp_path))
+
+        assert result.get("01.IP_20241128_0016552_TESTREPORT_12C.docx", -1) == 0
+
+    def test_returns_empty_when_no_docx(self, conn, tmp_path):
+        eng = MonthlyPatchEngine(conn)
+        result = eng.run_s2t(str(tmp_path))
+        assert result == {}

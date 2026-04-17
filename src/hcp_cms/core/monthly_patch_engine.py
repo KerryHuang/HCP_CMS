@@ -280,6 +280,39 @@ class MonthlyPatchEngine:
             logging.warning("opencc 轉換失敗 [%s]: %s", path.name, e)
             return False
 
+    def run_s2t(self, scan_dir: str) -> dict[str, int]:
+        """掃描 scan_dir 下所有版本子目錄的測試報告資料夾，將 .docx 簡體轉繁體。
+        回傳 {filename: converted_char_count}，0 表示無需轉換。
+        """
+        import opencc
+        import docx as python_docx
+
+        base = Path(scan_dir)
+        result: dict[str, int] = {}
+        cc = opencc.OpenCC("s2t")
+
+        for report_dir in base.rglob("測試報告"):
+            if not report_dir.is_dir():
+                continue
+            for docx_path in sorted(report_dir.glob("*.docx")):
+                try:
+                    doc = python_docx.Document(str(docx_path))
+                    changed_chars = 0
+                    for para in doc.paragraphs:
+                        converted = cc.convert(para.text)
+                        if converted != para.text:
+                            diff = sum(1 for a, b in zip(para.text, converted) if a != b)
+                            changed_chars += diff
+                            for run in para.runs:
+                                run.text = cc.convert(run.text)
+                    if changed_chars:
+                        doc.save(str(docx_path))
+                    result[docx_path.name] = changed_chars
+                except Exception as e:
+                    logging.warning("S2T 失敗 [%s]: %s", docx_path.name, e)
+                    result[docx_path.name] = -1
+        return result
+
     # ── PATCH_LIST Excel ─────────────────────────────────────────────────────
 
     _CLR_TW = "D6EAF8"  # TW 淡藍
