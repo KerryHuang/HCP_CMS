@@ -232,6 +232,37 @@ class SinglePatchEngine:
 
     # ── 測試腳本 ─────────────────────────────────────────────────────────────
 
+    # ── Patch 記錄管理 ─────────────────────────────────────────────────────────
+
+    def setup_new_patch(self, patch_dir: str) -> int:
+        """建立單次 Patch 記錄，回傳 patch_id。"""
+        from hcp_cms.data.models import PatchRecord
+        patch = PatchRecord(type="single", patch_dir=patch_dir)
+        return self._repo.insert_patch(patch)
+
+    def load_issues_from_release_doc(self, patch_id: int, doc_path: str) -> int:
+        """從 ReleaseNote 解析 Issues 並寫入 DB，回傳新增筆數。"""
+        from hcp_cms.data.models import PatchIssue
+        raw_list = self.read_release_doc(doc_path)
+        for idx, raw in enumerate(raw_list):
+            issue = PatchIssue(
+                patch_id=patch_id,
+                issue_no=raw.get("issue_no", ""),
+                program_code=raw.get("program_code"),
+                program_name=raw.get("program_name"),
+                issue_type=raw.get("issue_type", "BugFix"),
+                region=raw.get("region", "共用"),
+                description=raw.get("description"),
+                impact=raw.get("impact"),
+                test_direction=raw.get("test_direction"),
+                source="manual",
+                sort_order=idx,
+            )
+            self._repo.insert_issue(issue)
+        return len(raw_list)
+
+    # ── 測試腳本 ─────────────────────────────────────────────────────────────
+
     def generate_test_scripts(self, patch_id: int, output_dir: str) -> list[str]:
         """產生測試腳本_客服版.docx、客戶版.docx、測試追蹤表.xlsx。"""
         import docx as python_docx
