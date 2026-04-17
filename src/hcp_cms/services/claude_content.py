@@ -9,6 +9,7 @@ except ImportError:
 
 _MODEL = "claude-sonnet-4-6"
 _MAX_RETRIES = 3
+_SUPPLEMENT_KEYS = ("修改原因", "原問題", "範例說明", "修正後", "注意事項")
 
 
 class ClaudeContentService:
@@ -46,6 +47,31 @@ class ClaudeContentService:
             f"撰寫一段給客戶的更新說明（繁體中文，說明各項修正的業務影響）：\n{summary}"
         )
         return self._call_api(prompt, max_tokens=800)
+
+    def extract_supplement(self, mantis_text: str) -> dict[str, str]:
+        """分析 Mantis Issue 說明，回傳結構化補充說明五欄位。"""
+        empty = {k: "" for k in _SUPPLEMENT_KEYS}
+        if self._client is None or not mantis_text.strip():
+            return empty
+        prompt = (
+            "請根據以下 Mantis Issue 說明文字，以繁體中文提取並整理下列五個欄位，"
+            "以 JSON 格式回傳，key 為繁體中文欄位名稱：\n"
+            "欄位：修改原因、原問題、範例說明、修正後、注意事項\n"
+            "若某欄位無對應內容則值為空字串。只回傳 JSON，不要其他說明。\n\n"
+            f"Mantis 說明：\n{mantis_text}"
+        )
+        raw = self._call_api(prompt, max_tokens=600)
+        if not raw:
+            return empty
+        try:
+            import json, re
+            match = re.search(r"\{.*\}", raw, re.DOTALL)
+            if not match:
+                return empty
+            data = json.loads(match.group())
+            return {k: str(data.get(k, "")) for k in _SUPPLEMENT_KEYS}
+        except (ValueError, KeyError):
+            return empty
 
     def _call_api(self, prompt: str, max_tokens: int) -> str | None:
         for attempt in range(_MAX_RETRIES):
