@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import sqlite3
 from pathlib import Path
@@ -108,7 +109,8 @@ class MonthlyPatchEngine:
             if changed:
                 doc.save(str(path))
             return changed
-        except Exception:
+        except Exception as e:
+            logging.warning("opencc 轉換失敗 [%s]: %s", path.name, e)
             return False
 
     # ── PATCH_LIST Excel ─────────────────────────────────────────────────────
