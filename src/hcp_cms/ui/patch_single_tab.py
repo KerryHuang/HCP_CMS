@@ -149,6 +149,7 @@ class SinglePatchTab(QWidget):
         def work() -> dict:
             from hcp_cms.core.patch_engine import SinglePatchEngine
             engine = SinglePatchEngine(conn)
+            extracted = engine.extract_patch_archives(patch_dir)
             patch_id = engine.setup_new_patch(patch_dir)
             scan = engine.scan_patch_dir(patch_dir)
             issue_count = 0
@@ -156,7 +157,8 @@ class SinglePatchTab(QWidget):
                 issue_count = engine.load_issues_from_release_doc(
                     patch_id, scan["release_note"]
                 )
-            return {"patch_id": patch_id, "scan": scan, "issue_count": issue_count}
+            return {"patch_id": patch_id, "scan": scan,
+                    "issue_count": issue_count, "extracted": extracted}
 
         threading.Thread(
             target=lambda: self._scan_done.emit(work()), daemon=True
@@ -165,6 +167,8 @@ class SinglePatchTab(QWidget):
     def _on_scan_result(self, result: dict) -> None:
         self._patch_id = result["patch_id"]
         scan = result["scan"]
+        if result.get("extracted"):
+            self._append_log(f"📦 解壓縮：{', '.join(result['extracted'])}")
         self._append_log(
             f"✅ 掃描完成：{len(scan.get('form_files', []))} 個 FORM、"
             f"{len(scan.get('sql_files', []))} 個 SQL"

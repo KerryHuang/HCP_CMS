@@ -233,6 +233,23 @@ class SinglePatchEngine:
 
     # ── 測試腳本 ─────────────────────────────────────────────────────────────
 
+    # ── 封存解壓縮 ────────────────────────────────────────────────────────────
+
+    def extract_patch_archives(self, patch_dir: str) -> list[str]:
+        """解壓縮資料夾內所有 .7z 封存檔至同一資料夾，回傳已解壓縮的檔名清單。"""
+        import py7zr
+        path = Path(patch_dir)
+        extracted = []
+        for archive in sorted(path.glob("*.7z")):
+            try:
+                with py7zr.SevenZipFile(str(archive), mode="r") as z:
+                    z.extractall(path=str(path))
+                extracted.append(archive.name)
+            except Exception as e:
+                import logging
+                logging.warning("解壓縮失敗 [%s]: %s", archive.name, e)
+        return extracted
+
     # ── Patch 記錄管理 ─────────────────────────────────────────────────────────
 
     def get_issue_nos_by_patch(self, patch_id: int) -> list[str]:
