@@ -5,6 +5,7 @@ from __future__ import annotations
 import sqlite3
 import threading
 from datetime import date
+from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
@@ -434,9 +435,11 @@ class MonthlyPatchTab(QWidget):
             self, "選擇橫幅底圖", "", "圖片檔 (*.png *.jpg *.jpeg);;全部檔案 (*.*)"
         )
         if path:
-            from pathlib import Path
-            self._banner_image_bytes = Path(path).read_bytes()
-            self._banner_label.setText(f"底圖：{Path(path).name}")
+            try:
+                self._banner_image_bytes = Path(path).read_bytes()
+                self._banner_label.setText(f"底圖：{Path(path).name}")
+            except OSError as e:
+                self._append_log(f"❌ 無法讀取圖片：{e}")
 
     def _on_month_changed(self) -> None:
         self._reminder_list.clear()
