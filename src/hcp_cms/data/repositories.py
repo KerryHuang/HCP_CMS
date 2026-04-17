@@ -1239,8 +1239,8 @@ class PatchRepository:
 
     def update_issue_mantis_detail(self, issue_id: int, mantis_detail: str) -> None:
         self._conn.execute(
-            "UPDATE cs_patch_issues SET mantis_detail = :d WHERE id = :id",
-            {"d": mantis_detail, "id": issue_id},
+            "UPDATE cs_patch_issues SET mantis_detail = :d WHERE id = :issue_id",
+            {"d": mantis_detail, "issue_id": issue_id},
         )
         self._conn.commit()
 

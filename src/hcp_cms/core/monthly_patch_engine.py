@@ -297,7 +297,6 @@ class MonthlyPatchEngine:
                 continue
             existing = self._parse_scan_meta(iss)
             existing["supplement"] = supplement
-            import json
             self._repo.update_issue_mantis_detail(iss.issue_id, json.dumps(existing, ensure_ascii=False))
             count += 1
         return count
@@ -334,7 +333,8 @@ class MonthlyPatchEngine:
                 path = path[:path.rfind("/")]
             base_url = f"{parsed.scheme}://{parsed.netloc}{path}".rstrip("/")
             client = MantisSoapClient(base_url, user, pwd)
-            client.connect()
+            if not client.connect():
+                return None
             return client
         except Exception:
             return None
