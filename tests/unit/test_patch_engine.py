@@ -127,3 +127,26 @@ class TestGenerateExcelReports:
         ws = wb.active
         headers = [ws.cell(1, c).value for c in range(1, ws.max_column + 1)]
         assert "客服驗證" not in headers
+
+
+class TestGenerateTestScripts:
+    @pytest.fixture
+    def engine_with_patch(self, conn):
+        from hcp_cms.data.models import PatchIssue, PatchRecord
+        from hcp_cms.data.repositories import PatchRepository
+        repo = PatchRepository(conn)
+        pid = repo.insert_patch(PatchRecord(type="single"))
+        repo.insert_issue(PatchIssue(patch_id=pid, issue_no="0015659",
+                                     description="測試說明", test_direction="測試步驟"))
+        return SinglePatchEngine(conn), pid
+
+    def test_generates_three_script_files(self, engine_with_patch, tmp_path):
+        eng, pid = engine_with_patch
+        paths = eng.generate_test_scripts(pid, output_dir=str(tmp_path))
+        assert len(paths) == 3
+        names = [Path(p).name for p in paths]
+        assert any("客服版" in n for n in names)
+        assert any("客戶版" in n for n in names)
+        assert any("追蹤表" in n and n.endswith(".xlsx") for n in names)
+        for p in paths:
+            assert Path(p).exists()
