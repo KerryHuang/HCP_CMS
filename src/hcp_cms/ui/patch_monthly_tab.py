@@ -31,6 +31,7 @@ _CLR_PENDING = "color: #64748b;"
 _MONTHS = [f"{m:02d}月" for m in range(1, 13)]
 _SOURCE_FILE = "上傳 .txt / .json"
 _SOURCE_MANTIS = "Mantis 瀏覽器"
+_SOURCE_FOLDER = "掃描資料夾"
 
 
 class MonthlyPatchTab(QWidget):
@@ -43,6 +44,8 @@ class MonthlyPatchTab(QWidget):
         self._patch_id: int | None = None
         self._file_path: str | None = None
         self._output_dir: str | None = None
+        self._scan_dir: str | None = None
+        self._scan_patch_ids: dict[str, int] | None = None
         self._setup_ui()
 
     def _setup_ui(self) -> None:
@@ -85,7 +88,7 @@ class MonthlyPatchTab(QWidget):
         src_row = QHBoxLayout()
         src_row.addWidget(QLabel("Issue 來源："))
         self._source_combo = QComboBox()
-        self._source_combo.addItems([_SOURCE_FILE, _SOURCE_MANTIS])
+        self._source_combo.addItems([_SOURCE_FILE, _SOURCE_MANTIS, _SOURCE_FOLDER])
         src_row.addWidget(self._source_combo)
         self._file_edit = QLineEdit()
         self._file_edit.setPlaceholderText("選擇 .txt 或 .json 檔案…")
@@ -94,6 +97,17 @@ class MonthlyPatchTab(QWidget):
         src_row.addWidget(self._file_edit)
         src_row.addWidget(self._file_btn)
         layout.addLayout(src_row)
+
+        # 掃描資料夾路徑列
+        scan_row = QHBoxLayout()
+        scan_row.addWidget(QLabel("Patch 資料夾："))
+        self._scan_edit = QLineEdit()
+        self._scan_edit.setPlaceholderText("選擇月份 Patch 頂層資料夾（含 11G/12C 子目錄）…")
+        self._scan_edit.setReadOnly(True)
+        self._scan_btn = QPushButton("瀏覽…")
+        scan_row.addWidget(self._scan_edit)
+        scan_row.addWidget(self._scan_btn)
+        layout.addLayout(scan_row)
 
         # 輸出目錄列
         out_row = QHBoxLayout()
@@ -135,6 +149,7 @@ class MonthlyPatchTab(QWidget):
         # Signal / Slot 連線
         self._source_combo.currentIndexChanged.connect(self._on_issue_source_changed)
         self._file_btn.clicked.connect(self._on_file_browse_clicked)
+        self._scan_btn.clicked.connect(self._on_scan_browse_clicked)
         self._out_btn.clicked.connect(self._on_out_browse_clicked)
         self._import_btn.clicked.connect(self._on_import_clicked)
         self._generate_excel_btn.clicked.connect(self._on_generate_excel_clicked)
@@ -173,9 +188,20 @@ class MonthlyPatchTab(QWidget):
     # ── Slots ──────────────────────────────────────────────────────────────
 
     def _on_issue_source_changed(self, index: int) -> None:
-        is_file = self._source_combo.currentText() == _SOURCE_FILE
+        current = self._source_combo.currentText()
+        is_file = current == _SOURCE_FILE
+        is_folder = current == _SOURCE_FOLDER
         self._file_edit.setVisible(is_file)
         self._file_btn.setVisible(is_file)
+        self._scan_edit.setVisible(is_folder)
+        self._scan_btn.setVisible(is_folder)
+
+    def _on_scan_browse_clicked(self) -> None:
+        path = QFileDialog.getExistingDirectory(self, "選擇月份 Patch 資料夾")
+        if path:
+            self._scan_dir = path
+            self._scan_edit.setText(path)
+            self._set_step(1)
 
     def _on_file_browse_clicked(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
@@ -202,38 +228,70 @@ class MonthlyPatchTab(QWidget):
         if source_text == _SOURCE_FILE and not self._file_path:
             self._append_log("⚠️ 請先選擇檔案")
             return
+        if source_text == _SOURCE_FOLDER and not self._scan_dir:
+            self._append_log("⚠️ 請先選擇資料夾")
+            return
         month_str = self._get_month_str()
         conn = self._conn
         file_path = self._file_path
+        scan_dir = self._scan_dir
 
         self._import_btn.setEnabled(False)
         self._append_log(f"📥 匯入 {month_str} Issue 清單…")
 
-        def work() -> dict:
-            from hcp_cms.core.monthly_patch_engine import MonthlyPatchEngine
+        if source_text == _SOURCE_FOLDER:
 
-            engine = MonthlyPatchEngine(conn)
-            try:
-                pid = engine.load_issues("manual", month_str, file_path)
-                count = engine.get_issue_count(pid)
-                return {"patch_id": pid, "count": count, "error": None}
-            except Exception as e:
-                return {"patch_id": None, "count": 0, "error": str(e)}
+            def work() -> dict:
+                from hcp_cms.core.monthly_patch_engine import MonthlyPatchEngine
 
-        threading.Thread(target=lambda: self._import_done.emit(work()), daemon=True).start()
+                engine = MonthlyPatchEngine(conn)
+                try:
+                    patch_ids = engine.scan_monthly_dir(scan_dir, month_str)
+                    counts = {v: engine.get_issue_count(pid) for v, pid in patch_ids.items()}
+                    return {"patch_ids": patch_ids, "counts": counts, "error": None}
+                except Exception as e:
+                    return {"patch_ids": {}, "counts": {}, "error": str(e)}
+
+            threading.Thread(target=lambda: self._import_done.emit(work()), daemon=True).start()
+        else:
+
+            def work() -> dict:  # type: ignore[no-redef]
+                from hcp_cms.core.monthly_patch_engine import MonthlyPatchEngine
+
+                engine = MonthlyPatchEngine(conn)
+                try:
+                    pid = engine.load_issues("manual", month_str, file_path)
+                    count = engine.get_issue_count(pid)
+                    return {"patch_id": pid, "count": count, "error": None}
+                except Exception as e:
+                    return {"patch_id": None, "count": 0, "error": str(e)}
+
+            threading.Thread(target=lambda: self._import_done.emit(work()), daemon=True).start()
 
     def _on_import_result(self, result: dict) -> None:
         self._import_btn.setEnabled(True)
         if result.get("error"):
             self._append_log(f"❌ 匯入失敗：{result['error']}")
             return
-        self._patch_id = result["patch_id"]
-        self._append_log(f"✅ 匯入完成：{result['count']} 筆 Issue")
-        self._issue_table.load_issues(self._patch_id)
+        if "patch_ids" in result:
+            self._scan_patch_ids = result["patch_ids"]
+            counts = result.get("counts", {})
+            for ver, cnt in counts.items():
+                self._append_log(f"✅ {ver}：{cnt} 筆 Issue")
+            first_id = next(iter(result["patch_ids"].values()), None)
+            if first_id is not None:
+                self._patch_id = first_id
+                self._issue_table.load_issues(first_id)
+        else:
+            self._patch_id = result["patch_id"]
+            self._append_log(f"✅ 匯入完成：{result['count']} 筆 Issue")
+            self._issue_table.load_issues(self._patch_id)
         self._set_step(3)
 
     def _on_generate_excel_clicked(self) -> None:
-        if self._patch_id is None or not self._conn:
+        if self._scan_patch_ids is None and self._patch_id is None:
+            return
+        if not self._conn:
             return
         self._generate_excel_btn.setEnabled(False)
         self._append_log("📊 產生 PATCH_LIST Excel…")
@@ -241,13 +299,18 @@ class MonthlyPatchTab(QWidget):
         patch_id = self._patch_id
         month_str = self._get_month_str()
         output_dir = self._get_output_dir()
+        scan_patch_ids = self._scan_patch_ids
+        scan_dir = self._scan_dir
 
         def work() -> dict:
             from hcp_cms.core.monthly_patch_engine import MonthlyPatchEngine
 
             engine = MonthlyPatchEngine(conn)
             try:
-                paths = engine.generate_patch_list(patch_id, output_dir, month_str)
+                if scan_patch_ids:
+                    paths = engine.generate_patch_list_from_dir(scan_patch_ids, scan_dir, month_str)
+                else:
+                    paths = engine.generate_patch_list(patch_id, output_dir, month_str)
                 return {"paths": paths, "type": "excel", "error": None}
             except Exception as e:
                 return {"paths": [], "type": "excel", "error": str(e)}

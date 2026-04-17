@@ -108,3 +108,65 @@ def test_output_list_widget_exists(qtbot, db):
     tab = MonthlyPatchTab(conn=db)
     qtbot.addWidget(tab)
     assert tab._output_list is not None
+
+
+class TestFolderScanSource:
+    def test_source_combo_has_scan_folder_option(self, qtbot, db):
+        from hcp_cms.ui.patch_monthly_tab import MonthlyPatchTab
+
+        tab = MonthlyPatchTab(conn=db)
+        qtbot.addWidget(tab)
+        items = [tab._source_combo.itemText(i) for i in range(tab._source_combo.count())]
+        assert "掃描資料夾" in items
+
+    def test_scan_folder_widgets_visible_when_selected(self, qtbot, db):
+        from hcp_cms.ui.patch_monthly_tab import MonthlyPatchTab
+
+        tab = MonthlyPatchTab(conn=db)
+        qtbot.addWidget(tab)
+        idx = [tab._source_combo.itemText(i) for i in range(tab._source_combo.count())].index("掃描資料夾")
+        tab._source_combo.setCurrentIndex(idx)
+        assert not tab._scan_edit.isHidden()
+        assert not tab._scan_btn.isHidden()
+        assert tab._file_edit.isHidden()
+        assert tab._file_btn.isHidden()
+
+    def test_scan_dir_set_after_browse(self, qtbot, db, tmp_path, monkeypatch):
+        from PySide6.QtWidgets import QFileDialog
+
+        from hcp_cms.ui.patch_monthly_tab import MonthlyPatchTab
+
+        monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *a, **k: str(tmp_path))
+        tab = MonthlyPatchTab(conn=db)
+        qtbot.addWidget(tab)
+        tab._on_scan_browse_clicked()
+        assert tab._scan_dir == str(tmp_path)
+        assert tab._scan_edit.text() == str(tmp_path)
+
+    def test_import_with_scan_folder_calls_engine(self, qtbot, db, tmp_path, monkeypatch):
+        from hcp_cms.core.monthly_patch_engine import MonthlyPatchEngine
+        from hcp_cms.ui.patch_monthly_tab import MonthlyPatchTab
+
+        scanned = {}
+
+        def fake_scan(self_eng, patch_dir, month_str):
+            scanned["patch_dir"] = patch_dir
+            scanned["month_str"] = month_str
+            return {}
+
+        monkeypatch.setattr(MonthlyPatchEngine, "scan_monthly_dir", fake_scan)
+        monkeypatch.setattr(MonthlyPatchEngine, "get_issue_count", lambda s, pid: 0)
+
+        tab = MonthlyPatchTab(conn=db)
+        qtbot.addWidget(tab)
+        idx = [tab._source_combo.itemText(i) for i in range(tab._source_combo.count())].index("掃描資料夾")
+        tab._source_combo.setCurrentIndex(idx)
+        tab._scan_dir = str(tmp_path)
+        tab._year_spin.setValue(2026)
+        tab._month_combo.setCurrentIndex(3)  # 4月
+
+        with qtbot.waitSignal(tab._import_done, timeout=3000):
+            tab._on_import_clicked()
+
+        assert scanned.get("month_str") == "202604"
+        assert scanned.get("patch_dir") == str(tmp_path)
