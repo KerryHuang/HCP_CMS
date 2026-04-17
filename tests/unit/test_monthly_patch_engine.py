@@ -257,3 +257,142 @@ class TestScanMonthlyDir:
 
         assert (tmp_path / "11G" / "01.IP_20241128_0016552_11G.7z").exists()
         assert (tmp_path / "11G" / "測試報告" / "01.IP_20241204_0016552_TESTREPORT_11G.doc").exists()
+
+
+class TestGeneratePatchListFromDir:
+    @pytest.fixture
+    def conn(self):
+        db = DatabaseManager(":memory:")
+        db.initialize()
+        yield db.connection
+        db.connection.close()
+
+    def test_find_test_report_found(self, conn, tmp_path):
+        (tmp_path / "11G" / "測試報告").mkdir(parents=True)
+        report = tmp_path / "11G" / "測試報告" / "01.IP_20241204_0016552_TESTREPORT_11G.doc"
+        report.write_bytes(b"")
+
+        eng = MonthlyPatchEngine(conn)
+        result = eng._find_test_report(tmp_path, "11G", "0016552")
+        assert result is not None
+        assert "0016552" in result
+
+    def test_find_test_report_not_found(self, conn, tmp_path):
+        (tmp_path / "11G" / "測試報告").mkdir(parents=True)
+        eng = MonthlyPatchEngine(conn)
+        assert eng._find_test_report(tmp_path, "11G", "9999999") is None
+
+    def test_generate_patch_list_from_dir_creates_files(self, conn, tmp_path):
+        import json
+        from hcp_cms.data.repositories import PatchRepository
+
+        repo = PatchRepository(conn)
+        from hcp_cms.data.models import PatchRecord, PatchIssue
+        pid_11g = repo.insert_patch(PatchRecord(type="monthly", month_str="202412", patch_dir=str(tmp_path)))
+        repo.insert_issue(PatchIssue(
+            patch_id=pid_11g, issue_no="0016552", issue_type="BugFix",
+            region="共用", description="測試問題修正", source="scan",
+            program_code="HRWF304", program_name="派退宿功能",
+            mantis_detail=json.dumps({
+                "form_files": ["HRWF304"], "sql_files": [], "muti_files": [],
+                "archive_name": "01.IP_20241128_0016552_11G.7z"
+            })
+        ))
+        pid_12c = repo.insert_patch(PatchRecord(type="monthly", month_str="202412", patch_dir=str(tmp_path)))
+        repo.insert_issue(PatchIssue(
+            patch_id=pid_12c, issue_no="0016552", issue_type="BugFix",
+            region="共用", description="測試問題修正", source="scan",
+            mantis_detail=json.dumps({"form_files": [], "sql_files": [], "muti_files": []})
+        ))
+
+        (tmp_path / "11G").mkdir()
+        (tmp_path / "12C").mkdir()
+        (tmp_path / "11G" / "測試報告").mkdir()
+
+        eng = MonthlyPatchEngine(conn)
+        paths = eng.generate_patch_list_from_dir(
+            {"11G": pid_11g, "12C": pid_12c}, str(tmp_path), "202412"
+        )
+
+        assert len(paths) == 2
+        assert any("11G" in p for p in paths)
+        assert any("12C" in p for p in paths)
+        for p in paths:
+            assert Path(p).exists()
+
+    def test_generate_sheet_names(self, conn, tmp_path):
+        import json
+        from openpyxl import load_workbook
+        from hcp_cms.data.repositories import PatchRepository
+        from hcp_cms.data.models import PatchRecord, PatchIssue
+
+        repo = PatchRepository(conn)
+        pid = repo.insert_patch(PatchRecord(type="monthly", month_str="202412", patch_dir=str(tmp_path)))
+        repo.insert_issue(PatchIssue(
+            patch_id=pid, issue_no="0016552", source="scan",
+            mantis_detail=json.dumps({"form_files": [], "sql_files": [], "muti_files": []})
+        ))
+        (tmp_path / "11G").mkdir()
+
+        eng = MonthlyPatchEngine(conn)
+        paths = eng.generate_patch_list_from_dir({"11G": pid}, str(tmp_path), "202412")
+
+        wb = load_workbook(paths[0])
+        assert "清單整理" in wb.sheetnames
+        assert "11G新項目說明" in wb.sheetnames
+        assert "更新物件" in wb.sheetnames
+
+    def test_generate_11g_v_mark(self, conn, tmp_path):
+        import json
+        from openpyxl import load_workbook
+        from hcp_cms.data.repositories import PatchRepository
+        from hcp_cms.data.models import PatchRecord, PatchIssue
+
+        repo = PatchRepository(conn)
+        pid_11g = repo.insert_patch(PatchRecord(type="monthly", month_str="202412", patch_dir=str(tmp_path)))
+        repo.insert_issue(PatchIssue(
+            patch_id=pid_11g, issue_no="0016552", source="scan",
+            mantis_detail=json.dumps({"form_files": [], "sql_files": [], "muti_files": []})
+        ))
+        pid_12c = repo.insert_patch(PatchRecord(type="monthly", month_str="202412", patch_dir=str(tmp_path)))
+        (tmp_path / "11G").mkdir()
+        (tmp_path / "12C").mkdir()
+
+        eng = MonthlyPatchEngine(conn)
+        paths = eng.generate_patch_list_from_dir(
+            {"11G": pid_11g, "12C": pid_12c}, str(tmp_path), "202412"
+        )
+
+        wb = load_workbook(next(p for p in paths if "11G" in p))
+        ws = wb["清單整理"]
+        # Row 2 = 第一筆 issue：col 3 = 11G，col 4 = 12C
+        assert ws.cell(2, 3).value == "V"   # 11G 有此 issue
+        assert ws.cell(2, 4).value in ("", None)  # 12C 無此 issue
+
+    def test_generate_test_report_hyperlink(self, conn, tmp_path):
+        import json
+        from openpyxl import load_workbook
+        from hcp_cms.data.repositories import PatchRepository
+        from hcp_cms.data.models import PatchRecord, PatchIssue
+
+        repo = PatchRepository(conn)
+        pid = repo.insert_patch(PatchRecord(type="monthly", month_str="202412", patch_dir=str(tmp_path)))
+        repo.insert_issue(PatchIssue(
+            patch_id=pid, issue_no="0016552", source="scan",
+            mantis_detail=json.dumps({"form_files": [], "sql_files": [], "muti_files": []})
+        ))
+        (tmp_path / "11G").mkdir()
+        report_dir = tmp_path / "11G" / "測試報告"
+        report_dir.mkdir()
+        (report_dir / "01.IP_20241204_0016552_TESTREPORT_11G.doc").write_bytes(b"")
+
+        eng = MonthlyPatchEngine(conn)
+        paths = eng.generate_patch_list_from_dir({"11G": pid}, str(tmp_path), "202412")
+
+        wb = load_workbook(paths[0])
+        ws = wb["11G新項目說明"]
+        # Row 3 = 第一筆 issue（row 1 = 標題列，row 2 = header）
+        cell = ws.cell(3, 6)
+        assert cell.hyperlink is not None
+        hyperlink_target = cell.hyperlink.target if hasattr(cell.hyperlink, "target") else str(cell.hyperlink)
+        assert "0016552" in hyperlink_target

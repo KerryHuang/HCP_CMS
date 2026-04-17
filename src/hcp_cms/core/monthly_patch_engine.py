@@ -364,6 +364,111 @@ class MonthlyPatchEngine:
 
         return paths
 
+    def _find_test_report(self, base: Path, version: str, issue_no: str) -> str | None:
+        """在 {base}/{version}/測試報告/ 搜尋含 issue_no 的 .doc/.docx，回傳絕對路徑。"""
+        report_dir = base / version / "測試報告"
+        if not report_dir.exists():
+            return None
+        for f in sorted(report_dir.iterdir()):
+            if issue_no in f.name and f.suffix.lower() in (".doc", ".docx"):
+                return str(f.absolute())
+        return None
+
+    def _write_patch_header_row(self, ws: object, headers: list[str], row: int = 1) -> None:
+        """將標題列寫入指定行（可指定 row 參數，預設第 1 列）。"""
+        from openpyxl.styles import Alignment, Font, PatternFill
+        for c, h in enumerate(headers, start=1):
+            cell = ws.cell(row, c)
+            cell.value = h
+            cell.font = Font(name="微軟正黑體", bold=True, size=11, color="FFFFFF")
+            cell.fill = PatternFill("solid", fgColor=self._HDR_DARK)
+            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+    def generate_patch_list_from_dir(
+        self, patch_ids: dict[str, int], patch_dir: str, month_str: str
+    ) -> list[str]:
+        """依 patch_ids 各版本產 PATCH_LIST_{month_str}_{VER}.xlsx，存至版本子目錄。"""
+        from openpyxl import Workbook
+        from openpyxl.styles import Font
+
+        base = Path(patch_dir)
+        all_issues: dict[str, list[PatchIssue]] = {
+            ver: self._repo.list_issues_by_patch(pid)
+            for ver, pid in patch_ids.items()
+        }
+
+        # 建立聯集 issue_no 清單（以出現順序去重）
+        union_nos: list[str] = []
+        seen: set[str] = set()
+        for ver_issues in all_issues.values():
+            for iss in ver_issues:
+                if iss.issue_no not in seen:
+                    union_nos.append(iss.issue_no)
+                    seen.add(iss.issue_no)
+
+        paths: list[str] = []
+
+        for version, version_issues in all_issues.items():
+            wb = Workbook()
+
+            # ① 清單整理
+            ws1 = wb.active
+            ws1.title = "清單整理"
+            self._write_patch_header_row(ws1, ["Issue No", "6I", "11G", "12C", "", "Mantis說明"])
+            nos_11g = {i.issue_no for i in all_issues.get("11G", [])}
+            nos_12c = {i.issue_no for i in all_issues.get("12C", [])}
+            for r, no in enumerate(union_nos, start=2):
+                ws1.cell(r, 1).value = no
+                ws1.cell(r, 3).value = "V" if no in nos_11g else ""
+                ws1.cell(r, 4).value = "V" if no in nos_12c else ""
+                desc_iss = next(
+                    (i for ver_list in all_issues.values() for i in ver_list if i.issue_no == no),
+                    None,
+                )
+                if desc_iss:
+                    ws1.cell(r, 6).value = f"{no}: {desc_iss.description or ''}"
+
+            # ② {VER}新項目說明
+            ws2 = wb.create_sheet(f"{version}新項目說明")
+            ws2.cell(1, 1).value = f"{month_str[:4]}/{month_str[4:]}大PATCH更新項目說明"
+            self._write_patch_header_row(
+                ws2, ["區域", "類別", "程式代碼", "程式名稱", "說明", "測試報告"], row=2
+            )
+            for r, iss in enumerate(version_issues, start=3):
+                ws2.cell(r, 1).value = iss.region
+                ws2.cell(r, 2).value = "修正" if iss.issue_type == "BugFix" else "改善"
+                ws2.cell(r, 3).value = iss.program_code
+                ws2.cell(r, 4).value = iss.program_name
+                ws2.cell(r, 5).value = iss.description
+                report_path = self._find_test_report(base, version, iss.issue_no)
+                cell6 = ws2.cell(r, 6)
+                cell6.value = iss.issue_no
+                if report_path:
+                    cell6.hyperlink = "file:///" + report_path.replace("\\", "/")
+                    cell6.font = Font(color="0563C1", underline="single")
+
+            # ③ 更新物件
+            ws3 = wb.create_sheet("更新物件")
+            ws3.cell(1, 1).value = f"{month_str[:4]}/{month_str[4:]}大PATCH更新項目說明"
+            self._write_patch_header_row(ws3, ["測試報告", "資料庫物件", "程式代碼", "多語"], row=2)
+            for r, iss in enumerate(version_issues, start=3):
+                ws3.cell(r, 1).value = iss.issue_no
+                if iss.mantis_detail:
+                    try:
+                        meta = json.loads(iss.mantis_detail)
+                        ws3.cell(r, 2).value = "、".join(meta.get("sql_files", []))
+                        ws3.cell(r, 3).value = "、".join(meta.get("form_files", []))
+                        ws3.cell(r, 4).value = "\n".join(meta.get("muti_files", []))
+                    except (json.JSONDecodeError, AttributeError):
+                        pass
+
+            fname = f"PATCH_LIST_{month_str}_{version}.xlsx"
+            out_path = base / version / fname
+            wb.save(str(out_path))
+            paths.append(str(out_path))
+
+        return paths
+
     def _write_patch_header(self, ws: object, headers: list[str]) -> None:
         from openpyxl.styles import Alignment, Font, PatternFill
 
