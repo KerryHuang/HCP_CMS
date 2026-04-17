@@ -69,7 +69,7 @@ class ClaudeContentService:
             if not match:
                 return empty
             data = json.loads(match.group())
-            return {k: str(data.get(k, "")) for k in _SUPPLEMENT_KEYS}
+            return {k: str(data.get(k) or "") for k in _SUPPLEMENT_KEYS}
         except (ValueError, KeyError):
             return empty
 

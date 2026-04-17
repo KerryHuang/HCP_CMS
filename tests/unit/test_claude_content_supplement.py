@@ -41,3 +41,21 @@ def test_extract_supplement_returns_empty_when_client_none():
     svc._client = None
     result = svc.extract_supplement("任意說明文字")
     assert result == {"修改原因": "", "原問題": "", "範例說明": "", "修正後": "", "注意事項": ""}
+
+
+def test_extract_supplement_handles_null_values():
+    import json
+    payload = {
+        "修改原因": "原因說明",
+        "原問題": None,
+        "範例說明": "",
+        "修正後": "修正說明",
+        "注意事項": None,
+    }
+    svc = _make_service_with_mock(json.dumps(payload, ensure_ascii=False))
+    result = svc.extract_supplement("測試說明")
+    assert result["原問題"] == ""
+    assert result["注意事項"] == ""
+    assert result["修改原因"] == "原因說明"
+    assert result["修正後"] == "修正說明"
+    assert result["範例說明"] == ""
