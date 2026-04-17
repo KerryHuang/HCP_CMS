@@ -11,8 +11,16 @@ from pathlib import Path
 from hcp_cms.data.models import PatchIssue, PatchRecord
 from hcp_cms.data.repositories import PatchRepository
 
-_TXT_FIELDS = ["issue_no", "program_code", "program_name", "issue_type",
-               "region", "description", "impact", "test_direction"]
+_TXT_FIELDS = [
+    "issue_no",
+    "program_code",
+    "program_name",
+    "issue_type",
+    "region",
+    "description",
+    "impact",
+    "test_direction",
+]
 
 
 class MonthlyPatchEngine:
@@ -21,8 +29,7 @@ class MonthlyPatchEngine:
 
     # ── Issue 載入 ───────────────────────────────────────────────────────────
 
-    def load_issues(self, source: str, month_str: str,
-                    file_path: str | None = None) -> int:
+    def load_issues(self, source: str, month_str: str, file_path: str | None = None) -> int:
         """載入 Issue 清單，回傳 patch_id。
 
         source='manual': 讀 file_path（.json 或 .txt tab 分隔）
@@ -66,7 +73,7 @@ class MonthlyPatchEngine:
         """回傳 Patch 的 Issue 筆數。"""
         return len(self._repo.list_issues_by_patch(patch_id))
 
-    def get_issues(self, patch_id: int) -> list:
+    def get_issues(self, patch_id: int) -> list[PatchIssue]:
         """回傳 Patch 的 Issue 清單。"""
         return self._repo.list_issues_by_patch(patch_id)
 
@@ -105,6 +112,7 @@ class MonthlyPatchEngine:
         try:
             import docx as python_docx
             import opencc
+
             cc = opencc.OpenCC("s2t")
             doc = python_docx.Document(str(path))
             changed = False
@@ -123,16 +131,15 @@ class MonthlyPatchEngine:
 
     # ── PATCH_LIST Excel ─────────────────────────────────────────────────────
 
-    _CLR_TW   = "D6EAF8"   # TW 淡藍
-    _CLR_CN   = "FFF3CD"   # CN 淡橘黃
-    _CLR_BOTH = "E8F5E9"   # 共用 淡綠
-    _CLR_BUG  = "FCE4D6"   # BugFix
-    _CLR_ENH  = "E2EFDA"   # Enhancement
-    _HDR_DARK = "1F3864"   # 主標題深藍
-    _HDR_MID  = "2E75B6"   # 副標題中藍
+    _CLR_TW = "D6EAF8"  # TW 淡藍
+    _CLR_CN = "FFF3CD"  # CN 淡橘黃
+    _CLR_BOTH = "E8F5E9"  # 共用 淡綠
+    _CLR_BUG = "FCE4D6"  # BugFix
+    _CLR_ENH = "E2EFDA"  # Enhancement
+    _HDR_DARK = "1F3864"  # 主標題深藍
+    _HDR_MID = "2E75B6"  # 副標題中藍
 
-    def generate_patch_list(self, patch_id: int, output_dir: str,
-                            month_str: str | None = None) -> list[str]:
+    def generate_patch_list(self, patch_id: int, output_dir: str, month_str: str | None = None) -> list[str]:
         """產 PATCH_LIST_{YYYYMM}_11G.xlsx 與 12C.xlsx，各含 3 頁籤。"""
         from openpyxl import Workbook
         from openpyxl.styles import PatternFill
@@ -152,8 +159,7 @@ class MonthlyPatchEngine:
             # 頁籤①：IT 發行通知（8 欄）
             ws_it = wb.active
             ws_it.title = "IT 發行通知"
-            hdrs_it = ["Issue No", "類型", "程式代號", "說明",
-                       "FORM目錄", "DB物件", "多語更新", "備註"]
+            hdrs_it = ["Issue No", "類型", "程式代號", "說明", "FORM目錄", "DB物件", "多語更新", "備註"]
             self._write_patch_header(ws_it, hdrs_it)
             for i, iss in enumerate(issues, start=2):
                 ws_it.cell(i, 1).value = iss.issue_no
@@ -166,9 +172,19 @@ class MonthlyPatchEngine:
 
             # 頁籤②：HR 發行通知（11 欄）
             ws_hr = wb.create_sheet("HR 發行通知")
-            hdrs_hr = ["Issue No", "計區域", "類型", "程式代號", "程式名稱",
-                       "功能說明", "影響說明/用途", "相關程式(FORM)",
-                       "上線所需動作", "測試方向及注意事項", "備註"]
+            hdrs_hr = [
+                "Issue No",
+                "計區域",
+                "類型",
+                "程式代號",
+                "程式名稱",
+                "功能說明",
+                "影響說明/用途",
+                "相關程式(FORM)",
+                "上線所需動作",
+                "測試方向及注意事項",
+                "備註",
+            ]
             self._write_patch_header(ws_hr, hdrs_hr)
             for i, iss in enumerate(issues, start=2):
                 region_fill = {"TW": self._CLR_TW, "CN": self._CLR_CN}.get(iss.region, self._CLR_BOTH)
@@ -186,8 +202,7 @@ class MonthlyPatchEngine:
 
             # 頁籤③：問題修正補充說明
             ws_supp = wb.create_sheet("問題修正補充說明")
-            self._write_patch_header(ws_supp,
-                ["Issue No", "修改原因", "原問題", "範例說明", "修正後", "注意事項"])
+            self._write_patch_header(ws_supp, ["Issue No", "修改原因", "原問題", "範例說明", "修正後", "注意事項"])
             for i, iss in enumerate(issues, start=2):
                 ws_supp.cell(i, 1).value = iss.issue_no
                 if iss.mantis_detail:
@@ -210,6 +225,7 @@ class MonthlyPatchEngine:
 
     def _write_patch_header(self, ws: object, headers: list[str]) -> None:
         from openpyxl.styles import Alignment, Font, PatternFill
+
         for c, h in enumerate(headers, start=1):
             cell = ws.cell(1, c)
             cell.value = h
@@ -219,10 +235,14 @@ class MonthlyPatchEngine:
 
     # ── 客戶通知 HTML ────────────────────────────────────────────────────────
 
-    def generate_notify_html(self, patch_id: int, output_dir: str,
-                             month_str: str | None = None,
-                             reminders: list[str] | None = None,
-                             notify_body: str | None = None) -> str:
+    def generate_notify_html(
+        self,
+        patch_id: int,
+        output_dir: str,
+        month_str: str | None = None,
+        reminders: list[str] | None = None,
+        notify_body: str | None = None,
+    ) -> str:
         """使用 Jinja2 範本產客戶通知信 HTML。"""
         from pathlib import Path as _Path
 

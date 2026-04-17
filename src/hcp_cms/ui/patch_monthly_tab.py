@@ -25,16 +25,16 @@ from PySide6.QtWidgets import (
 from hcp_cms.ui.widgets.issue_table_widget import IssueTableWidget
 
 _STEPS = ["① 選月份", "② 選來源", "③ 匯入", "④ 編輯", "⑤ Excel", "⑥ 通知信", "⑦ 完成"]
-_CLR_DONE    = "color: #22c55e; font-weight: bold;"
+_CLR_DONE = "color: #22c55e; font-weight: bold;"
 _CLR_CURRENT = "color: #3b82f6; font-weight: bold;"
 _CLR_PENDING = "color: #64748b;"
 _MONTHS = [f"{m:02d}月" for m in range(1, 13)]
-_SOURCE_FILE   = "上傳 .txt / .json"
+_SOURCE_FILE = "上傳 .txt / .json"
 _SOURCE_MANTIS = "Mantis 瀏覽器"
 
 
 class MonthlyPatchTab(QWidget):
-    _import_done   = Signal(object)
+    _import_done = Signal(object)
     _generate_done = Signal(object)
 
     def __init__(self, conn: sqlite3.Connection | None = None) -> None:
@@ -108,12 +108,11 @@ class MonthlyPatchTab(QWidget):
 
         # 操作按鈕列
         action_row = QHBoxLayout()
-        self._import_btn         = QPushButton("📥 匯入 Issue")
+        self._import_btn = QPushButton("📥 匯入 Issue")
         self._generate_excel_btn = QPushButton("📊 產生 Excel")
-        self._generate_html_btn  = QPushButton("✉️ 產生通知信")
-        self._regenerate_btn     = QPushButton("🔄 重新產出")
-        for btn in [self._import_btn, self._generate_excel_btn,
-                    self._generate_html_btn, self._regenerate_btn]:
+        self._generate_html_btn = QPushButton("✉️ 產生通知信")
+        self._regenerate_btn = QPushButton("🔄 重新產出")
+        for btn in [self._import_btn, self._generate_excel_btn, self._generate_html_btn, self._regenerate_btn]:
             action_row.addWidget(btn)
         action_row.addStretch()
         layout.addLayout(action_row)
@@ -150,7 +149,7 @@ class MonthlyPatchTab(QWidget):
     # ── 輔助 ───────────────────────────────────────────────────────────────
 
     def _get_month_str(self) -> str:
-        year  = self._year_spin.value()
+        year = self._year_spin.value()
         month = self._month_combo.currentIndex() + 1
         return f"{year}{month:02d}"
 
@@ -180,7 +179,9 @@ class MonthlyPatchTab(QWidget):
 
     def _on_file_browse_clicked(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
-            self, "選擇 Issue 清單", "",
+            self,
+            "選擇 Issue 清單",
+            "",
             "資料檔 (*.txt *.json);;全部檔案 (*.*)",
         )
         if path:
@@ -202,7 +203,7 @@ class MonthlyPatchTab(QWidget):
             self._append_log("⚠️ 請先選擇檔案")
             return
         month_str = self._get_month_str()
-        conn      = self._conn
+        conn = self._conn
         file_path = self._file_path
 
         self._import_btn.setEnabled(False)
@@ -210,17 +211,22 @@ class MonthlyPatchTab(QWidget):
 
         def work() -> dict:
             from hcp_cms.core.monthly_patch_engine import MonthlyPatchEngine
-            engine = MonthlyPatchEngine(conn)
-            pid = engine.load_issues("manual", month_str, file_path)
-            count = engine.get_issue_count(pid)
-            return {"patch_id": pid, "count": count}
 
-        threading.Thread(
-            target=lambda: self._import_done.emit(work()), daemon=True
-        ).start()
+            engine = MonthlyPatchEngine(conn)
+            try:
+                pid = engine.load_issues("manual", month_str, file_path)
+                count = engine.get_issue_count(pid)
+                return {"patch_id": pid, "count": count, "error": None}
+            except Exception as e:
+                return {"patch_id": None, "count": 0, "error": str(e)}
+
+        threading.Thread(target=lambda: self._import_done.emit(work()), daemon=True).start()
 
     def _on_import_result(self, result: dict) -> None:
         self._import_btn.setEnabled(True)
+        if result.get("error"):
+            self._append_log(f"❌ 匯入失敗：{result['error']}")
+            return
         self._patch_id = result["patch_id"]
         self._append_log(f"✅ 匯入完成：{result['count']} 筆 Issue")
         self._issue_table.load_issues(self._patch_id)
@@ -231,13 +237,14 @@ class MonthlyPatchTab(QWidget):
             return
         self._generate_excel_btn.setEnabled(False)
         self._append_log("📊 產生 PATCH_LIST Excel…")
-        conn       = self._conn
-        patch_id   = self._patch_id
-        month_str  = self._get_month_str()
+        conn = self._conn
+        patch_id = self._patch_id
+        month_str = self._get_month_str()
         output_dir = self._get_output_dir()
 
         def work() -> dict:
             from hcp_cms.core.monthly_patch_engine import MonthlyPatchEngine
+
             engine = MonthlyPatchEngine(conn)
             try:
                 paths = engine.generate_patch_list(patch_id, output_dir, month_str)
@@ -245,47 +252,39 @@ class MonthlyPatchTab(QWidget):
             except Exception as e:
                 return {"paths": [], "type": "excel", "error": str(e)}
 
-        threading.Thread(
-            target=lambda: self._generate_done.emit(work()), daemon=True
-        ).start()
+        threading.Thread(target=lambda: self._generate_done.emit(work()), daemon=True).start()
 
     def _on_generate_html_clicked(self) -> None:
         if self._patch_id is None or not self._conn:
             return
         self._generate_html_btn.setEnabled(False)
         self._append_log("✉️ 產生客戶通知信（呼叫 Claude API）…")
-        conn       = self._conn
-        patch_id   = self._patch_id
-        month_str  = self._get_month_str()
+        conn = self._conn
+        patch_id = self._patch_id
+        month_str = self._get_month_str()
         output_dir = self._get_output_dir()
 
         def work() -> dict:
             from hcp_cms.core.monthly_patch_engine import MonthlyPatchEngine
             from hcp_cms.services.claude_content import ClaudeContentService
+
             engine = MonthlyPatchEngine(conn)
-            issues = engine.get_issues(patch_id)
-            svc    = ClaudeContentService()
-            notify_body = svc.generate_notify_body(
-                [{"issue_no": i.issue_no, "description": i.description}
-                 for i in issues],
-                month_str,
-            )
             try:
-                path = engine.generate_notify_html(
-                    patch_id, output_dir, month_str, notify_body=notify_body
+                issues = engine.get_issues(patch_id)
+                svc = ClaudeContentService()
+                notify_body = svc.generate_notify_body(
+                    [{"issue_no": i.issue_no, "description": i.description} for i in issues],
+                    month_str,
                 )
+                path = engine.generate_notify_html(patch_id, output_dir, month_str, notify_body=notify_body)
                 return {"paths": [path], "type": "html", "error": None}
             except Exception as e:
                 return {"paths": [], "type": "html", "error": str(e)}
 
-        threading.Thread(
-            target=lambda: self._generate_done.emit(work()), daemon=True
-        ).start()
+        threading.Thread(target=lambda: self._generate_done.emit(work()), daemon=True).start()
 
     def _on_generate_result(self, result: dict) -> None:
-        btn = (self._generate_excel_btn
-               if result.get("type") == "excel"
-               else self._generate_html_btn)
+        btn = self._generate_excel_btn if result.get("type") == "excel" else self._generate_html_btn
         btn.setEnabled(True)
         if result.get("error"):
             self._append_log(f"❌ 產出失敗：{result['error']}")
