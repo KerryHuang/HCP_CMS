@@ -53,10 +53,10 @@ class CompanyRepository:
             """
             INSERT INTO companies
                 (company_id, name, domain, alias, contact_info,
-                 cs_staff_id, sales_staff_id, created_at)
+                 cs_staff_id, sales_staff_id, hcp_version, created_at)
             VALUES
                 (:company_id, :name, :domain, :alias, :contact_info,
-                 :cs_staff_id, :sales_staff_id, :created_at)
+                 :cs_staff_id, :sales_staff_id, :hcp_version, :created_at)
             """,
             {
                 "company_id": company.company_id,
@@ -66,6 +66,7 @@ class CompanyRepository:
                 "contact_info": company.contact_info,
                 "cs_staff_id": company.cs_staff_id,
                 "sales_staff_id": company.sales_staff_id,
+                "hcp_version": company.hcp_version,
                 "created_at": company.created_at,
             },
         )
@@ -93,7 +94,8 @@ class CompanyRepository:
             UPDATE companies
             SET name = :name, domain = :domain, alias = :alias,
                 contact_info = :contact_info,
-                cs_staff_id = :cs_staff_id, sales_staff_id = :sales_staff_id
+                cs_staff_id = :cs_staff_id, sales_staff_id = :sales_staff_id,
+                hcp_version = :hcp_version
             WHERE company_id = :company_id
             """,
             {
@@ -104,6 +106,7 @@ class CompanyRepository:
                 "contact_info": company.contact_info,
                 "cs_staff_id": company.cs_staff_id,
                 "sales_staff_id": company.sales_staff_id,
+                "hcp_version": company.hcp_version,
             },
         )
         self._conn.commit()
@@ -1165,3 +1168,105 @@ class CustomColumnRepository:
         if col_key not in existing:
             self._conn.execute(f"ALTER TABLE cs_cases ADD COLUMN {col_key} TEXT")
             self._conn.commit()
+
+
+# ---------------------------------------------------------------------------
+# PatchRepository
+# ---------------------------------------------------------------------------
+
+
+class PatchRepository:
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self._conn = conn
+
+    def insert_patch(self, patch: "PatchRecord") -> int:
+        from hcp_cms.data.models import PatchRecord  # noqa: F401
+        patch.created_at = _now()
+        patch.updated_at = _now()
+        cur = self._conn.execute(
+            """INSERT INTO cs_patches (type, month_str, patch_dir, status, created_at, updated_at)
+               VALUES (:type, :month_str, :patch_dir, :status, :created_at, :updated_at)""",
+            {"type": patch.type, "month_str": patch.month_str, "patch_dir": patch.patch_dir,
+             "status": patch.status, "created_at": patch.created_at, "updated_at": patch.updated_at},
+        )
+        self._conn.commit()
+        return cur.lastrowid  # type: ignore[return-value]
+
+    def get_patch_by_id(self, patch_id: int) -> "PatchRecord | None":
+        from hcp_cms.data.models import PatchRecord
+        row = self._conn.execute("SELECT * FROM cs_patches WHERE id=?", (patch_id,)).fetchone()
+        if row is None:
+            return None
+        return PatchRecord(patch_id=row["id"], type=row["type"], month_str=row["month_str"],
+                           patch_dir=row["patch_dir"], status=row["status"],
+                           created_at=row["created_at"], updated_at=row["updated_at"])
+
+    def list_patches(self) -> "list[PatchRecord]":
+        from hcp_cms.data.models import PatchRecord
+        rows = self._conn.execute("SELECT * FROM cs_patches ORDER BY created_at DESC").fetchall()
+        return [PatchRecord(patch_id=r["id"], type=r["type"], month_str=r["month_str"],
+                            patch_dir=r["patch_dir"], status=r["status"],
+                            created_at=r["created_at"], updated_at=r["updated_at"]) for r in rows]
+
+    def update_patch_status(self, patch_id: int, status: str) -> None:
+        self._conn.execute("UPDATE cs_patches SET status=?, updated_at=? WHERE id=?",
+                           (status, _now(), patch_id))
+        self._conn.commit()
+
+    def insert_issue(self, issue: "PatchIssue") -> int:
+        from hcp_cms.data.models import PatchIssue  # noqa: F401
+        issue.created_at = _now()
+        cur = self._conn.execute(
+            """INSERT INTO cs_patch_issues
+               (patch_id, issue_no, program_code, program_name, issue_type, region,
+                description, impact, test_direction, mantis_detail, source, sort_order, created_at)
+               VALUES
+               (:patch_id, :issue_no, :program_code, :program_name, :issue_type, :region,
+                :description, :impact, :test_direction, :mantis_detail, :source, :sort_order, :created_at)""",
+            {"patch_id": issue.patch_id, "issue_no": issue.issue_no, "program_code": issue.program_code,
+             "program_name": issue.program_name, "issue_type": issue.issue_type, "region": issue.region,
+             "description": issue.description, "impact": issue.impact,
+             "test_direction": issue.test_direction, "mantis_detail": issue.mantis_detail,
+             "source": issue.source, "sort_order": issue.sort_order, "created_at": issue.created_at},
+        )
+        self._conn.commit()
+        return cur.lastrowid  # type: ignore[return-value]
+
+    def list_issues_by_patch(self, patch_id: int) -> "list[PatchIssue]":
+        rows = self._conn.execute(
+            "SELECT * FROM cs_patch_issues WHERE patch_id=? ORDER BY sort_order, id",
+            (patch_id,),
+        ).fetchall()
+        return [self._row_to_issue(r) for r in rows]
+
+    def update_issue(self, issue: "PatchIssue") -> None:
+        self._conn.execute(
+            """UPDATE cs_patch_issues SET
+               issue_no=:issue_no, program_code=:program_code, program_name=:program_name,
+               issue_type=:issue_type, region=:region, description=:description,
+               impact=:impact, test_direction=:test_direction, mantis_detail=:mantis_detail,
+               source=:source, sort_order=:sort_order
+               WHERE id=:issue_id""",
+            {"issue_id": issue.issue_id, "issue_no": issue.issue_no,
+             "program_code": issue.program_code, "program_name": issue.program_name,
+             "issue_type": issue.issue_type, "region": issue.region,
+             "description": issue.description, "impact": issue.impact,
+             "test_direction": issue.test_direction, "mantis_detail": issue.mantis_detail,
+             "source": issue.source, "sort_order": issue.sort_order},
+        )
+        self._conn.commit()
+
+    def delete_issue(self, issue_id: int) -> None:
+        self._conn.execute("DELETE FROM cs_patch_issues WHERE id=?", (issue_id,))
+        self._conn.commit()
+
+    def _row_to_issue(self, row: sqlite3.Row) -> "PatchIssue":
+        from hcp_cms.data.models import PatchIssue
+        return PatchIssue(
+            issue_id=row["id"], patch_id=row["patch_id"], issue_no=row["issue_no"],
+            program_code=row["program_code"], program_name=row["program_name"],
+            issue_type=row["issue_type"], region=row["region"],
+            description=row["description"], impact=row["impact"],
+            test_direction=row["test_direction"], mantis_detail=row["mantis_detail"],
+            source=row["source"], sort_order=row["sort_order"], created_at=row["created_at"],
+        )
