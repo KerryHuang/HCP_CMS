@@ -76,7 +76,7 @@ SQLite         cs_patches（新增）
 
 ### PatchRepository
 
-標準 CRUD：`insert_patch()` / `get_patch_by_id()` / `list_patches()` / `update_patch_status()` / `insert_issue()` / `list_issues_by_patch()`。
+標準 CRUD：`insert_patch()` / `get_patch_by_id()` / `list_patches()` / `update_patch_status()` / `insert_issue()` / `list_issues_by_patch()` / `update_issue()` / `delete_issue()`。
 
 ## Core 層
 
@@ -126,25 +126,43 @@ SQLite         cs_patches（新增）
 - 步驟進度列（① → ② → ③ → ④，依完成狀態高亮）
 - 執行 Log 區域（即時串流每步結果，✅ / ⚠️ / ❌ 標示）
 - 產出檔案區（完成後列出檔案路徑，[開啟] 按鈕）
+- **Issue 編輯表格**（兩個 Tab 共用，見下方說明）
+
+**Issue 編輯表格（IssueTableWidget）：**
+
+掃描 / 匯入完成後，Issues 以可編輯表格呈現，支援以下操作後**重新產出**：
+
+| 操作 | 說明 |
+|------|------|
+| 新增列 | 點「＋ 新增 Issue」→ 空白列插入表格底部，直接填寫欄位 |
+| 修改 | 雙擊儲存格即可編輯，編輯後自動儲存至 `cs_patch_issues` |
+| 刪除 | 選取列後點「🗑 刪除」或按 Delete 鍵，需確認對話框 |
+| 重新排序 | 拖曳列調整 Issue 順序（影響 Excel 輸出的排列）|
+
+修改後點「▶ 重新產出」即可用最新 Issue 清單重新產生 Excel / HTML，舊檔案自動版號遞增（`_v2`）。
+
+⚠️ 所有編輯即時寫入 `cs_patch_issues`，不需另存，關閉後資料不遺失。
 
 **SinglePatchTab 操作流程：**
 1. 選擇已解壓縮的資料夾
-2. 點「▶ 開始執行」→ 自動掃描、讀 .doc
+2. 點「▶ 開始執行」→ 自動掃描、讀 .doc，Issues 填入編輯表格
 3. Mantis 同步：開啟 Chrome，Jill 登入後按「已登入，繼續」（可跳過）
-4. Log 即時顯示進度
-5. 完成後顯示 3 份 Excel 連結
+4. **（可選）在 IssueTableWidget 新增 / 修改 / 刪除 Issue**
+5. 點「▶ 產生報表」→ 依當前表格內容產 3 份 Excel（+ 選用測試腳本）
+6. 完成後顯示檔案連結；如需修改可回步驟 4，點「▶ 重新產出」
 
 **MonthlyPatchTab 操作流程：**
 1. 選擇月份（月份選擇器，預設當月）
 2. 選擇 Issue 來源（Mantis 瀏覽器 / 上傳 .txt 或 .json）
-3. Issue 清單確認畫面（可編輯）
-4. 點「產生 Excel」→ 產 PATCH_LIST 11G / 12C
-5. 點「產生通知信」→ Claude 生成文字 → HTML 預覽
-6. 所有產出集中顯示，[開啟資料夾] 按鈕
+3. Issues 匯入後填入編輯表格
+4. **（可選）在 IssueTableWidget 新增 / 修改 / 刪除 Issue**
+5. 點「產生 Excel」→ 依當前表格內容產 PATCH_LIST 11G / 12C
+6. 點「產生通知信」→ Claude 生成文字 → HTML 預覽
+7. 所有產出集中顯示，[開啟資料夾] 按鈕；如需修改可回步驟 4，點「▶ 重新產出」
 
 ### Slot 命名規範
 
-`_on_browse_clicked`、`_on_start_clicked`、`_on_mantis_login_confirmed`、`_on_issue_source_changed`、`_on_generate_excel_clicked`、`_on_generate_html_clicked`
+`_on_browse_clicked`、`_on_start_clicked`、`_on_mantis_login_confirmed`、`_on_issue_source_changed`、`_on_generate_excel_clicked`、`_on_generate_html_clicked`、`_on_add_issue_clicked`、`_on_delete_issue_clicked`、`_on_issue_cell_changed`、`_on_regenerate_clicked`
 
 ## 輸出規格
 
