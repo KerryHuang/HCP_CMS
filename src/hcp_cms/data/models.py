@@ -59,6 +59,7 @@ class Company:
     contact_info: str | None = None
     cs_staff_id: str | None = None      # FK → staff.staff_id（負責客服）
     sales_staff_id: str | None = None   # FK → staff.staff_id（負責業務）
+    hcp_version: str | None = None      # 從 Mantis 同步的 HcpVersion
     created_at: str | None = None
 
 
@@ -175,4 +176,35 @@ class Staff:
     role: str              # 'cs'（客服）| 'sales'（業務）
     phone: str | None = None
     notes: str | None = None
+    created_at: str | None = None
+
+
+@dataclass
+class PatchRecord:
+    """Patch 整理記錄 — cs_patches table."""
+    type: str = "single"          # "single" | "monthly"
+    month_str: str | None = None  # "202604"，monthly 專用
+    patch_dir: str | None = None
+    status: str = "in_progress"   # "in_progress" | "completed"
+    patch_id: int | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+@dataclass
+class PatchIssue:
+    """Patch Issue 項目 — cs_patch_issues table."""
+    patch_id: int | None = None
+    issue_no: str = ""
+    program_code: str | None = None
+    program_name: str | None = None
+    issue_type: str = "BugFix"    # "BugFix" | "Enhancement"
+    region: str = "共用"           # "TW" | "CN" | "共用"
+    description: str | None = None
+    impact: str | None = None
+    test_direction: str | None = None
+    mantis_detail: str | None = None  # JSON 字串
+    source: str = "manual"            # "manual" | "mantis"
+    sort_order: int = 0
+    issue_id: int | None = None
     created_at: str | None = None

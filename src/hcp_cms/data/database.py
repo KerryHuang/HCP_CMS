@@ -160,6 +160,33 @@ CREATE VIRTUAL TABLE IF NOT EXISTS cases_fts USING fts5(
     progress,
     notes
 );
+
+CREATE TABLE IF NOT EXISTS cs_patches (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    type       TEXT NOT NULL DEFAULT 'single',
+    month_str  TEXT,
+    patch_dir  TEXT,
+    status     TEXT NOT NULL DEFAULT 'in_progress',
+    created_at TEXT,
+    updated_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS cs_patch_issues (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    patch_id       INTEGER NOT NULL REFERENCES cs_patches(id),
+    issue_no       TEXT NOT NULL,
+    program_code   TEXT,
+    program_name   TEXT,
+    issue_type     TEXT DEFAULT 'BugFix',
+    region         TEXT DEFAULT '共用',
+    description    TEXT,
+    impact         TEXT,
+    test_direction TEXT,
+    mantis_detail  TEXT,
+    source         TEXT DEFAULT 'manual',
+    sort_order     INTEGER DEFAULT 0,
+    created_at     TEXT
+);
 """
 
 
@@ -212,6 +239,7 @@ class DatabaseManager:
             "ALTER TABLE case_logs ADD COLUMN reply_time TEXT",
             "ALTER TABLE companies ADD COLUMN cs_staff_id TEXT",
             "ALTER TABLE companies ADD COLUMN sales_staff_id TEXT",
+            "ALTER TABLE companies ADD COLUMN hcp_version TEXT",
         ]
         for sql in pending:
             try:
