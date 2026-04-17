@@ -1254,6 +1254,12 @@ class PatchRepository:
         )
         self._conn.commit()
 
+    def get_issue_by_id(self, issue_id: int) -> PatchIssue | None:
+        row = self._conn.execute(
+            "SELECT * FROM cs_patch_issues WHERE id = :id", {"id": issue_id}
+        ).fetchone()
+        return self._row_to_issue(row) if row else None
+
     def delete_issue(self, issue_id: int) -> None:
         self._conn.execute("DELETE FROM cs_patch_issues WHERE id=?", (issue_id,))
         self._conn.commit()
