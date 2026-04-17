@@ -14,6 +14,8 @@ from hcp_cms.data.models import (
     Company,
     CustomColumn,
     MantisTicket,
+    PatchIssue,
+    PatchRecord,
     ProcessedFile,
     QAKnowledge,
     Staff,
@@ -1179,8 +1181,7 @@ class PatchRepository:
     def __init__(self, conn: sqlite3.Connection) -> None:
         self._conn = conn
 
-    def insert_patch(self, patch: "PatchRecord") -> int:
-        from hcp_cms.data.models import PatchRecord  # noqa: F401
+    def insert_patch(self, patch: PatchRecord) -> int:
         patch.created_at = _now()
         patch.updated_at = _now()
         cur = self._conn.execute(
@@ -1192,8 +1193,7 @@ class PatchRepository:
         self._conn.commit()
         return cur.lastrowid  # type: ignore[return-value]
 
-    def get_patch_by_id(self, patch_id: int) -> "PatchRecord | None":
-        from hcp_cms.data.models import PatchRecord
+    def get_patch_by_id(self, patch_id: int) -> PatchRecord | None:
         row = self._conn.execute("SELECT * FROM cs_patches WHERE id=?", (patch_id,)).fetchone()
         if row is None:
             return None
@@ -1201,8 +1201,7 @@ class PatchRepository:
                            patch_dir=row["patch_dir"], status=row["status"],
                            created_at=row["created_at"], updated_at=row["updated_at"])
 
-    def list_patches(self) -> "list[PatchRecord]":
-        from hcp_cms.data.models import PatchRecord
+    def list_patches(self) -> list[PatchRecord]:
         rows = self._conn.execute("SELECT * FROM cs_patches ORDER BY created_at DESC").fetchall()
         return [PatchRecord(patch_id=r["id"], type=r["type"], month_str=r["month_str"],
                             patch_dir=r["patch_dir"], status=r["status"],
@@ -1213,8 +1212,7 @@ class PatchRepository:
                            (status, _now(), patch_id))
         self._conn.commit()
 
-    def insert_issue(self, issue: "PatchIssue") -> int:
-        from hcp_cms.data.models import PatchIssue  # noqa: F401
+    def insert_issue(self, issue: PatchIssue) -> int:
         issue.created_at = _now()
         cur = self._conn.execute(
             """INSERT INTO cs_patch_issues
@@ -1232,14 +1230,14 @@ class PatchRepository:
         self._conn.commit()
         return cur.lastrowid  # type: ignore[return-value]
 
-    def list_issues_by_patch(self, patch_id: int) -> "list[PatchIssue]":
+    def list_issues_by_patch(self, patch_id: int) -> list[PatchIssue]:
         rows = self._conn.execute(
             "SELECT * FROM cs_patch_issues WHERE patch_id=? ORDER BY sort_order, id",
             (patch_id,),
         ).fetchall()
         return [self._row_to_issue(r) for r in rows]
 
-    def update_issue(self, issue: "PatchIssue") -> None:
+    def update_issue(self, issue: PatchIssue) -> None:
         self._conn.execute(
             """UPDATE cs_patch_issues SET
                issue_no=:issue_no, program_code=:program_code, program_name=:program_name,
@@ -1260,8 +1258,7 @@ class PatchRepository:
         self._conn.execute("DELETE FROM cs_patch_issues WHERE id=?", (issue_id,))
         self._conn.commit()
 
-    def _row_to_issue(self, row: sqlite3.Row) -> "PatchIssue":
-        from hcp_cms.data.models import PatchIssue
+    def _row_to_issue(self, row: sqlite3.Row) -> PatchIssue:
         return PatchIssue(
             issue_id=row["id"], patch_id=row["patch_id"], issue_no=row["issue_no"],
             program_code=row["program_code"], program_name=row["program_name"],
