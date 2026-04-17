@@ -638,3 +638,54 @@ class TestRunS2T:
         eng = MonthlyPatchEngine(conn)
         result = eng.run_s2t(str(tmp_path))
         assert result == {}
+
+
+class TestVerifyPatchLinks:
+    def test_all_links_valid(self, conn, tmp_path):
+        import json
+        from hcp_cms.data.repositories import PatchRepository
+        from hcp_cms.data.models import PatchRecord, PatchIssue
+
+        repo = PatchRepository(conn)
+        pid = repo.insert_patch(PatchRecord(type="monthly", month_str="202604", patch_dir=str(tmp_path)))
+        repo.insert_issue(PatchIssue(
+            patch_id=pid, issue_no="0016552", source="scan",
+            mantis_detail=json.dumps({"form_files": [], "sql_files": [], "muti_files": []})
+        ))
+        report_dir = tmp_path / "11G" / "測試報告"
+        report_dir.mkdir(parents=True)
+        report = report_dir / "01.IP_20241128_0016552_TESTREPORT_11G.docx"
+        report.write_bytes(b"")
+
+        eng = MonthlyPatchEngine(conn)
+        paths = eng.generate_patch_list_from_dir({"11G": pid}, str(tmp_path), "202604")
+
+        result = eng.verify_patch_links(str(tmp_path))
+        assert result["11G"]["ok"] == 1
+        assert result["11G"]["total"] == 1
+        assert result["11G"]["failed"] == []
+
+    def test_detects_broken_link(self, conn, tmp_path):
+        import json
+        from hcp_cms.data.repositories import PatchRepository
+        from hcp_cms.data.models import PatchRecord, PatchIssue
+
+        repo = PatchRepository(conn)
+        pid = repo.insert_patch(PatchRecord(type="monthly", month_str="202604", patch_dir=str(tmp_path)))
+        repo.insert_issue(PatchIssue(
+            patch_id=pid, issue_no="0016552", source="scan",
+            mantis_detail=json.dumps({"form_files": [], "sql_files": [], "muti_files": []})
+        ))
+        report_dir = tmp_path / "11G" / "測試報告"
+        report_dir.mkdir(parents=True)
+        report = report_dir / "01.IP_20241128_0016552_TESTREPORT_11G.docx"
+        report.write_bytes(b"")
+
+        eng = MonthlyPatchEngine(conn)
+        eng.generate_patch_list_from_dir({"11G": pid}, str(tmp_path), "202604")
+        report.unlink()  # 刪除測試報告，超連結失效
+
+        result = eng.verify_patch_links(str(tmp_path))
+        assert result["11G"]["ok"] == 0
+        assert len(result["11G"]["failed"]) == 1
+        assert "0016552" in result["11G"]["failed"][0]

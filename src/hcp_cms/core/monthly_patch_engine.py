@@ -495,6 +495,53 @@ class MonthlyPatchEngine:
         except (json.JSONDecodeError, AttributeError):
             return {}
 
+    def verify_patch_links(self, patch_dir: str) -> dict[str, dict]:
+        """掃描 patch_dir 下各版本 PATCH_LIST_*.xlsx，驗證 Issue No 超連結是否有效。
+        回傳 {version: {"total": N, "ok": N, "failed": [issue_no_or_path, ...]}}
+        """
+        import openpyxl
+
+        base = Path(patch_dir)
+        result: dict[str, dict] = {}
+        for version_dir in sorted(base.iterdir()):
+            if not version_dir.is_dir():
+                continue
+            version = version_dir.name
+            xlsx_files = list(version_dir.glob("PATCH_LIST_*.xlsx"))
+            if not xlsx_files:
+                continue
+            total = ok = 0
+            failed: list[str] = []
+            seen: set[str] = set()
+            for xlsx_path in xlsx_files:
+                try:
+                    wb = openpyxl.load_workbook(str(xlsx_path))
+                except Exception:
+                    continue
+                for sheet_name in ["IT 發行通知", "HR 發行通知"]:
+                    if sheet_name not in wb.sheetnames:
+                        continue
+                    ws = wb[sheet_name]
+                    for row in ws.iter_rows(min_row=2):
+                        cell = row[0]
+                        if not cell.value or cell.value in seen:
+                            continue
+                        seen.add(str(cell.value))
+                        hl = cell.hyperlink
+                        if hl is None:
+                            continue
+                        target = hl.target if hasattr(hl, "target") else str(hl)
+                        total += 1
+                        if target:
+                            local = target.replace("file:///", "").replace("/", "\\")
+                            if Path(local).exists():
+                                ok += 1
+                                continue
+                        failed.append(f"{cell.value} → {target}")
+            if total > 0:
+                result[version] = {"total": total, "ok": ok, "failed": failed}
+        return result
+
     def generate_patch_list_from_dir(
         self, patch_ids: dict[str, int], patch_dir: str, month_str: str
     ) -> list[str]:
