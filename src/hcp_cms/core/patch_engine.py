@@ -7,6 +7,7 @@ import sqlite3
 from pathlib import Path
 from typing import TypedDict
 
+from hcp_cms.data.models import PatchIssue, PatchRecord
 from hcp_cms.data.repositories import PatchRepository
 
 _ISSUE_TYPE_BUGFIX = "BugFix"
@@ -234,15 +235,18 @@ class SinglePatchEngine:
 
     # ── Patch 記錄管理 ─────────────────────────────────────────────────────────
 
+    def get_issue_nos_by_patch(self, patch_id: int) -> list[str]:
+        """取得 Patch 所有非空 Issue 編號。"""
+        issues = self._repo.list_issues_by_patch(patch_id)
+        return [i.issue_no for i in issues if i.issue_no]
+
     def setup_new_patch(self, patch_dir: str) -> int:
         """建立單次 Patch 記錄，回傳 patch_id。"""
-        from hcp_cms.data.models import PatchRecord
         patch = PatchRecord(type="single", patch_dir=patch_dir)
         return self._repo.insert_patch(patch)
 
     def load_issues_from_release_doc(self, patch_id: int, doc_path: str) -> int:
         """從 ReleaseNote 解析 Issues 並寫入 DB，回傳新增筆數。"""
-        from hcp_cms.data.models import PatchIssue
         raw_list = self.read_release_doc(doc_path)
         for idx, raw in enumerate(raw_list):
             issue = PatchIssue(

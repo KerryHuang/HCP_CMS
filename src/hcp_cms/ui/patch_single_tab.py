@@ -211,11 +211,10 @@ class SinglePatchTab(QWidget):
         patch_id = self._patch_id
 
         def fetch() -> dict:
-            from hcp_cms.data.repositories import PatchRepository
+            from hcp_cms.core.patch_engine import SinglePatchEngine
+            engine = SinglePatchEngine(conn)
             svc.confirm_login()
-            repo = PatchRepository(conn)
-            issues = repo.list_issues_by_patch(patch_id)
-            issue_nos = [i.issue_no for i in issues if i.issue_no]
+            issue_nos = engine.get_issue_nos_by_patch(patch_id)
             results = svc.fetch_issues_batch(issue_nos)
             svc.close()
             return {"fetched": len(results)}
@@ -271,5 +270,3 @@ class SinglePatchTab(QWidget):
         self._output_list.clear()
         self._on_generate_excel_clicked()
 
-    def _on_issues_changed(self) -> None:
-        pass
