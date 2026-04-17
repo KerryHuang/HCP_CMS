@@ -120,6 +120,8 @@ class MonthlyPatchEngine:
             import zipfile
             with zipfile.ZipFile(str(archive), "r") as z:
                 z.extractall(path=str(extract_dir))
+        else:
+            logging.warning("不支援的封存格式，略過 [%s]", archive.name)
 
     def _list_files(self, directory: Path, extensions: list[str], keep_ext: bool = False) -> list[str]:
         """列出目錄內符合副檔名的檔案，keep_ext=False 則去副檔名。"""
@@ -138,6 +140,8 @@ class MonthlyPatchEngine:
 
     def _read_release_note(self, extract_dir: Path) -> list[dict[str, str]]:
         """在解壓資料夾尋找 ReleaseNote，委託 SinglePatchEngine 解析。"""
+        if not extract_dir.exists():
+            return []
         from hcp_cms.core.patch_engine import SinglePatchEngine
         for f in extract_dir.iterdir():
             if not f.is_file():
