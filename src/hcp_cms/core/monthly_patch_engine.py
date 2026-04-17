@@ -62,6 +62,14 @@ class MonthlyPatchEngine:
                 rows.append(dict(zip(_TXT_FIELDS, parts)))
         return rows
 
+    def get_issue_count(self, patch_id: int) -> int:
+        """回傳 Patch 的 Issue 筆數。"""
+        return len(self._repo.list_issues_by_patch(patch_id))
+
+    def get_issues(self, patch_id: int) -> list:
+        """回傳 Patch 的 Issue 清單。"""
+        return self._repo.list_issues_by_patch(patch_id)
+
     # ── 測試報告整理 ─────────────────────────────────────────────────────────
 
     _REPORT_NAME_RE = re.compile(
