@@ -213,7 +213,7 @@ class SinglePatchEngine:
             ws_hr.cell(i, 5).value = iss.program_name
             ws_hr.cell(i, 6).value = iss.description
             ws_hr.cell(i, 7).value = iss.impact
-            ws_hr.cell(i, 9).value = "請與資訊單位確認是否已完成更新\n確認更新完成再進行測試"
+            ws_hr.cell(i, 9).value = "請與資訊單位確認是否已完成更新，確認更新完成再進行測試"
             ws_hr.cell(i, 10).value = iss.test_direction
         p3 = str(out / "Issue清單_IT_HR.xlsx")
         wb3.save(p3)
