@@ -394,83 +394,86 @@ class MonthlyPatchEngine:
             cell.fill = PatternFill("solid", fgColor=self._HDR_DARK)
             cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
+    def _parse_scan_meta(self, iss: PatchIssue) -> dict:
+        """解析掃描模式的 mantis_detail，回傳 form_files/sql_files/muti_files。"""
+        if not iss.mantis_detail:
+            return {}
+        try:
+            return json.loads(iss.mantis_detail)
+        except (json.JSONDecodeError, AttributeError):
+            return {}
+
     def generate_patch_list_from_dir(
         self, patch_ids: dict[str, int], patch_dir: str, month_str: str
     ) -> list[str]:
-        """依 patch_ids 各版本產 PATCH_LIST_{month_str}_{VER}.xlsx，存至版本子目錄。"""
+        """依 patch_ids 各版本產 PATCH_LIST_{month_str}_{VER}.xlsx（IT/HR/補充說明格式），存至版本子目錄。"""
         from openpyxl import Workbook
-        from openpyxl.styles import Font
+        from openpyxl.styles import Font, PatternFill
 
         base = Path(patch_dir)
-        all_issues: dict[str, list[PatchIssue]] = {
-            ver: self._repo.list_issues_by_patch(pid)
-            for ver, pid in patch_ids.items()
-        }
-
-        # 建立聯集 issue_no 清單（11G 優先、以出現順序去重）
-        union_nos: list[str] = []
-        seen: set[str] = set()
-        for ver in ("11G", "12C"):
-            for iss in all_issues.get(ver, []):
-                if iss.issue_no not in seen:
-                    union_nos.append(iss.issue_no)
-                    seen.add(iss.issue_no)
-
         paths: list[str] = []
 
-        for version, version_issues in all_issues.items():
+        for version, patch_id in patch_ids.items():
+            issues = self._repo.list_issues_by_patch(patch_id)
             wb = Workbook()
 
-            # ① 清單整理
-            ws1 = wb.active
-            ws1.title = "清單整理"
-            self._write_patch_header_row(ws1, ["Issue No", "6I", "11G", "12C", "", "Mantis說明"])
-            nos_11g = {i.issue_no for i in all_issues.get("11G", [])}
-            nos_12c = {i.issue_no for i in all_issues.get("12C", [])}
-            for r, no in enumerate(union_nos, start=2):
-                ws1.cell(r, 1).value = no
-                ws1.cell(r, 3).value = "V" if no in nos_11g else ""
-                ws1.cell(r, 4).value = "V" if no in nos_12c else ""
-                desc_iss = next(
-                    (i for ver_list in all_issues.values() for i in ver_list if i.issue_no == no),
-                    None,
-                )
-                if desc_iss:
-                    ws1.cell(r, 6).value = f"{no}: {desc_iss.description or ''}"
-
-            # ② {VER}新項目說明
-            ws2 = wb.create_sheet(f"{version}新項目說明")
-            ws2.cell(1, 1).value = f"{month_str[:4]}/{month_str[4:]}大PATCH更新項目說明"
-            self._write_patch_header_row(
-                ws2, ["區域", "類別", "程式代碼", "程式名稱", "說明", "測試報告"], row=2
+            # ① IT 發行通知
+            ws_it = wb.active
+            ws_it.title = "IT 發行通知"
+            self._write_patch_header(
+                ws_it, ["Issue No", "類型", "程式代碼", "說明", "FORM目錄", "DB物件", "多語更新", "備註"]
             )
-            for r, iss in enumerate(version_issues, start=3):
-                ws2.cell(r, 1).value = iss.region
-                ws2.cell(r, 2).value = "修正" if iss.issue_type == "BugFix" else "改善"
-                ws2.cell(r, 3).value = iss.program_code
-                ws2.cell(r, 4).value = iss.program_name
-                ws2.cell(r, 5).value = iss.description
-                report_path = self._find_test_report(base, version, iss.issue_no)
-                cell6 = ws2.cell(r, 6)
-                cell6.value = iss.issue_no
-                if report_path:
-                    cell6.hyperlink = "file:///" + report_path.replace("\\", "/")
-                    cell6.font = Font(color="0563C1", underline="single")
+            for i, iss in enumerate(issues, start=2):
+                meta = self._parse_scan_meta(iss)
+                ws_it.cell(i, 1).value = iss.issue_no
+                ws_it.cell(i, 2).value = iss.issue_type
+                ws_it.cell(i, 3).value = iss.program_code
+                ws_it.cell(i, 4).value = iss.description
+                ws_it.cell(i, 5).value = "、".join(meta.get("form_files") or [])
+                ws_it.cell(i, 6).value = "、".join(meta.get("sql_files") or [])
+                ws_it.cell(i, 7).value = "\n".join(meta.get("muti_files") or [])
+                row_fill = self._CLR_ENH if iss.issue_type == "Enhancement" else self._CLR_BUG
+                for c in range(1, 9):
+                    ws_it.cell(i, c).fill = PatternFill("solid", fgColor=row_fill)
 
-            # ③ 更新物件
-            ws3 = wb.create_sheet("更新物件")
-            ws3.cell(1, 1).value = f"{month_str[:4]}/{month_str[4:]}大PATCH更新項目說明"
-            self._write_patch_header_row(ws3, ["測試報告", "資料庫物件", "程式代碼", "多語"], row=2)
-            for r, iss in enumerate(version_issues, start=3):
-                ws3.cell(r, 1).value = iss.issue_no
-                if iss.mantis_detail:
-                    try:
-                        meta = json.loads(iss.mantis_detail)
-                        ws3.cell(r, 2).value = "、".join(meta.get("sql_files") or [])
-                        ws3.cell(r, 3).value = "、".join(meta.get("form_files") or [])
-                        ws3.cell(r, 4).value = "\n".join(meta.get("muti_files") or [])
-                    except (json.JSONDecodeError, AttributeError):
-                        pass
+            # ② HR 發行通知
+            ws_hr = wb.create_sheet("HR 發行通知")
+            self._write_patch_header(ws_hr, [
+                "Issue No", "計區域", "類型", "程式代碼", "程式名稱",
+                "功能說明", "影響說明/用途", "相關程式(FORM)",
+                "上線所需動作", "測試方向及注意事項", "備註",
+            ])
+            for i, iss in enumerate(issues, start=2):
+                meta = self._parse_scan_meta(iss)
+                region_fill = {"TW": self._CLR_TW, "CN": self._CLR_CN}.get(iss.region or "", self._CLR_BOTH)
+                ws_hr.cell(i, 1).value = iss.issue_no
+                ws_hr.cell(i, 2).value = iss.region
+                ws_hr.cell(i, 3).value = iss.issue_type
+                ws_hr.cell(i, 4).value = iss.program_code
+                ws_hr.cell(i, 5).value = iss.program_name
+                ws_hr.cell(i, 6).value = iss.description
+                ws_hr.cell(i, 7).value = iss.impact
+                ws_hr.cell(i, 8).value = "、".join(meta.get("form_files") or [])
+                ws_hr.cell(i, 9).value = "請與資訊單位確認是否已完成更新，確認更新完成再進行測試"
+                ws_hr.cell(i, 10).value = iss.test_direction
+                for c in range(1, 12):
+                    ws_hr.cell(i, c).fill = PatternFill("solid", fgColor=region_fill)
+
+            # ③ 問題修正補充說明（含測試報告超連結與更新物件清單）
+            ws_supp = wb.create_sheet("問題修正補充說明")
+            self._write_patch_header(ws_supp, ["Issue No", "測試報告", "FORM目錄", "DB物件", "多語更新"])
+            for i, iss in enumerate(issues, start=2):
+                meta = self._parse_scan_meta(iss)
+                ws_supp.cell(i, 1).value = iss.issue_no
+                report_path = self._find_test_report(base, version, iss.issue_no)
+                cell2 = ws_supp.cell(i, 2)
+                cell2.value = iss.issue_no
+                if report_path:
+                    cell2.hyperlink = "file:///" + report_path.replace("\\", "/")
+                    cell2.font = Font(color="0563C1", underline="single")
+                ws_supp.cell(i, 3).value = "、".join(meta.get("form_files") or [])
+                ws_supp.cell(i, 4).value = "、".join(meta.get("sql_files") or [])
+                ws_supp.cell(i, 5).value = "\n".join(meta.get("muti_files") or [])
 
             fname = f"PATCH_LIST_{month_str}_{version}.xlsx"
             out_path = base / version / fname
@@ -492,6 +495,7 @@ class MonthlyPatchEngine:
         month_str: str | None = None,
         reminders: list[str] | None = None,
         notify_body: str | None = None,
+        version: str = "11G",
     ) -> str:
         """使用 Jinja2 範本產客戶通知信 HTML。"""
         from pathlib import Path as _Path
@@ -520,7 +524,27 @@ class MonthlyPatchEngine:
 
         out = _Path(output_dir)
         out.mkdir(parents=True, exist_ok=True)
-        fname = f"【HCP11G維護客戶】{month_str}月份大PATCH更新通知.html"
+        fname = f"【HCP{version}維護客戶】{month_str}月份大PATCH更新通知.html"
         path = str(out / fname)
         _Path(path).write_text(html, encoding="utf-8")
         return path
+
+    def generate_notify_html_from_dir(
+        self,
+        patch_ids: dict[str, int],
+        patch_dir: str,
+        month_str: str,
+        reminders: list[str] | None = None,
+    ) -> list[str]:
+        """依 patch_ids 各版本產客戶通知信 HTML，存至 patch_dir 頂層。"""
+        paths: list[str] = []
+        for version, patch_id in patch_ids.items():
+            path = self.generate_notify_html(
+                patch_id=patch_id,
+                output_dir=patch_dir,
+                month_str=month_str,
+                reminders=reminders,
+                version=version,
+            )
+            paths.append(path)
+        return paths

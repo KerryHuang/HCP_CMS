@@ -318,7 +318,9 @@ class MonthlyPatchTab(QWidget):
         threading.Thread(target=lambda: self._generate_done.emit(work()), daemon=True).start()
 
     def _on_generate_html_clicked(self) -> None:
-        if self._patch_id is None or not self._conn:
+        if not self._conn:
+            return
+        if not self._scan_patch_ids and self._patch_id is None:
             return
         self._generate_html_btn.setEnabled(False)
         self._append_log("✉️ 產生客戶通知信（呼叫 Claude API）…")
@@ -326,21 +328,28 @@ class MonthlyPatchTab(QWidget):
         patch_id = self._patch_id
         month_str = self._get_month_str()
         output_dir = self._get_output_dir()
+        scan_patch_ids = self._scan_patch_ids
+        scan_dir = self._scan_dir
 
         def work() -> dict:
             from hcp_cms.core.monthly_patch_engine import MonthlyPatchEngine
-            from hcp_cms.services.claude_content import ClaudeContentService
-
             engine = MonthlyPatchEngine(conn)
             try:
-                issues = engine.get_issues(patch_id)
-                svc = ClaudeContentService()
-                notify_body = svc.generate_notify_body(
-                    [{"issue_no": i.issue_no, "description": i.description} for i in issues],
-                    month_str,
-                )
-                path = engine.generate_notify_html(patch_id, output_dir, month_str, notify_body=notify_body)
-                return {"paths": [path], "type": "html", "error": None}
+                if scan_patch_ids:
+                    paths = engine.generate_notify_html_from_dir(
+                        scan_patch_ids, scan_dir, month_str
+                    )
+                else:
+                    from hcp_cms.services.claude_content import ClaudeContentService
+                    issues = engine.get_issues(patch_id)
+                    svc = ClaudeContentService()
+                    notify_body = svc.generate_notify_body(
+                        [{"issue_no": i.issue_no, "description": i.description} for i in issues],
+                        month_str,
+                    )
+                    path = engine.generate_notify_html(patch_id, output_dir, month_str, notify_body=notify_body)
+                    paths = [path]
+                return {"paths": paths, "type": "html", "error": None}
             except Exception as e:
                 return {"paths": [], "type": "html", "error": str(e)}
 

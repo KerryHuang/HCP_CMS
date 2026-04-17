@@ -338,36 +338,34 @@ class TestGeneratePatchListFromDir:
         paths = eng.generate_patch_list_from_dir({"11G": pid}, str(tmp_path), "202412")
 
         wb = load_workbook(paths[0])
-        assert "清單整理" in wb.sheetnames
-        assert "11G新項目說明" in wb.sheetnames
-        assert "更新物件" in wb.sheetnames
+        assert "IT 發行通知" in wb.sheetnames
+        assert "HR 發行通知" in wb.sheetnames
+        assert "問題修正補充說明" in wb.sheetnames
 
-    def test_generate_11g_v_mark(self, conn, tmp_path):
+    def test_generate_it_sheet_form_files(self, conn, tmp_path):
         import json
         from openpyxl import load_workbook
         from hcp_cms.data.repositories import PatchRepository
         from hcp_cms.data.models import PatchRecord, PatchIssue
 
         repo = PatchRepository(conn)
-        pid_11g = repo.insert_patch(PatchRecord(type="monthly", month_str="202412", patch_dir=str(tmp_path)))
+        pid = repo.insert_patch(PatchRecord(type="monthly", month_str="202412", patch_dir=str(tmp_path)))
         repo.insert_issue(PatchIssue(
-            patch_id=pid_11g, issue_no="0016552", source="scan",
-            mantis_detail=json.dumps({"form_files": [], "sql_files": [], "muti_files": []})
+            patch_id=pid, issue_no="0016552", issue_type="BugFix",
+            region="共用", description="修正說明", source="scan",
+            mantis_detail=json.dumps({"form_files": ["HRWF304"], "sql_files": ["pk_test"], "muti_files": []})
         ))
-        pid_12c = repo.insert_patch(PatchRecord(type="monthly", month_str="202412", patch_dir=str(tmp_path)))
         (tmp_path / "11G").mkdir()
-        (tmp_path / "12C").mkdir()
 
         eng = MonthlyPatchEngine(conn)
-        paths = eng.generate_patch_list_from_dir(
-            {"11G": pid_11g, "12C": pid_12c}, str(tmp_path), "202412"
-        )
+        paths = eng.generate_patch_list_from_dir({"11G": pid}, str(tmp_path), "202412")
 
-        wb = load_workbook(next(p for p in paths if "11G" in p))
-        ws = wb["清單整理"]
-        # Row 2 = 第一筆 issue：col 3 = 11G，col 4 = 12C
-        assert ws.cell(2, 3).value == "V"   # 11G 有此 issue
-        assert ws.cell(2, 4).value in ("", None)  # 12C 無此 issue
+        wb = load_workbook(paths[0])
+        ws = wb["IT 發行通知"]
+        # Row 2, col 5 = FORM目錄
+        assert ws.cell(2, 5).value == "HRWF304"
+        # Row 2, col 6 = DB物件
+        assert ws.cell(2, 6).value == "pk_test"
 
     def test_generate_test_report_hyperlink(self, conn, tmp_path):
         import json
@@ -390,9 +388,40 @@ class TestGeneratePatchListFromDir:
         paths = eng.generate_patch_list_from_dir({"11G": pid}, str(tmp_path), "202412")
 
         wb = load_workbook(paths[0])
-        ws = wb["11G新項目說明"]
-        # Row 3 = 第一筆 issue（row 1 = 標題列，row 2 = header）
-        cell = ws.cell(3, 6)
+        ws = wb["問題修正補充說明"]
+        # Row 2 = 第一筆 issue，col 2 = 測試報告（含超連結）
+        cell = ws.cell(2, 2)
         assert cell.hyperlink is not None
         hyperlink_target = cell.hyperlink.target if hasattr(cell.hyperlink, "target") else str(cell.hyperlink)
         assert "0016552" in hyperlink_target
+
+
+class TestGenerateNotifyHtmlFromDir:
+    @pytest.fixture
+    def conn(self):
+        db = DatabaseManager(":memory:")
+        db.initialize()
+        yield db.connection
+        db.connection.close()
+
+    def test_generates_html_per_version(self, conn, tmp_path):
+        from pathlib import Path
+        from hcp_cms.data.repositories import PatchRepository
+        from hcp_cms.data.models import PatchRecord, PatchIssue
+
+        repo = PatchRepository(conn)
+        pid_11g = repo.insert_patch(PatchRecord(type="monthly", month_str="202412", patch_dir=str(tmp_path)))
+        repo.insert_issue(PatchIssue(patch_id=pid_11g, issue_no="0016552", source="scan"))
+        pid_12c = repo.insert_patch(PatchRecord(type="monthly", month_str="202412", patch_dir=str(tmp_path)))
+        repo.insert_issue(PatchIssue(patch_id=pid_12c, issue_no="0016552", source="scan"))
+
+        eng = MonthlyPatchEngine(conn)
+        paths = eng.generate_notify_html_from_dir(
+            {"11G": pid_11g, "12C": pid_12c}, str(tmp_path), "202412"
+        )
+
+        assert len(paths) == 2
+        assert any("11G" in p for p in paths)
+        assert any("12C" in p for p in paths)
+        for p in paths:
+            assert Path(p).exists()
