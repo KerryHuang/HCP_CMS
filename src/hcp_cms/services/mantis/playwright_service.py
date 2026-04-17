@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import threading
-from typing import Callable
+from collections.abc import Callable
 
 _LOGIN_TIMEOUT_SEC = 300  # 5 分鐘
 

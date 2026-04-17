@@ -216,8 +216,9 @@ class MonthlyPatchEngine:
                              reminders: list[str] | None = None,
                              notify_body: str | None = None) -> str:
         """使用 Jinja2 範本產客戶通知信 HTML。"""
-        from jinja2 import Environment, FileSystemLoader
         from pathlib import Path as _Path
+
+        from jinja2 import Environment, FileSystemLoader
 
         issues = self._repo.list_issues_by_patch(patch_id)
         if month_str is None:
