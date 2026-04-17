@@ -29,6 +29,7 @@ _CLR_PENDING = "color: #64748b;"
 
 class SinglePatchTab(QWidget):
     _scan_done     = Signal(object)
+    _mantis_done   = Signal(object)
     _generate_done = Signal(object)
 
     def __init__(self, conn: sqlite3.Connection | None = None) -> None:
@@ -109,6 +110,7 @@ class SinglePatchTab(QWidget):
         self._generate_btn.clicked.connect(self._on_generate_excel_clicked)
         self._regenerate_btn.clicked.connect(self._on_regenerate_clicked)
         self._scan_done.connect(self._on_scan_result)
+        self._mantis_done.connect(self._on_mantis_result)
         self._generate_done.connect(self._on_generate_result)
 
         self._set_step(0)
@@ -174,6 +176,13 @@ class SinglePatchTab(QWidget):
         self._start_btn.setEnabled(True)
         self._set_step(2)
 
+    def _on_mantis_result(self, result: dict) -> None:
+        self._mantis_confirm_btn.setEnabled(True)
+        self._append_log(f"✅ Mantis 同步完成：{result.get('fetched', 0)} 筆")
+        if self._patch_id is not None:
+            self._issue_table.load_issues(self._patch_id)
+        self._set_step(3)
+
     def _on_mantis_login_clicked(self) -> None:
         self._mantis_confirm_btn.setVisible(True)
         self._skip_mantis_btn.setVisible(True)
@@ -212,7 +221,7 @@ class SinglePatchTab(QWidget):
             return {"fetched": len(results)}
 
         threading.Thread(
-            target=lambda: self._scan_done.emit(fetch()), daemon=True
+            target=lambda: self._mantis_done.emit(fetch()), daemon=True
         ).start()
 
     def _on_skip_mantis_clicked(self) -> None:
