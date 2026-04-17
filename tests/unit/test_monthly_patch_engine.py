@@ -1,10 +1,11 @@
 """MonthlyPatchEngine 單元測試。"""
 import json
-import sqlite3
 from pathlib import Path
+
 import pytest
-from hcp_cms.data.database import DatabaseManager
+
 from hcp_cms.core.monthly_patch_engine import MonthlyPatchEngine
+from hcp_cms.data.database import DatabaseManager
 
 
 @pytest.fixture

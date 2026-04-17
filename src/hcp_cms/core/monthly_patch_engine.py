@@ -94,8 +94,8 @@ class MonthlyPatchEngine:
     def _convert_simplified_to_traditional(self, path: Path) -> bool:
         """若 .docx 含簡體字則就地轉換為繁體，回傳是否有轉換。"""
         try:
-            import opencc
             import docx as python_docx
+            import opencc
             cc = opencc.OpenCC("s2t")
             doc = python_docx.Document(str(path))
             changed = False
@@ -125,7 +125,7 @@ class MonthlyPatchEngine:
                             month_str: str | None = None) -> list[str]:
         """產 PATCH_LIST_{YYYYMM}_11G.xlsx 與 12C.xlsx，各含 3 頁籤。"""
         from openpyxl import Workbook
-        from openpyxl.styles import Alignment, Font, PatternFill
+        from openpyxl.styles import PatternFill
 
         issues = self._repo.list_issues_by_patch(patch_id)
         if month_str is None:
