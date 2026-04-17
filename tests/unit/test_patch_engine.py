@@ -1,9 +1,10 @@
 """SinglePatchEngine 單元測試。"""
-import sqlite3
 from pathlib import Path
+
 import pytest
-from hcp_cms.data.database import DatabaseManager
+
 from hcp_cms.core.patch_engine import SinglePatchEngine
+from hcp_cms.data.database import DatabaseManager
 
 
 @pytest.fixture
@@ -59,7 +60,7 @@ class TestScanPatchDir:
 
 class TestReadReleaseDoc:
     def test_parse_docx_returns_issues(self, conn, tmp_path):
-        import docx
+        docx = pytest.importorskip("docx", reason="python-docx 未安裝，跳過")
         doc = docx.Document()
         doc.add_paragraph("Bug Fix")
         doc.add_paragraph("0015659  薪資計算錯誤修正")
@@ -74,6 +75,8 @@ class TestReadReleaseDoc:
         assert len(issues) == 3
         assert issues[0]["issue_no"] == "0015659"
         assert issues[0]["issue_type"] == "BugFix"
+        assert issues[0]["description"] == "薪資計算錯誤修正"
+        assert issues[0]["region"] == "共用"
         assert issues[2]["issue_type"] == "Enhancement"
 
     def test_missing_file_returns_empty(self, conn, tmp_path):
