@@ -22,12 +22,13 @@ from PySide6.QtWidgets import (
 
 from hcp_cms.core.kms_engine import KMSEngine
 from hcp_cms.ui.case_view import CaseView
+from hcp_cms.ui.customer_view import CustomerView
 from hcp_cms.ui.dashboard_view import DashboardView
 from hcp_cms.ui.email_view import EmailView
 from hcp_cms.ui.kms_view import KMSView
 from hcp_cms.ui.mantis_view import MantisView
+from hcp_cms.ui.patch_view import PatchView
 from hcp_cms.ui.report_view import ReportView
-from hcp_cms.ui.customer_view import CustomerView
 from hcp_cms.ui.rules_view import RulesView
 from hcp_cms.ui.settings_view import SettingsView
 from hcp_cms.ui.theme import ColorPalette, ThemeManager
@@ -92,6 +93,7 @@ class MainWindow(QMainWindow):
             ("📧 信件處理", "email", "⇧E"),
             ("🔧 Mantis 同步", "mantis", "⇧M"),
             ("📊 報表中心", "reports", "⇧R"),
+            ("📦 Patch 整理", "patch", "⇧P"),
             ("📏 規則設定", "rules", "⇧L"),
             ("⚙️ 系統設定", "settings", "⇧S"),
         ]
@@ -123,6 +125,7 @@ class MainWindow(QMainWindow):
             "email": EmailView(self._conn, kms=kms, theme_mgr=self._theme_mgr),
             "mantis": MantisView(self._conn, theme_mgr=self._theme_mgr),
             "reports": ReportView(self._conn, theme_mgr=self._theme_mgr),
+            "patch": PatchView(self._conn, theme_mgr=self._theme_mgr),
             "rules": RulesView(self._conn, theme_mgr=self._theme_mgr),
             "settings": SettingsView(self._conn, theme_mgr=self._theme_mgr),
         }
@@ -200,13 +203,14 @@ class MainWindow(QMainWindow):
         shortcuts = [
             ("Ctrl+Shift+H", 0),  # 儀表板
             ("Ctrl+Shift+C", 1),  # 案件管理
-            ("Ctrl+Shift+U", 2),  # 客戶管理（新增）
+            ("Ctrl+Shift+U", 2),  # 客戶管理
             ("Ctrl+Shift+K", 3),  # KMS 知識庫
             ("Ctrl+Shift+E", 4),  # 信件處理
             ("Ctrl+Shift+M", 5),  # Mantis 同步
             ("Ctrl+Shift+R", 6),  # 報表中心
-            ("Ctrl+Shift+L", 7),  # 規則設定
-            ("Ctrl+Shift+S", 8),  # 系統設定
+            ("Ctrl+Shift+P", 7),  # Patch 整理
+            ("Ctrl+Shift+L", 8),  # 規則設定
+            ("Ctrl+Shift+S", 9),  # 系統設定
         ]
         for key, index in shortcuts:
             action = QAction(key, self)
