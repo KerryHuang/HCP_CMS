@@ -289,7 +289,7 @@ class MonthlyPatchTab(QWidget):
         self._set_step(3)
 
     def _on_generate_excel_clicked(self) -> None:
-        if self._scan_patch_ids is None and self._patch_id is None:
+        if not self._scan_patch_ids and self._patch_id is None:
             return
         if not self._conn:
             return

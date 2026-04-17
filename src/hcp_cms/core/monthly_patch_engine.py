@@ -397,11 +397,11 @@ class MonthlyPatchEngine:
             for ver, pid in patch_ids.items()
         }
 
-        # 建立聯集 issue_no 清單（以出現順序去重）
+        # 建立聯集 issue_no 清單（11G 優先、以出現順序去重）
         union_nos: list[str] = []
         seen: set[str] = set()
-        for ver_issues in all_issues.values():
-            for iss in ver_issues:
+        for ver in ("11G", "12C"):
+            for iss in all_issues.get(ver, []):
                 if iss.issue_no not in seen:
                     union_nos.append(iss.issue_no)
                     seen.add(iss.issue_no)
@@ -444,7 +444,9 @@ class MonthlyPatchEngine:
                 cell6 = ws2.cell(r, 6)
                 cell6.value = iss.issue_no
                 if report_path:
-                    cell6.hyperlink = "file:///" + report_path.replace("\\", "/")
+                    import urllib.parse
+                    encoded = urllib.parse.quote(report_path.replace("\\", "/"), safe=":/")
+                    cell6.hyperlink = "file:///" + encoded
                     cell6.font = Font(color="0563C1", underline="single")
 
             # ③ 更新物件
@@ -456,28 +458,22 @@ class MonthlyPatchEngine:
                 if iss.mantis_detail:
                     try:
                         meta = json.loads(iss.mantis_detail)
-                        ws3.cell(r, 2).value = "、".join(meta.get("sql_files", []))
-                        ws3.cell(r, 3).value = "、".join(meta.get("form_files", []))
-                        ws3.cell(r, 4).value = "\n".join(meta.get("muti_files", []))
+                        ws3.cell(r, 2).value = "、".join(meta.get("sql_files") or [])
+                        ws3.cell(r, 3).value = "、".join(meta.get("form_files") or [])
+                        ws3.cell(r, 4).value = "\n".join(meta.get("muti_files") or [])
                     except (json.JSONDecodeError, AttributeError):
                         pass
 
             fname = f"PATCH_LIST_{month_str}_{version}.xlsx"
             out_path = base / version / fname
+            out_path.parent.mkdir(parents=True, exist_ok=True)
             wb.save(str(out_path))
             paths.append(str(out_path))
 
         return paths
 
     def _write_patch_header(self, ws: object, headers: list[str]) -> None:
-        from openpyxl.styles import Alignment, Font, PatternFill
-
-        for c, h in enumerate(headers, start=1):
-            cell = ws.cell(1, c)
-            cell.value = h
-            cell.font = Font(name="微軟正黑體", bold=True, size=11, color="FFFFFF")
-            cell.fill = PatternFill("solid", fgColor=self._HDR_DARK)
-            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        self._write_patch_header_row(ws, headers, row=1)
 
     # ── 客戶通知 HTML ────────────────────────────────────────────────────────
 
