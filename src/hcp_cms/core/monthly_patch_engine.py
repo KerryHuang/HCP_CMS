@@ -25,6 +25,21 @@ _TXT_FIELDS = [
     "test_direction",
 ]
 
+_SEASON_COLORS = {
+    1: ("1F4E79", "2E75B6", "🌸"),
+    2: ("1F4E79", "2E75B6", "🌸"),
+    3: ("1F4E79", "2E75B6", "🌸"),
+    4: ("1B5E20", "2E7D32", "🌿"),
+    5: ("1B5E20", "2E7D32", "🌿"),
+    6: ("1B5E20", "2E7D32", "🌿"),
+    7: ("E65100", "F57C00", "🌻"),
+    8: ("E65100", "F57C00", "🌻"),
+    9: ("E65100", "F57C00", "🌻"),
+    10: ("263238", "37474F", "❄️"),
+    11: ("263238", "37474F", "❄️"),
+    12: ("263238", "37474F", "❄️"),
+}
+
 
 class MonthlyPatchEngine:
     def __init__(self, conn: sqlite3.Connection) -> None:
@@ -670,11 +685,13 @@ class MonthlyPatchEngine:
         patch_id: int,
         output_dir: str,
         month_str: str | None = None,
-        reminders: list[str] | None = None,
         notify_body: str | None = None,
         version: str = "11G",
+        banner_image_bytes: bytes | None = None,
+        schedule_reminders: list[str] | None = None,
     ) -> str:
         """使用 Jinja2 範本產客戶通知信 HTML。"""
+        import base64
         from pathlib import Path as _Path
 
         from jinja2 import Environment, FileSystemLoader
@@ -685,7 +702,14 @@ class MonthlyPatchEngine:
             month_str = patch.month_str if patch and patch.month_str else "000000"
 
         year = month_str[:4]
+        month_num = int(month_str[4:]) if month_str[4:].isdigit() else 1
         month = month_str[4:]
+        color_dark, color_mid, season_icon = _SEASON_COLORS.get(month_num, ("1F4E79", "2E75B6", "🌸"))
+
+        banner_b64 = None
+        if banner_image_bytes:
+            mime = "image/png" if banner_image_bytes[:4] == b"\x89PNG" else "image/jpeg"
+            banner_b64 = f"data:{mime};base64,{base64.b64encode(banner_image_bytes).decode()}"
 
         templates_dir = _Path(__file__).parent.parent.parent.parent / "templates"
         env = Environment(loader=FileSystemLoader(str(templates_dir)), autoescape=True)
@@ -694,9 +718,14 @@ class MonthlyPatchEngine:
         html = tmpl.render(
             year=year,
             month=month,
+            version=version,
             issues=issues,
             notify_body=notify_body or "",
-            reminders=reminders or [],
+            schedule_reminders=schedule_reminders or [],
+            color_dark=color_dark,
+            color_mid=color_mid,
+            season_icon=season_icon,
+            banner_b64=banner_b64,
         )
 
         out = _Path(output_dir)
@@ -711,7 +740,8 @@ class MonthlyPatchEngine:
         patch_ids: dict[str, int],
         patch_dir: str,
         month_str: str,
-        reminders: list[str] | None = None,
+        schedule_reminders: list[str] | None = None,
+        banner_image_bytes: bytes | None = None,
     ) -> list[str]:
         """依 patch_ids 各版本產客戶通知信 HTML，存至 patch_dir 頂層。"""
         paths: list[str] = []
@@ -720,8 +750,9 @@ class MonthlyPatchEngine:
                 patch_id=patch_id,
                 output_dir=patch_dir,
                 month_str=month_str,
-                reminders=reminders,
                 version=version,
+                schedule_reminders=schedule_reminders,
+                banner_image_bytes=banner_image_bytes,
             )
             paths.append(path)
         return paths

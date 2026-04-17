@@ -165,6 +165,48 @@ class TestGenerateNotifyHtml:
         assert "202604" in Path(path).name
         assert "大PATCH更新通知" in Path(path).name
 
+    def test_html_has_seasonal_header_spring(self, engine_with_patch, tmp_path):
+        eng, pid = engine_with_patch
+        path = eng.generate_notify_html(pid, output_dir=str(tmp_path), month_str="202603")
+        content = Path(path).read_text(encoding="utf-8")
+        assert "1F4E79" in content or "2E75B6" in content  # 春季深藍
+
+    def test_html_seasonal_summer_color(self, engine_with_patch, tmp_path):
+        eng, pid = engine_with_patch
+        path = eng.generate_notify_html(pid, output_dir=str(tmp_path), month_str="202607")
+        content = Path(path).read_text(encoding="utf-8")
+        assert "E65100" in content or "F57C00" in content  # 夏季橙色
+
+    def test_html_schedule_reminders_section(self, engine_with_patch, tmp_path):
+        eng, pid = engine_with_patch
+        path = eng.generate_notify_html(
+            pid, output_dir=str(tmp_path), month_str="202604",
+            schedule_reminders=["清明連假 4/4–4/6", "補班日 4/7"]
+        )
+        content = Path(path).read_text(encoding="utf-8")
+        assert "清明連假 4/4–4/6" in content
+        assert "補班日 4/7" in content
+
+    def test_html_no_reminders_section_when_empty(self, engine_with_patch, tmp_path):
+        eng, pid = engine_with_patch
+        path = eng.generate_notify_html(
+            pid, output_dir=str(tmp_path), month_str="202604",
+            schedule_reminders=[]
+        )
+        content = Path(path).read_text(encoding="utf-8")
+        assert "排班" not in content
+
+    def test_html_with_banner_image(self, engine_with_patch, tmp_path):
+        eng, pid = engine_with_patch
+        dummy_png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 20
+        path = eng.generate_notify_html(
+            pid, output_dir=str(tmp_path), month_str="202604",
+            banner_image_bytes=dummy_png
+        )
+        content = Path(path).read_text(encoding="utf-8")
+        assert "data:image/" in content
+        assert "base64," in content
+
 
 class TestScanMonthlyDir:
     def test_engine_stores_conn(self, conn):

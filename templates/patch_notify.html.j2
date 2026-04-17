@@ -2,73 +2,114 @@
 <html lang="zh-TW">
 <head>
 <meta charset="UTF-8">
-<title>{{ year }}年{{ month }}月 HCP 大PATCH 更新通知</title>
+<title>【HCP{{ version }}維護客戶】{{ year }}年{{ month }}月份大PATCH更新通知</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; font-family: "微軟正黑體", Arial, sans-serif; }
 body { background: #f0f4f8; color: #222; }
-.header { background: linear-gradient(135deg, #1F3864, #2E75B6); color: #fff; padding: 20px 32px; }
-.header h1 { font-size: 18px; }
-.header p  { font-size: 12px; color: #b8cde8; margin-top: 4px; }
-.container { max-width: 900px; margin: 24px auto; padding: 0 20px 40px; }
-.section-title { font-size: 13px; font-weight: bold; color: #1F3864;
-  border-left: 4px solid #2E75B6; padding-left: 10px; margin: 24px 0 12px; }
+.header-wrap { position: relative; background: #{{ color_dark }}; color: #fff; overflow: hidden; }
+.header-bg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0.35; }
+.header-content { position: relative; z-index: 1; padding: 20px 32px; }
+.header-badge-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.badge { background: rgba(255,255,255,0.18); border: 1px solid rgba(255,255,255,0.4); border-radius: 4px; padding: 3px 10px; font-size: 11px; letter-spacing: 1px; }
+.header-title { font-size: 22px; font-weight: bold; line-height: 1.3; }
+.header-sub { font-size: 12px; color: rgba(255,255,255,0.8); margin-top: 4px; }
+.checklist { margin-top: 14px; background: rgba(0,0,0,0.25); border-radius: 6px; padding: 12px 16px; }
+.checklist-title { font-size: 13px; font-weight: bold; color: #FFD54F; margin-bottom: 8px; }
+.checklist-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 16px; }
+.checklist-item { font-size: 11px; color: rgba(255,255,255,0.92); }
+.checklist-item::before { content: "✓ "; color: #A5D6A7; }
+.checklist-warn { grid-column: 1 / -1; font-size: 11px; color: #FFD54F; }
+.checklist-warn::before { content: "⚠ "; }
+.main { max-width: 960px; margin: 24px auto; padding: 0 20px 40px; display: flex; gap: 20px; }
+.main-left { flex: 2; min-width: 0; }
+.main-right { flex: 1; min-width: 180px; }
+.section-title { font-size: 13px; font-weight: bold; color: #{{ color_dark }};
+  border-left: 4px solid #{{ color_mid }}; padding-left: 10px; margin: 0 0 12px; }
 table { width: 100%; border-collapse: collapse; font-size: 12px; }
-th { background: #1F3864; color: #fff; padding: 8px 10px; text-align: left; }
+th { background: #{{ color_dark }}; color: #fff; padding: 8px 10px; text-align: left; }
 td { padding: 7px 10px; border: 1px solid #ddd; vertical-align: top; }
 tr:nth-child(even) td { background: #f9fafb; }
-.bug    { background: #FCE4D6; }
-.enh    { background: #E2EFDA; }
-.tw     { background: #D6EAF8; }
-.cn     { background: #FFF3CD; }
+.bug { background: #FCE4D6; }
+.enh { background: #E2EFDA; }
+.tw  { background: #D6EAF8; }
+.cn  { background: #FFF3CD; }
 .shared { background: #E8F5E9; }
-.reminder { background: #FFF9E6; border: 1px solid #F9A825; border-radius: 6px;
-  padding: 14px 18px; margin-top: 16px; font-size: 12px; line-height: 1.8; }
-.reminder strong { color: #E65100; }
-.footer { text-align: center; color: #aaa; font-size: 11px; margin-top: 32px; }
+.reminder-card { background: #FFFDE7; border: 1px solid #FDD835; border-radius: 6px; padding: 14px 16px; }
+.reminder-card .section-title { margin-bottom: 10px; color: #E65100; border-color: #FF8F00; }
+.reminder-item { font-size: 12px; color: #5D4037; line-height: 1.9; }
+.reminder-item::before { content: "• "; color: #FF8F00; }
+.footer { text-align: center; color: #aaa; font-size: 11px; margin-top: 28px; }
+@media (max-width: 640px) { .main { flex-direction: column; } .checklist-grid { grid-template-columns: 1fr; } }
 </style>
 </head>
 <body>
-<div class="header">
-  <h1>📦 {{ year }}年{{ month }}月 HCP 大PATCH 更新通知</h1>
-  <p>HCP 11G 維護客戶 · 請於更新後依序完成驗證</p>
+
+<div class="header-wrap">
+  {% if banner_b64 %}
+  <img class="header-bg" src="{{ banner_b64 }}" alt="">
+  {% endif %}
+  <div class="header-content">
+    <div class="header-badge-row">
+      <span class="badge">HCP MAINTENANCE NOTIFICATION</span>
+      <div style="display:flex;gap:6px">
+        <span class="badge">{{ year }}/{{ month }} PATCH</span>
+        <span class="badge" style="background:#{{ color_mid }};border-color:#{{ color_mid }}">HCP {{ version }}</span>
+      </div>
+    </div>
+    <div class="header-title">{{ season_icon }} 【HCP{{ version }}維護客戶】<br>{{ year }}年{{ month }}月份大 PATCH 更新通知</div>
+    <div class="header-sub">資通電腦 HCP 人力資源管理系統 ／ 系統維護更新公告</div>
+    <div class="checklist">
+      <div class="checklist-title">△ 大 PATCH 更新前重要提醒</div>
+      <div class="checklist-grid">
+        <div class="checklist-item">更新前請務必先完整備份系統資料與資料庫</div>
+        <div class="checklist-item">套用前確認目前系統版本，依指定 PATCH 順序更新</div>
+        <div class="checklist-item">請確認測試環境已驗證完畢，再部署至正式環境</div>
+        <div class="checklist-item">建議於非上班時段（下班後）執行，避免影響使用者</div>
+        <div class="checklist-warn">避免電腦主機中毒導致系統無法正常運作，請務必確認防毒軟體已更新至最新病毒碼</div>
+      </div>
+    </div>
+  </div>
 </div>
-<div class="container">
 
-  {% if notify_body %}
-  <div class="section-title">本月更新說明</div>
-  <p style="font-size:13px;line-height:1.8;color:#444;">{{ notify_body }}</p>
-  {% endif %}
+<div class="main">
+  <div class="main-left">
+    {% if notify_body %}
+    <div class="section-title" style="margin-top:0">本月更新說明</div>
+    <p style="font-size:13px;line-height:1.8;color:#444;margin-bottom:20px">{{ notify_body }}</p>
+    {% endif %}
+    <div class="section-title" {% if not notify_body %}style="margin-top:0"{% endif %}>本月修正項目</div>
+    <table>
+      <tr>
+        <th>Issue No</th><th>計區域</th><th>類型</th>
+        <th>程式代號</th><th>功能說明</th><th>影響說明</th>
+      </tr>
+      {% for iss in issues %}
+      <tr class="{{ 'bug' if iss.issue_type == 'BugFix' else 'enh' }}">
+        <td>{{ iss.issue_no }}</td>
+        <td class="{{ 'tw' if iss.region == 'TW' else ('cn' if iss.region == 'CN' else 'shared') }}">{{ iss.region or '共用' }}</td>
+        <td>{{ '修正' if iss.issue_type == 'BugFix' else '改善' }}</td>
+        <td>{{ iss.program_code or '' }}</td>
+        <td>{{ iss.description or '' }}</td>
+        <td>{{ iss.impact or '' }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
 
-  <div class="section-title">本月修正項目</div>
-  <table>
-    <tr>
-      <th>Issue No</th><th>計區域</th><th>類型</th>
-      <th>程式代號</th><th>功能說明</th><th>影響說明</th>
-    </tr>
-    {% for iss in issues %}
-    <tr class="{{ 'bug' if iss.issue_type == 'BugFix' else 'enh' }}">
-      <td>{{ iss.issue_no }}</td>
-      <td class="{{ 'tw' if iss.region == 'TW' else ('cn' if iss.region == 'CN' else 'shared') }}">{{ iss.region }}</td>
-      <td>{{ iss.issue_type }}</td>
-      <td>{{ iss.program_code or '' }}</td>
-      <td>{{ iss.description or '' }}</td>
-      <td>{{ iss.impact or '' }}</td>
-    </tr>
-    {% endfor %}
-  </table>
-
-  {% if reminders %}
-  <div class="section-title">本月排班考勤提醒</div>
-  <div class="reminder">
-    {% for r in reminders %}
-    <p><strong>{{ r }}</strong></p>
-    {% endfor %}
+  {% if schedule_reminders %}
+  <div class="main-right">
+    <div class="reminder-card">
+      <div class="section-title">📅 本月排班提醒</div>
+      {% for item in schedule_reminders %}
+      <div class="reminder-item">{{ item }}</div>
+      {% endfor %}
+    </div>
   </div>
   {% endif %}
+</div>
 
-  <div class="footer">
-    HCP 客服團隊 · {{ year }}年{{ month }}月 · 如有疑問請聯絡客服
-  </div>
+<div class="footer">
+  HCP 客服團隊 · {{ year }}年{{ month }}月 · 如有疑問請聯絡客服
 </div>
 </body>
 </html>
