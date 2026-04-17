@@ -138,6 +138,15 @@ class MonthlyPatchEngine:
         m = self._ARCHIVE_RE.search(filename)
         return m.group(1) if m else None
 
+    def _find_extract_root(self, extract_dir: Path) -> Path:
+        """若解壓資料夾只有一個子資料夾（封存內頂層目錄），回傳該子資料夾；否則回傳 extract_dir。"""
+        if not extract_dir.exists():
+            return extract_dir
+        subdirs = [d for d in extract_dir.iterdir() if d.is_dir()]
+        if len(subdirs) == 1 and not any(f for f in extract_dir.iterdir() if f.is_file()):
+            return subdirs[0]
+        return extract_dir
+
     def _read_release_note(self, extract_dir: Path) -> list[dict[str, str]]:
         """在解壓資料夾尋找 ReleaseNote，委託 SinglePatchEngine 解析。"""
         if not extract_dir.exists():
@@ -184,10 +193,11 @@ class MonthlyPatchEngine:
                     logging.warning("解壓縮失敗 [%s]: %s", archive.name, e)
                     continue
 
-                raw_issues = self._read_release_note(extract_dir)
-                form_files = self._list_files(extract_dir / "form", [".fmb", ".rdf", ".fmx"])
-                sql_files = self._list_files(extract_dir / "sql", [".sql"])
-                muti_files = self._list_files(extract_dir / "muti", [".sql"], keep_ext=True)
+                root = self._find_extract_root(extract_dir)
+                raw_issues = self._read_release_note(root)
+                form_files = self._list_files(root / "form", [".fmb", ".rdf", ".fmx"])
+                sql_files = self._list_files(root / "sql", [".sql"])
+                muti_files = self._list_files(root / "muti", [".sql"], keep_ext=True)
                 scan_meta = json.dumps({
                     "form_files": form_files,
                     "sql_files": sql_files,
@@ -444,9 +454,7 @@ class MonthlyPatchEngine:
                 cell6 = ws2.cell(r, 6)
                 cell6.value = iss.issue_no
                 if report_path:
-                    import urllib.parse
-                    encoded = urllib.parse.quote(report_path.replace("\\", "/"), safe=":/")
-                    cell6.hyperlink = "file:///" + encoded
+                    cell6.hyperlink = "file:///" + report_path.replace("\\", "/")
                     cell6.font = Font(color="0563C1", underline="single")
 
             # ③ 更新物件
