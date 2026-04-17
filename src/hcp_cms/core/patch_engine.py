@@ -129,3 +129,157 @@ class SinglePatchEngine:
                     "region": "共用",
                 })
         return issues
+
+    # ── Excel 報表 ───────────────────────────────────────────────────────────
+
+    _CLR_CS    = "D5F5E3"   # 客服驗證欄
+    _CLR_CUST  = "D6EAF8"   # 客戶測試欄
+    _CLR_PATCH = "FEF9E7"   # 可納入大Patch
+    _CLR_NOTE  = "F5EEF8"   # 備註
+    _CLR_ENH   = "E2EFDA"   # Enhancement 列
+    _CLR_BUG   = "FCE4D6"   # BugFix 列
+    _CLR_WARN  = "FFF3CD"   # 待確認
+
+    def generate_excel_reports(self, patch_id: int, output_dir: str) -> list[str]:
+        """產生 3 份 Excel：Issue清單整理、發行通知、IT_HR清單。"""
+        from openpyxl import Workbook
+        from openpyxl.styles import PatternFill
+
+        issues = self._repo.list_issues_by_patch(patch_id)
+        out = Path(output_dir)
+        out.mkdir(parents=True, exist_ok=True)
+        paths = []
+
+        # ① Issue清單整理（內部追蹤）
+        wb1 = Workbook()
+        ws1 = wb1.active
+        ws1.title = "Issue清單整理"
+        hdrs1 = ["Issue No", "類型", "說明", "FORM", "SQL", "MUTI", "腳本",
+                 "客服驗證", "客服測試結果", "客服測試日期",
+                 "提供客戶驗證", "客戶測試結果", "客戶測試日期",
+                 "可納入大Patch", "備註"]
+        self._write_header_row(ws1, hdrs1)
+        for i, iss in enumerate(issues, start=2):
+            ws1.cell(i, 1).value = iss.issue_no
+            ws1.cell(i, 2).value = iss.issue_type
+            ws1.cell(i, 3).value = iss.description
+            row_fill = self._CLR_ENH if iss.issue_type == "Enhancement" else self._CLR_BUG
+            for c in range(1, 4):
+                ws1.cell(i, c).fill = PatternFill("solid", fgColor=row_fill)
+            for c in range(8, 11):
+                ws1.cell(i, c).fill = PatternFill("solid", fgColor=self._CLR_CS)
+            for c in range(11, 14):
+                ws1.cell(i, c).fill = PatternFill("solid", fgColor=self._CLR_CUST)
+            ws1.cell(i, 14).fill = PatternFill("solid", fgColor=self._CLR_PATCH)
+            ws1.cell(i, 15).fill = PatternFill("solid", fgColor=self._CLR_NOTE)
+        p1 = str(out / "Issue清單整理.xlsx")
+        wb1.save(p1)
+        paths.append(p1)
+
+        # ② 發行通知（對客戶，不含追蹤欄）
+        wb2 = Workbook()
+        ws2 = wb2.active
+        ws2.title = "發行通知"
+        hdrs2 = ["Issue No", "類型", "說明", "FORM目錄", "DB物件", "多語更新", "安裝步驟", "備註"]
+        self._write_header_row(ws2, hdrs2)
+        for i, iss in enumerate(issues, start=2):
+            ws2.cell(i, 1).value = iss.issue_no
+            ws2.cell(i, 2).value = iss.issue_type
+            ws2.cell(i, 3).value = iss.description
+        p2 = str(out / "發行通知.xlsx")
+        wb2.save(p2)
+        paths.append(p2)
+
+        # ③ IT/HR 清單（雙頁籤）
+        wb3 = Workbook()
+        ws_it = wb3.active
+        ws_it.title = "IT 清單"
+        hdrs_it = ["Issue No", "類型", "程式代號", "說明", "FORM目錄", "DB物件", "多語更新", "備註"]
+        self._write_header_row(ws_it, hdrs_it)
+        ws_hr = wb3.create_sheet("HR 清單")
+        hdrs_hr = ["Issue No", "計區域", "類型", "程式代號", "程式名稱",
+                   "功能說明", "影響說明", "相關程式(FORM)",
+                   "上線所需動作", "測試方向及注意事項", "備註"]
+        self._write_header_row(ws_hr, hdrs_hr)
+        for i, iss in enumerate(issues, start=2):
+            ws_it.cell(i, 1).value = iss.issue_no
+            ws_it.cell(i, 2).value = iss.issue_type
+            ws_it.cell(i, 3).value = iss.program_code
+            ws_it.cell(i, 4).value = iss.description
+            ws_hr.cell(i, 1).value = iss.issue_no
+            ws_hr.cell(i, 2).value = iss.region
+            ws_hr.cell(i, 3).value = iss.issue_type
+            ws_hr.cell(i, 4).value = iss.program_code
+            ws_hr.cell(i, 5).value = iss.program_name
+            ws_hr.cell(i, 6).value = iss.description
+            ws_hr.cell(i, 7).value = iss.impact
+            ws_hr.cell(i, 9).value = "請與資訊單位確認是否已完成更新\n確認更新完成再進行測試"
+            ws_hr.cell(i, 10).value = iss.test_direction
+        p3 = str(out / "Issue清單_IT_HR.xlsx")
+        wb3.save(p3)
+        paths.append(p3)
+
+        return paths
+
+    def _write_header_row(self, ws: object, headers: list[str]) -> None:
+        from openpyxl.styles import Alignment, Font, PatternFill
+        for c, h in enumerate(headers, start=1):
+            cell = ws.cell(1, c)
+            cell.value = h
+            cell.font = Font(name="微軟正黑體", bold=True, size=11, color="FFFFFF")
+            cell.fill = PatternFill("solid", fgColor="1F3864")
+            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+    # ── 測試腳本 ─────────────────────────────────────────────────────────────
+
+    def generate_test_scripts(self, patch_id: int, output_dir: str) -> list[str]:
+        """產測試腳本_客服版.docx、客戶版.docx、測試追蹤表.xlsx。"""
+        import docx as python_docx
+        from openpyxl import Workbook
+
+        issues = self._repo.list_issues_by_patch(patch_id)
+        out = Path(output_dir)
+        out.mkdir(parents=True, exist_ok=True)
+        paths = []
+
+        # 客服版 Word
+        doc_cs = python_docx.Document()
+        doc_cs.add_heading("測試腳本（客服版）", 0)
+        for iss in issues:
+            doc_cs.add_heading(f"Issue {iss.issue_no}", level=1)
+            doc_cs.add_paragraph(f"說明：{iss.description or ''}")
+            doc_cs.add_paragraph(f"測試步驟：{iss.test_direction or '請填寫'}")
+            doc_cs.add_paragraph("測試人員：＿＿＿＿　審核人員：＿＿＿＿")
+        p_cs = str(out / "測試腳本_客服版.docx")
+        doc_cs.save(p_cs)
+        paths.append(p_cs)
+
+        # 客戶版 Word
+        doc_cu = python_docx.Document()
+        doc_cu.add_heading("測試腳本（客戶版）", 0)
+        for iss in issues:
+            doc_cu.add_heading(f"Issue {iss.issue_no}", level=1)
+            doc_cu.add_paragraph(f"說明：{iss.description or ''}")
+            doc_cu.add_paragraph("□ 正常　□ 異常")
+            doc_cu.add_paragraph("客戶回覆日期：＿＿＿＿　簽名：＿＿＿＿")
+        p_cu = str(out / "測試腳本_客戶版.docx")
+        doc_cu.save(p_cu)
+        paths.append(p_cu)
+
+        # 追蹤表 xlsx
+        wb = Workbook()
+        ws_cs = wb.active
+        ws_cs.title = "客服驗證"
+        self._write_header_row(ws_cs, ["Issue No", "說明", "測試結果(PASS/FAIL)", "測試日期", "備註"])
+        ws_cu = wb.create_sheet("客戶驗證")
+        self._write_header_row(ws_cu, ["Issue No", "說明", "測試結果(正常/異常)", "回覆日期", "備註"])
+        for i, iss in enumerate(issues, start=2):
+            ws_cs.cell(i, 1).value = iss.issue_no
+            ws_cs.cell(i, 2).value = iss.description
+            ws_cu.cell(i, 1).value = iss.issue_no
+            ws_cu.cell(i, 2).value = iss.description
+        p_tr = str(out / "測試追蹤表.xlsx")
+        wb.save(p_tr)
+        paths.append(p_tr)
+
+        return paths

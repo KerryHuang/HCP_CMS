@@ -83,3 +83,47 @@ class TestReadReleaseDoc:
         eng = SinglePatchEngine(conn)
         result = eng.read_release_doc(str(tmp_path / "nonexist.docx"))
         assert result == []
+
+
+class TestGenerateExcelReports:
+    @pytest.fixture
+    def engine_with_patch(self, conn):
+        from hcp_cms.data.models import PatchIssue, PatchRecord
+        from hcp_cms.data.repositories import PatchRepository
+        repo = PatchRepository(conn)
+        pid = repo.insert_patch(PatchRecord(type="single", patch_dir="C:/test"))
+        repo.insert_issue(PatchIssue(patch_id=pid, issue_no="0015659",
+                                     issue_type="BugFix", region="TW",
+                                     description="薪資計算錯誤", sort_order=1))
+        repo.insert_issue(PatchIssue(patch_id=pid, issue_no="0015660",
+                                     issue_type="Enhancement", region="共用",
+                                     description="新增匯出功能", sort_order=2))
+        return SinglePatchEngine(conn), pid
+
+    def test_generates_three_files(self, engine_with_patch, tmp_path):
+        eng, pid = engine_with_patch
+        paths = eng.generate_excel_reports(pid, output_dir=str(tmp_path))
+        assert len(paths) == 3
+        for p in paths:
+            assert Path(p).exists()
+
+    def test_issue_list_has_tracking_columns(self, engine_with_patch, tmp_path):
+        import openpyxl
+        eng, pid = engine_with_patch
+        paths = eng.generate_excel_reports(pid, output_dir=str(tmp_path))
+        issue_list = next(p for p in paths if "Issue清單整理" in p)
+        wb = openpyxl.load_workbook(issue_list)
+        ws = wb.active
+        headers = [ws.cell(1, c).value for c in range(1, ws.max_column + 1)]
+        assert "客服驗證" in headers
+        assert "客戶測試結果" in headers
+
+    def test_release_notice_no_tracking_columns(self, engine_with_patch, tmp_path):
+        import openpyxl
+        eng, pid = engine_with_patch
+        paths = eng.generate_excel_reports(pid, output_dir=str(tmp_path))
+        notice = next(p for p in paths if "發行通知" in p)
+        wb = openpyxl.load_workbook(notice)
+        ws = wb.active
+        headers = [ws.cell(1, c).value for c in range(1, ws.max_column + 1)]
+        assert "客服驗證" not in headers
