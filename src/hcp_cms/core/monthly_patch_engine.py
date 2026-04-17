@@ -208,3 +208,40 @@ class MonthlyPatchEngine:
             cell.font = Font(name="微軟正黑體", bold=True, size=11, color="FFFFFF")
             cell.fill = PatternFill("solid", fgColor=self._HDR_DARK)
             cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+    # ── 客戶通知 HTML ────────────────────────────────────────────────────────
+
+    def generate_notify_html(self, patch_id: int, output_dir: str,
+                             month_str: str | None = None,
+                             reminders: list[str] | None = None,
+                             notify_body: str | None = None) -> str:
+        """使用 Jinja2 範本產客戶通知信 HTML。"""
+        from jinja2 import Environment, FileSystemLoader
+        from pathlib import Path as _Path
+
+        issues = self._repo.list_issues_by_patch(patch_id)
+        if month_str is None:
+            patch = self._repo.get_patch_by_id(patch_id)
+            month_str = patch.month_str if patch and patch.month_str else "000000"
+
+        year = month_str[:4]
+        month = month_str[4:]
+
+        templates_dir = _Path(__file__).parent.parent.parent.parent / "templates"
+        env = Environment(loader=FileSystemLoader(str(templates_dir)), autoescape=True)
+        tmpl = env.get_template("patch_notify.html.j2")
+
+        html = tmpl.render(
+            year=year,
+            month=month,
+            issues=issues,
+            notify_body=notify_body or "",
+            reminders=reminders or [],
+        )
+
+        out = _Path(output_dir)
+        out.mkdir(parents=True, exist_ok=True)
+        fname = f"【HCP11G維護客戶】{month_str}月份大PATCH更新通知.html"
+        path = str(out / fname)
+        _Path(path).write_text(html, encoding="utf-8")
+        return path

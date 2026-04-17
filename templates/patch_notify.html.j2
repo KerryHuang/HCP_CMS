@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<title>{{ year }}年{{ month }}月 HCP 大PATCH 更新通知</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; font-family: "微軟正黑體", Arial, sans-serif; }
+body { background: #f0f4f8; color: #222; }
+.header { background: linear-gradient(135deg, #1F3864, #2E75B6); color: #fff; padding: 20px 32px; }
+.header h1 { font-size: 18px; }
+.header p  { font-size: 12px; color: #b8cde8; margin-top: 4px; }
+.container { max-width: 900px; margin: 24px auto; padding: 0 20px 40px; }
+.section-title { font-size: 13px; font-weight: bold; color: #1F3864;
+  border-left: 4px solid #2E75B6; padding-left: 10px; margin: 24px 0 12px; }
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
+th { background: #1F3864; color: #fff; padding: 8px 10px; text-align: left; }
+td { padding: 7px 10px; border: 1px solid #ddd; vertical-align: top; }
+tr:nth-child(even) td { background: #f9fafb; }
+.bug    { background: #FCE4D6; }
+.enh    { background: #E2EFDA; }
+.tw     { background: #D6EAF8; }
+.cn     { background: #FFF3CD; }
+.shared { background: #E8F5E9; }
+.reminder { background: #FFF9E6; border: 1px solid #F9A825; border-radius: 6px;
+  padding: 14px 18px; margin-top: 16px; font-size: 12px; line-height: 1.8; }
+.reminder strong { color: #E65100; }
+.footer { text-align: center; color: #aaa; font-size: 11px; margin-top: 32px; }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>📦 {{ year }}年{{ month }}月 HCP 大PATCH 更新通知</h1>
+  <p>HCP 11G 維護客戶 · 請於更新後依序完成驗證</p>
+</div>
+<div class="container">
+
+  {% if notify_body %}
+  <div class="section-title">本月更新說明</div>
+  <p style="font-size:13px;line-height:1.8;color:#444;">{{ notify_body }}</p>
+  {% endif %}
+
+  <div class="section-title">本月修正項目</div>
+  <table>
+    <tr>
+      <th>Issue No</th><th>計區域</th><th>類型</th>
+      <th>程式代號</th><th>功能說明</th><th>影響說明</th>
+    </tr>
+    {% for iss in issues %}
+    <tr class="{{ 'bug' if iss.issue_type == 'BugFix' else 'enh' }}">
+      <td>{{ iss.issue_no }}</td>
+      <td class="{{ 'tw' if iss.region == 'TW' else ('cn' if iss.region == 'CN' else 'shared') }}">{{ iss.region }}</td>
+      <td>{{ iss.issue_type }}</td>
+      <td>{{ iss.program_code or '' }}</td>
+      <td>{{ iss.description or '' }}</td>
+      <td>{{ iss.impact or '' }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+
+  {% if reminders %}
+  <div class="section-title">本月排班考勤提醒</div>
+  <div class="reminder">
+    {% for r in reminders %}
+    <p><strong>{{ r }}</strong></p>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="footer">
+    HCP 客服團隊 · {{ year }}年{{ month }}月 · 如有疑問請聯絡客服
+  </div>
+</div>
+</body>
+</html>

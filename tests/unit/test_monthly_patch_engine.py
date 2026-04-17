@@ -132,3 +132,35 @@ class TestGeneratePatchList:
         tw_fill = ws.cell(2, 2).fill.fgColor.rgb  # 第一筆 TW
         cn_fill = ws.cell(3, 2).fill.fgColor.rgb  # 第二筆 CN
         assert tw_fill != cn_fill
+
+
+class TestGenerateNotifyHtml:
+    @pytest.fixture
+    def engine_with_patch(self, conn, tmp_path):
+        import json
+        data = [{"issue_no": "0015659", "program_code": "PAYA001", "program_name": "薪資計算",
+                 "issue_type": "BugFix", "region": "TW", "description": "修正錯誤",
+                 "impact": "影響薪資", "test_direction": "執行薪資計算"}]
+        f = tmp_path / "issues.json"
+        f.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        eng = MonthlyPatchEngine(conn)
+        pid = eng.load_issues(source="manual", month_str="202604", file_path=str(f))
+        return eng, pid
+
+    def test_generates_html_file(self, engine_with_patch, tmp_path):
+        eng, pid = engine_with_patch
+        path = eng.generate_notify_html(pid, output_dir=str(tmp_path), month_str="202604")
+        assert Path(path).exists()
+        assert path.endswith(".html")
+
+    def test_html_contains_issue_no(self, engine_with_patch, tmp_path):
+        eng, pid = engine_with_patch
+        path = eng.generate_notify_html(pid, output_dir=str(tmp_path), month_str="202604")
+        content = Path(path).read_text(encoding="utf-8")
+        assert "0015659" in content
+
+    def test_html_filename_format(self, engine_with_patch, tmp_path):
+        eng, pid = engine_with_patch
+        path = eng.generate_notify_html(pid, output_dir=str(tmp_path), month_str="202604")
+        assert "202604" in Path(path).name
+        assert "大PATCH更新通知" in Path(path).name
