@@ -545,6 +545,65 @@ class TestGenerateNotifyHtmlFromDir:
             assert Path(p).exists()
 
 
+class TestFetchSupplements:
+    def test_stores_supplement_in_mantis_detail(self, conn, tmp_path):
+        import json
+        from unittest.mock import MagicMock, patch
+        from hcp_cms.data.repositories import PatchRepository
+        from hcp_cms.data.models import PatchRecord, PatchIssue
+
+        repo = PatchRepository(conn)
+        pid = repo.insert_patch(PatchRecord(type="monthly", month_str="202604", patch_dir=str(tmp_path)))
+        repo.insert_issue(PatchIssue(patch_id=pid, issue_no="0016552", source="scan"))
+
+        fake_issue = MagicMock()
+        fake_issue.description = "加班費計算有誤"
+        fake_issue.notes_list = []
+
+        fake_supplement = {
+            "修改原因": "原因", "原問題": "問題", "範例說明": "",
+            "修正後": "修正", "注意事項": "",
+        }
+
+        with patch("hcp_cms.core.monthly_patch_engine.MantisSoapClient") as mock_cls, \
+             patch("hcp_cms.core.monthly_patch_engine.ClaudeContentService") as mock_svc_cls:
+            mock_client = MagicMock()
+            mock_client.connect.return_value = True
+            mock_client.get_issue.return_value = fake_issue
+            mock_cls.return_value = mock_client
+
+            mock_svc = MagicMock()
+            mock_svc.extract_supplement.return_value = fake_supplement
+            mock_svc_cls.return_value = mock_svc
+
+            with patch("hcp_cms.core.monthly_patch_engine.CredentialManager") as mock_creds:
+                mock_creds.return_value.retrieve.side_effect = lambda k: {
+                    "mantis_url": "http://mantis.test", "mantis_user": "u", "mantis_password": "p"
+                }.get(k, "")
+                eng = MonthlyPatchEngine(conn)
+                count = eng.fetch_supplements(pid)
+
+        assert count == 1
+        issues = repo.list_issues_by_patch(pid)
+        detail = json.loads(issues[0].mantis_detail or "{}")
+        assert detail["supplement"]["修改原因"] == "原因"
+
+    def test_returns_zero_when_no_mantis(self, conn, tmp_path):
+        from hcp_cms.data.repositories import PatchRepository
+        from hcp_cms.data.models import PatchRecord, PatchIssue
+
+        repo = PatchRepository(conn)
+        pid = repo.insert_patch(PatchRecord(type="monthly", month_str="202604", patch_dir=str(tmp_path)))
+        repo.insert_issue(PatchIssue(patch_id=pid, issue_no="0016552", source="scan"))
+
+        from unittest.mock import patch
+        with patch("hcp_cms.core.monthly_patch_engine.CredentialManager") as mock_creds:
+            mock_creds.return_value.retrieve.return_value = ""
+            eng = MonthlyPatchEngine(conn)
+            count = eng.fetch_supplements(pid)
+        assert count == 0
+
+
 class TestRunS2T:
     def test_converts_simplified_docx(self, conn, tmp_path):
         import docx as python_docx

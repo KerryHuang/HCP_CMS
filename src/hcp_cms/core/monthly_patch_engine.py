@@ -10,6 +10,9 @@ from pathlib import Path
 
 from hcp_cms.data.models import PatchIssue, PatchRecord
 from hcp_cms.data.repositories import PatchRepository
+from hcp_cms.services.claude_content import ClaudeContentService
+from hcp_cms.services.credential import CredentialManager
+from hcp_cms.services.mantis.soap import MantisSoapClient
 
 _TXT_FIELDS = [
     "issue_no",
@@ -279,6 +282,62 @@ class MonthlyPatchEngine:
         except Exception as e:
             logging.warning("opencc 轉換失敗 [%s]: %s", path.name, e)
             return False
+
+    def fetch_supplements(self, patch_id: int) -> int:
+        """從 Mantis 取得各 Issue 說明，以 Claude 整理補充說明五欄位，回傳成功筆數。"""
+        client = self._build_mantis_client()
+        if client is None:
+            return 0
+        svc = ClaudeContentService()
+        issues = self._repo.list_issues_by_patch(patch_id)
+        count = 0
+        for iss in issues:
+            supplement = self._fetch_supplement(iss.issue_no, client, svc)
+            if not any(supplement.values()):
+                continue
+            existing = self._parse_scan_meta(iss)
+            existing["supplement"] = supplement
+            import json
+            self._repo.update_issue_mantis_detail(iss.issue_id, json.dumps(existing, ensure_ascii=False))
+            count += 1
+        return count
+
+    def _fetch_supplement(
+        self, issue_no: str, client: "MantisSoapClient", svc: "ClaudeContentService"
+    ) -> dict[str, str]:
+        """呼叫 Mantis + Claude，回傳補充說明五欄位 dict。"""
+        empty = {"修改原因": "", "原問題": "", "範例說明": "", "修正後": "", "注意事項": ""}
+        try:
+            issue = client.get_issue(issue_no)
+            if issue is None:
+                return empty
+            notes_text = "\n".join(n.text for n in (issue.notes_list or []))
+            full_text = f"{issue.description}\n{notes_text}".strip()
+            return svc.extract_supplement(full_text)
+        except Exception as e:
+            logging.warning("fetch_supplement 失敗 [%s]: %s", issue_no, e)
+            return empty
+
+    def _build_mantis_client(self) -> "MantisSoapClient | None":
+        """從 keyring 讀取憑證建立 MantisSoapClient，失敗時回傳 None。"""
+        try:
+            from urllib.parse import urlparse
+            creds = CredentialManager()
+            url = creds.retrieve("mantis_url") or ""
+            user = creds.retrieve("mantis_user") or ""
+            pwd = creds.retrieve("mantis_password") or ""
+            if not url:
+                return None
+            parsed = urlparse(url)
+            path = parsed.path
+            if ".php" in path:
+                path = path[:path.rfind("/")]
+            base_url = f"{parsed.scheme}://{parsed.netloc}{path}".rstrip("/")
+            client = MantisSoapClient(base_url, user, pwd)
+            client.connect()
+            return client
+        except Exception:
+            return None
 
     def run_s2t(self, scan_dir: str) -> dict[str, int]:
         """掃描 scan_dir 下所有版本子目錄的測試報告資料夾，將 .docx 簡體轉繁體。

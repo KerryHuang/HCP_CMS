@@ -1237,6 +1237,13 @@ class PatchRepository:
         ).fetchall()
         return [self._row_to_issue(r) for r in rows]
 
+    def update_issue_mantis_detail(self, issue_id: int, mantis_detail: str) -> None:
+        self._conn.execute(
+            "UPDATE cs_patch_issues SET mantis_detail = :d WHERE id = :id",
+            {"d": mantis_detail, "id": issue_id},
+        )
+        self._conn.commit()
+
     def update_issue(self, issue: PatchIssue) -> None:
         self._conn.execute(
             """UPDATE cs_patch_issues SET
