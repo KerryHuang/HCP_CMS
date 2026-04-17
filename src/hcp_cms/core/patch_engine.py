@@ -233,7 +233,7 @@ class SinglePatchEngine:
     # ── 測試腳本 ─────────────────────────────────────────────────────────────
 
     def generate_test_scripts(self, patch_id: int, output_dir: str) -> list[str]:
-        """產測試腳本_客服版.docx、客戶版.docx、測試追蹤表.xlsx。"""
+        """產生測試腳本_客服版.docx、客戶版.docx、測試追蹤表.xlsx。"""
         import docx as python_docx
         from openpyxl import Workbook
 
