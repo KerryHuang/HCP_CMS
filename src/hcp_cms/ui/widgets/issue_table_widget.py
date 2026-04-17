@@ -133,14 +133,14 @@ class IssueTableWidget(QWidget):
         rows = {idx.row() for idx in self._table.selectedIndexes()}
         if not rows:
             return
+        if not self._conn:
+            return
         answer = QMessageBox.question(
             self, "確認刪除",
             f"確定刪除選取的 {len(rows)} 筆 Issue？",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if answer != QMessageBox.StandardButton.Yes:
-            return
-        if not self._conn:
             return
         repo = PatchRepository(self._conn)
         for row in sorted(rows, reverse=True):
