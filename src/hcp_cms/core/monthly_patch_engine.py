@@ -478,7 +478,10 @@ class MonthlyPatchEngine:
             fname = f"PATCH_LIST_{month_str}_{version}.xlsx"
             out_path = base / version / fname
             out_path.parent.mkdir(parents=True, exist_ok=True)
-            wb.save(str(out_path))
+            try:
+                wb.save(str(out_path))
+            except PermissionError:
+                raise PermissionError(f"無法寫入 {out_path.name}，請先關閉已開啟的 Excel 檔案後重試")
             paths.append(str(out_path))
 
         return paths
