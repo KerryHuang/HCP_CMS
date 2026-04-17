@@ -6,7 +6,6 @@ import re
 import sqlite3
 from pathlib import Path
 
-from hcp_cms.data.models import PatchIssue, PatchRecord
 from hcp_cms.data.repositories import PatchRepository
 
 
