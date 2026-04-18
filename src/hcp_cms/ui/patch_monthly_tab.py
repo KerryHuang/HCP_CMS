@@ -39,10 +39,11 @@ _SOURCE_FOLDER = "掃描資料夾"
 
 
 class MonthlyPatchTab(QWidget):
-    _import_done = Signal(object)
-    _generate_done = Signal(object)
-    _s2t_done = Signal(object)
-    _verify_done = Signal(object)
+    _import_done    = Signal(object)
+    _import_log     = Signal(str)
+    _generate_done  = Signal(object)
+    _s2t_done       = Signal(object)
+    _verify_done    = Signal(object)
     _supplement_done = Signal(int)
 
     def __init__(self, conn: sqlite3.Connection | None = None) -> None:
@@ -192,6 +193,7 @@ class MonthlyPatchTab(QWidget):
         self._generate_html_btn.clicked.connect(self._on_generate_html_clicked)
         self._regenerate_btn.clicked.connect(self._on_regenerate_clicked)
         self._import_done.connect(self._on_import_result)
+        self._import_log.connect(self._append_log)
         self._generate_done.connect(self._on_generate_result)
         self._banner_btn.clicked.connect(self._on_banner_upload_clicked)
         self._s2t_btn.clicked.connect(self._on_s2t_clicked)
@@ -299,7 +301,10 @@ class MonthlyPatchTab(QWidget):
 
                 engine = MonthlyPatchEngine(conn)
                 try:
-                    patch_ids = engine.scan_monthly_dir(scan_dir, month_str)
+                    patch_ids = engine.scan_monthly_dir(
+                        scan_dir, month_str,
+                        progress=lambda msg: self._import_log.emit(msg),
+                    )
                     counts = {v: engine.get_issue_count(pid) for v, pid in patch_ids.items()}
                     return {"patch_ids": patch_ids, "counts": counts, "error": None}
                 except Exception as e:

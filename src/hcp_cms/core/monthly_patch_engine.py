@@ -6,6 +6,7 @@ import json
 import logging
 import re
 import sqlite3
+from collections.abc import Callable
 from pathlib import Path
 
 from hcp_cms.data.models import PatchIssue, PatchRecord
@@ -178,16 +179,27 @@ class MonthlyPatchEngine:
                 return SinglePatchEngine(self._conn).read_release_doc(str(f))
         return []
 
-    def scan_monthly_dir(self, patch_dir: str, month_str: str) -> dict[str, int]:
+    def scan_monthly_dir(
+        self,
+        patch_dir: str,
+        month_str: str,
+        progress: Callable[[str], None] | None = None,
+    ) -> dict[str, int]:
         """掃描月份資料夾，建立各版本 PatchRecord 並匯入 Issues。
 
         自動偵測模式 A（11G/12C 子目錄）或模式 B（平坦），模式 B 時自動整理。
         回傳 {"11G": patch_id, "12C": patch_id}（版本不存在則無對應 key）。
+        progress: 進度回調，傳入要顯示的訊息字串。
         """
+        def _log(msg: str) -> None:
+            if progress:
+                progress(msg)
+
         base = Path(patch_dir)
         patch_ids: dict[str, int] = {}
 
         if self._detect_structure(base) == "B":
+            _log("🔄 偵測到平坦結構，自動整理為 11G/12C 子目錄…")
             self._reorganize_to_mode_a(base)
 
         for version in ("11G", "12C"):
@@ -196,19 +208,23 @@ class MonthlyPatchEngine:
                 continue
             archives = sorted(version_dir.glob("*.7z")) + sorted(version_dir.glob("*.zip"))
             if not archives:
+                _log(f"⚠️ {version}/ 目錄下無 .7z / .zip 封存檔，略過")
                 continue
 
+            _log(f"📂 {version}：找到 {len(archives)} 個封存檔")
             patch = PatchRecord(type="monthly", month_str=month_str, patch_dir=patch_dir)
             patch_id = self._repo.insert_patch(patch)
             patch_ids[version] = patch_id
 
             for idx, archive in enumerate(archives):
                 issue_no = self._extract_issue_no(archive.name)
+                _log(f"  [{idx + 1}/{len(archives)}] 解壓縮 {archive.name}…")
                 extract_dir = version_dir / f"_extracted_{archive.stem}"
                 try:
                     self._extract_archive(archive, extract_dir)
                 except Exception as e:
                     logging.warning("解壓縮失敗 [%s]: %s", archive.name, e)
+                    _log(f"  ❌ 解壓縮失敗：{e}")
                     continue
 
                 root = self._find_extract_root(extract_dir)
@@ -224,6 +240,7 @@ class MonthlyPatchEngine:
                 })
 
                 if raw_issues:
+                    _log(f"  ✅ {archive.name} → {len(raw_issues)} 筆 Issue（來自 ReleaseNote）")
                     for raw_idx, raw in enumerate(raw_issues):
                         self._repo.insert_issue(PatchIssue(
                             patch_id=patch_id,
@@ -236,6 +253,7 @@ class MonthlyPatchEngine:
                             mantis_detail=scan_meta,
                         ))
                 elif issue_no:
+                    _log(f"  ✅ {archive.name} → Issue {issue_no}（無 ReleaseNote，從檔名解析）")
                     self._repo.insert_issue(PatchIssue(
                         patch_id=patch_id,
                         issue_no=issue_no,
@@ -243,6 +261,11 @@ class MonthlyPatchEngine:
                         sort_order=idx,
                         mantis_detail=scan_meta,
                     ))
+                else:
+                    _log(f"  ⚠️ {archive.name} → 無法解析 Issue No，略過")
+
+        if not patch_ids:
+            _log("⚠️ 未找到任何版本（11G/12C）的封存檔，請確認資料夾結構")
 
         return patch_ids
 
