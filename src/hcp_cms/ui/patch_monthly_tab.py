@@ -208,6 +208,9 @@ class MonthlyPatchTab(QWidget):
 
         self._on_issue_source_changed(0)
         self._set_step(0)
+        # 啟動時自動嘗試還原當月記錄
+        if self._conn:
+            self._try_restore_from_db()
 
     # ── 輔助 ───────────────────────────────────────────────────────────────
 
@@ -327,16 +330,34 @@ class MonthlyPatchTab(QWidget):
             threading.Thread(target=lambda: self._import_done.emit(work()), daemon=True).start()
 
     def _on_import_result(self, result: dict) -> None:
-        self._import_btn.setEnabled(True)
+        is_restore = result.get("_restore", False)
+        if not is_restore:
+            self._import_btn.setEnabled(True)
+
         if result.get("error"):
-            self._append_log(f"❌ 匯入失敗：{result['error']}")
+            if not is_restore:
+                self._append_log(f"❌ 匯入失敗：{result['error']}")
             return
+
         if "patch_ids" in result:
-            self._scan_patch_ids = result["patch_ids"]
+            patch_ids = result["patch_ids"]
+            if not patch_ids:
+                return  # 還原查無資料，靜默略過
+            self._scan_patch_ids = patch_ids
             counts = result.get("counts", {})
-            for ver, cnt in counts.items():
-                self._append_log(f"✅ {ver}：{cnt} 筆 Issue")
-            first_id = next(iter(result["patch_ids"].values()), None)
+            if is_restore:
+                total = sum(counts.values())
+                vers = "/".join(patch_ids.keys())
+                if result.get("scan_dir"):
+                    self._scan_dir = result["scan_dir"]
+                    self._scan_edit.setText(self._scan_dir)
+                self._append_log(
+                    f"📂 已從資料庫還原 {self._get_month_str()} 記錄（{vers}，共 {total} 筆 Issue）"
+                )
+            else:
+                for ver, cnt in counts.items():
+                    self._append_log(f"✅ {ver}：{cnt} 筆 Issue")
+            first_id = next(iter(patch_ids.values()), None)
             if first_id is not None:
                 self._patch_id = first_id
                 self._issue_table.load_issues(first_id)
@@ -344,10 +365,18 @@ class MonthlyPatchTab(QWidget):
             self._patch_id = result["patch_id"]
             self._append_log(f"✅ 匯入完成：{result['count']} 筆 Issue")
             self._issue_table.load_issues(self._patch_id)
+
+        self._enable_operation_buttons()
         self._set_step(3)
-        # 自動觸發 S2T（若有 scan_dir）
-        if self._scan_dir:
+        # 自動觸發 S2T（只在真正匯入時，非還原）
+        if not is_restore and self._scan_dir:
             self._on_s2t_clicked()
+
+    def _enable_operation_buttons(self) -> None:
+        """啟用所有操作按鈕（Excel、通知信、S2T、驗證、重新產出）。"""
+        for btn in [self._generate_excel_btn, self._generate_html_btn,
+                    self._s2t_btn, self._verify_btn, self._regenerate_btn]:
+            btn.setEnabled(True)
 
     def _on_generate_excel_clicked(self) -> None:
         if not self._scan_patch_ids and self._patch_id is None:
@@ -455,6 +484,34 @@ class MonthlyPatchTab(QWidget):
 
     def _on_month_changed(self) -> None:
         self._reminder_list.clear()
+        if self._conn:
+            self._try_restore_from_db()
+
+    def _try_restore_from_db(self) -> None:
+        """從 DB 還原該月最新匯入的 Patch 狀態，若找到則啟用操作按鈕。"""
+        if not self._conn:
+            return
+        month_str = self._get_month_str()
+        conn = self._conn
+
+        def work() -> dict:
+            from hcp_cms.core.monthly_patch_engine import MonthlyPatchEngine
+            from hcp_cms.data.repositories import PatchRepository
+            try:
+                eng = MonthlyPatchEngine(conn)
+                patch_ids = eng.load_patches_by_month(month_str)
+                if not patch_ids:
+                    return {"_restore": True, "patch_ids": {}, "scan_dir": None, "counts": {}, "error": None}
+                repo = PatchRepository(conn)
+                patches = repo.list_by_month(month_str)
+                scan_dir = patches[0].patch_dir if patches else None
+                counts = {v: eng.get_issue_count(pid) for v, pid in patch_ids.items()}
+                return {"_restore": True, "patch_ids": patch_ids, "scan_dir": scan_dir,
+                        "counts": counts, "error": None}
+            except Exception as e:
+                return {"_restore": True, "patch_ids": {}, "scan_dir": None, "counts": {}, "error": str(e)}
+
+        threading.Thread(target=lambda: self._import_done.emit(work()), daemon=True).start()
 
     def _on_reminder_add_clicked(self) -> None:
         text, ok = QInputDialog.getText(self, "新增排班提醒", "提醒內容：")

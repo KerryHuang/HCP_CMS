@@ -1207,6 +1207,16 @@ class PatchRepository:
                             patch_dir=r["patch_dir"], status=r["status"],
                             created_at=r["created_at"], updated_at=r["updated_at"]) for r in rows]
 
+    def list_by_month(self, month_str: str, patch_type: str = "monthly") -> list[PatchRecord]:
+        """回傳指定月份、類型的 Patch 記錄（依建立時間降序）。"""
+        rows = self._conn.execute(
+            "SELECT * FROM cs_patches WHERE month_str=? AND type=? ORDER BY created_at DESC",
+            (month_str, patch_type),
+        ).fetchall()
+        return [PatchRecord(patch_id=r["id"], type=r["type"], month_str=r["month_str"],
+                            patch_dir=r["patch_dir"], status=r["status"],
+                            created_at=r["created_at"], updated_at=r["updated_at"]) for r in rows]
+
     def update_patch_status(self, patch_id: int, status: str) -> None:
         self._conn.execute("UPDATE cs_patches SET status=?, updated_at=? WHERE id=?",
                            (status, _now(), patch_id))

@@ -78,6 +78,44 @@ class MonthlyPatchEngine:
 
         return patch_id
 
+    def load_patches_by_month(self, month_str: str) -> dict[str, int]:
+        """從 DB 查詢該月最新匯入的 Patch，依 archive_name 推斷版本，回傳 {version: patch_id}。
+
+        若該月無記錄回傳空 dict。
+        """
+        patches = self._repo.list_by_month(month_str, patch_type="monthly")
+        if not patches:
+            return {}
+
+        result: dict[str, int] = {}
+        seen_versions: set[str] = set()
+        for patch in patches:
+            if len(seen_versions) == 2:  # 11G + 12C 都找到就停
+                break
+            issues = self._repo.list_issues_by_patch(patch.patch_id)
+            version = self._detect_version_from_issues(issues)
+            if version and version not in seen_versions:
+                result[version] = patch.patch_id
+                seen_versions.add(version)
+
+        return result
+
+    def _detect_version_from_issues(self, issues: list) -> str | None:
+        """從 issues 的 mantis_detail archive_name 推斷版本（11G/12C），找不到回傳 None。"""
+        for iss in issues:
+            if not iss.mantis_detail:
+                continue
+            try:
+                meta = json.loads(iss.mantis_detail)
+                archive = meta.get("archive_name", "")
+                if "_11G" in archive.upper():
+                    return "11G"
+                if "_12C" in archive.upper():
+                    return "12C"
+            except (json.JSONDecodeError, AttributeError):
+                continue
+        return None
+
     def _load_file(self, file_path: str) -> list[dict]:
         path = Path(file_path)
         if path.suffix.lower() == ".json":
