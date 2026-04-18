@@ -236,8 +236,11 @@ def test_fetch_supplements_skip_edited(db_conn):
         processed_nos.append(iss.issue_no)
         return {"修改原因": "AI", "原問題": "", "範例說明": "", "修正後": "", "注意事項": ""}
 
+    mock_svc = MagicMock()
+    mock_svc.is_available = True
     with patch.object(eng, "_fetch_supplement", side_effect=fake_fetch), \
-         patch.object(eng, "_build_mantis_client", return_value=MagicMock()):
+         patch.object(eng, "_build_mantis_client", return_value=MagicMock()), \
+         patch("hcp_cms.core.monthly_patch_engine.ClaudeContentService", return_value=mock_svc):
         eng.fetch_supplements(patch_id, skip_edited=True)
 
     assert "0001" not in processed_nos   # 跳過已編輯

@@ -26,6 +26,10 @@ class ClaudeContentService:
         else:
             self._client = None
 
+    @property
+    def is_available(self) -> bool:
+        return self._client is not None
+
     def generate_description(self, issue_data: dict) -> str | None:
         """依 Issue 資料生成 HR 版功能說明文字（50-100字）。"""
         if self._client is None:

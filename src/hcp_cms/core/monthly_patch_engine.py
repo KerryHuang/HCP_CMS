@@ -397,6 +397,9 @@ class MonthlyPatchEngine:
         if client is None:
             return self._FETCH_NO_CONN
         svc = ClaudeContentService()
+        if not svc.is_available:
+            _log("❌ Claude API Key 未設定，無法進行補充說明分析。請至「系統設定 → AI 設定」輸入 Anthropic API Key。")
+            return self._FETCH_NO_CONN
         issues = self._repo.list_issues_by_patch(patch_id)
         if not issues:
             return self._FETCH_NO_ISSUE
@@ -411,7 +414,8 @@ class MonthlyPatchEngine:
             _log(f"  🔍 查詢 Issue {iss.issue_no} (Mantis id={mantis_id})…")
             supplement = self._fetch_supplement(iss, client, svc)
             if not any(supplement.values()):
-                _log(f"  ⚠️ Issue {iss.issue_no}：Mantis 無資料（{client.last_error or '補充欄位為空'}）")
+                reason = client.last_error or "ReleaseNote 與 Mantis 均無有效資料"
+                _log(f"  ⚠️ Issue {iss.issue_no}：補充說明為空（{reason}）")
                 continue
             self._repo.update_issue_supplement(iss.issue_id, supplement, manual=False)
             _log(f"  ✅ Issue {iss.issue_no}：補充說明已更新")
@@ -428,6 +432,8 @@ class MonthlyPatchEngine:
         if client is None:
             return empty
         svc = ClaudeContentService()
+        if not svc.is_available:
+            return empty
         return self._fetch_supplement(iss, client, svc)
 
     def _fetch_supplement(
