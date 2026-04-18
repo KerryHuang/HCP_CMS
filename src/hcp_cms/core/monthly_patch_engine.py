@@ -317,7 +317,7 @@ class MonthlyPatchEngine:
         return count
 
     def _fetch_supplement(
-        self, issue_no: str, client: "MantisSoapClient", svc: "ClaudeContentService"
+        self, issue_no: str, client: MantisSoapClient, svc: ClaudeContentService
     ) -> dict[str, str]:
         """呼叫 Mantis + Claude，回傳補充說明五欄位 dict。"""
         empty = {"修改原因": "", "原問題": "", "範例說明": "", "修正後": "", "注意事項": ""}
@@ -332,7 +332,7 @@ class MonthlyPatchEngine:
             logging.warning("fetch_supplement 失敗 [%s]: %s", issue_no, e)
             return empty
 
-    def _build_mantis_client(self) -> "MantisSoapClient | None":
+    def _build_mantis_client(self) -> MantisSoapClient | None:
         """從 keyring 讀取憑證建立 MantisSoapClient，失敗時回傳 None。"""
         try:
             from urllib.parse import urlparse
@@ -358,8 +358,8 @@ class MonthlyPatchEngine:
         """掃描 scan_dir 下所有版本子目錄的測試報告資料夾，將 .docx 簡體轉繁體。
         回傳 {filename: converted_char_count}，0 表示無需轉換。
         """
-        import opencc
         import docx as python_docx
+        import opencc
 
         base = Path(scan_dir)
         result: dict[str, int] = {}

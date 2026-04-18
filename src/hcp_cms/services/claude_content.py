@@ -64,7 +64,8 @@ class ClaudeContentService:
         if not raw:
             return empty
         try:
-            import json, re
+            import json
+            import re
             match = re.search(r"\{.*\}", raw, re.DOTALL)
             if not match:
                 return empty
