@@ -573,10 +573,22 @@ class MonthlyPatchTab(QWidget):
             else:
                 self._append_log(f"❌ {fname} → 轉換失敗")
         self._set_step(5)
-        self._fetch_supplements_async()
 
     def _fetch_supplements_async(self) -> None:
         if not self._patch_id and not self._scan_patch_ids:
+            return
+        from PySide6.QtWidgets import QMessageBox
+        issues_count = len(self._get_current_issues())
+        reply = QMessageBox.question(
+            self,
+            "Claude AI 補充說明分析",
+            f"即將呼叫 Claude AI 分析 {issues_count} 筆 Issue 的補充說明。\n"
+            f"每筆約消耗 USD $0.005~0.01，合計約 USD ${issues_count * 0.01:.2f}。\n\n"
+            "確定執行？",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
             return
         conn = self._conn
         patch_ids_list = list(self._scan_patch_ids.values()) if self._scan_patch_ids else [self._patch_id]
@@ -723,6 +735,22 @@ class MonthlyPatchTab(QWidget):
         if not self._conn:
             return
         if not self._patch_id and not self._scan_patch_ids:
+            return
+        from PySide6.QtWidgets import QMessageBox
+        issues = [i for i in self._get_current_issues()
+                  if not (i.mantis_detail and
+                          __import__("json").loads(i.mantis_detail or "{}").get("supplement_edited", False))]
+        count = len(issues)
+        reply = QMessageBox.question(
+            self,
+            "Claude AI 補充說明分析",
+            f"即將重新分析 {count} 筆 Issue（已人工編輯者自動略過）。\n"
+            f"每筆約消耗 USD $0.005~0.01，合計約 USD ${count * 0.01:.2f}。\n\n"
+            "確定執行？",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
             return
         conn = self._conn
         patch_ids_list = (

@@ -95,7 +95,7 @@ class SupplementEditorWidget(QWidget):
         layout.addWidget(splitter, stretch=1)
 
         self._list.currentRowChanged.connect(self._on_issue_selected)
-        self._reanalyze_all_btn.clicked.connect(self.reanalyze_all_requested)
+        self._reanalyze_all_btn.clicked.connect(self._on_reanalyze_all_clicked)
         self._reanalyze_btn.clicked.connect(self._on_reanalyze_clicked)
         self._save_btn.clicked.connect(self._on_save_clicked)
 
@@ -203,8 +203,41 @@ class SupplementEditorWidget(QWidget):
         self.supplement_saved.emit(self._current_issue_id, supplement)
         self._dirty = False
 
+    def _on_reanalyze_all_clicked(self) -> None:
+        from PySide6.QtWidgets import QMessageBox
+        pending = [i for i in self._issues
+                   if not self._parse_detail(i).get("supplement_edited", False)]
+        count = len(pending)
+        if count == 0:
+            QMessageBox.information(self, "重新分析全部", "所有 Issue 均已人工編輯，無需重新分析。")
+            return
+        reply = QMessageBox.question(
+            self,
+            "Claude AI 補充說明分析",
+            f"即將重新分析 {count} 筆 Issue（已人工編輯者略過）。\n"
+            f"每筆約消耗 USD $0.005~0.01，合計約 USD ${count * 0.01:.2f}。\n\n"
+            "確定執行？",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            self.reanalyze_all_requested.emit()
+
     def _on_reanalyze_clicked(self) -> None:
-        if self._current_issue_id is not None:
+        if self._current_issue_id is None:
+            return
+        from PySide6.QtWidgets import QMessageBox
+        iss = next((x for x in self._issues if x.issue_id == self._current_issue_id), None)
+        issue_no = iss.issue_no if iss else str(self._current_issue_id)
+        reply = QMessageBox.question(
+            self,
+            "Claude AI 補充說明分析",
+            f"即將呼叫 Claude AI 重新分析 Issue {issue_no}。\n"
+            "約消耗 USD $0.005~0.01。確定執行？",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
             self.reanalyze_requested.emit(self._current_issue_id)
 
     def _set_right_enabled(self, enabled: bool) -> None:
