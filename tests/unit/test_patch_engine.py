@@ -216,3 +216,68 @@ class TestLoadFromArchive:
             )
         assert issue_count == 1
         assert version_tag == "IP_合併_20261201"
+
+
+class TestGenerateIssueList:
+    @pytest.fixture
+    def engine_with_patch(self, conn, tmp_path):
+        from hcp_cms.data.models import PatchIssue, PatchRecord
+        from hcp_cms.data.repositories import PatchRepository
+        patch_path = tmp_path / "patch_src"
+        patch_path.mkdir()
+        (patch_path / "form").mkdir()
+        (patch_path / "sql").mkdir()
+        (patch_path / "form" / "PAYROLL.fmx").write_text("")
+        (patch_path / "sql" / "update.sql").write_text("")
+        repo = PatchRepository(conn)
+        pid = repo.insert_patch(PatchRecord(type="single", patch_dir=str(patch_path)))
+        repo.insert_issue(PatchIssue(patch_id=pid, issue_no="0015659",
+                                     issue_type="BugFix", region="TW",
+                                     description="薪資修正", sort_order=1))
+        repo.insert_issue(PatchIssue(patch_id=pid, issue_no="0015660",
+                                     issue_type="Enhancement", region="共用",
+                                     description="新增功能", sort_order=2))
+        return SinglePatchEngine(conn), pid
+
+    def test_creates_file_with_version_tag(self, engine_with_patch, tmp_path):
+        eng, pid = engine_with_patch
+        path = eng.generate_issue_list(pid, str(tmp_path / "out"), "IP_合併_20261101")
+        assert Path(path).exists()
+        assert "IP_合併_20261101_Issue清單整理" in path
+
+    def test_releasenote_sheet_13_columns(self, engine_with_patch, tmp_path):
+        import openpyxl
+        eng, pid = engine_with_patch
+        path = eng.generate_issue_list(pid, str(tmp_path / "out"), "IP_合併_20261101")
+        wb = openpyxl.load_workbook(path)
+        assert "ReleaseNote" in wb.sheetnames
+        ws = wb["ReleaseNote"]
+        headers = [ws.cell(1, c).value for c in range(1, ws.max_column + 1)]
+        assert headers[0] == "Issue No"
+        assert "客服驗證" in headers
+        assert "提供客戶驗證" in headers
+        assert "可納入大PATCH" in headers
+        assert "備註" in headers
+        assert len(headers) == 13
+
+    def test_installation_sheet_exists(self, engine_with_patch, tmp_path):
+        import openpyxl
+        eng, pid = engine_with_patch
+        path = eng.generate_issue_list(pid, str(tmp_path / "out"), "IP_合併_20261101")
+        wb = openpyxl.load_workbook(path)
+        assert "安裝說明" in wb.sheetnames
+        ws = wb["安裝說明"]
+        assert ws.cell(1, 1).value == "Issue No"
+        assert ws.cell(1, 2).value == "安裝步驟"
+
+    def test_file_list_sheet_lists_files(self, engine_with_patch, tmp_path):
+        import openpyxl
+        eng, pid = engine_with_patch
+        path = eng.generate_issue_list(pid, str(tmp_path / "out"), "IP_合併_20261101")
+        wb = openpyxl.load_workbook(path)
+        assert "檔案清單" in wb.sheetnames
+        ws = wb["檔案清單"]
+        file_names = [ws.cell(r, 2).value for r in range(2, ws.max_row + 1)
+                      if ws.cell(r, 2).value]
+        assert "PAYROLL.fmx" in file_names
+        assert "update.sql" in file_names

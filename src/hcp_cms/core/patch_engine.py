@@ -222,14 +222,82 @@ class SinglePatchEngine:
 
         return paths
 
-    def _write_header_row(self, ws: object, headers: list[str]) -> None:
+    def _write_header_row(self, ws: object, headers: list[str],
+                          fgColor: str = "1F3864") -> None:
         from openpyxl.styles import Alignment, Font, PatternFill
         for c, h in enumerate(headers, start=1):
             cell = ws.cell(1, c)
             cell.value = h
             cell.font = Font(name="微軟正黑體", bold=True, size=11, color="FFFFFF")
-            cell.fill = PatternFill("solid", fgColor="1F3864")
-            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            cell.fill = PatternFill("solid", fgColor=fgColor)
+            cell.alignment = Alignment(horizontal="center", vertical="center",
+                                       wrap_text=True)
+
+    def generate_issue_list(self, patch_id: int, output_dir: str,
+                            version_tag: str) -> str:
+        """產出 {version_tag}_Issue清單整理.xlsx（3 頁籤）。"""
+        from openpyxl import Workbook
+        from openpyxl.styles import PatternFill
+
+        issues = self._repo.list_issues_by_patch(patch_id)
+        patch_rec = self._repo.get_patch_by_id(patch_id)
+        out = Path(output_dir)
+        out.mkdir(parents=True, exist_ok=True)
+
+        wb = Workbook()
+
+        # ── Tab 1: ReleaseNote ──────────────────────────────────────────────
+        ws = wb.active
+        ws.title = "ReleaseNote"
+        rn_headers = [
+            "Issue No", "類型", "程式代號", "程式名稱", "說明",
+            "客服驗證", "測試結果(客服)", "測試日期(客服)",
+            "提供客戶驗證", "測試結果(客戶)", "測試日期(客戶)",
+            "可納入大PATCH", "備註",
+        ]
+        self._write_header_row(ws, rn_headers)
+        for row_i, iss in enumerate(issues, start=2):
+            ws.cell(row_i, 1).value = iss.issue_no
+            ws.cell(row_i, 2).value = iss.issue_type
+            ws.cell(row_i, 3).value = iss.program_code
+            ws.cell(row_i, 4).value = iss.program_name
+            ws.cell(row_i, 5).value = iss.description
+            row_clr = self._CLR_ENH if iss.issue_type == "Enhancement" else self._CLR_BUG
+            for c in range(1, 6):
+                ws.cell(row_i, c).fill = PatternFill("solid", fgColor=row_clr)
+            for c in range(6, 9):
+                ws.cell(row_i, c).fill = PatternFill("solid", fgColor=self._CLR_CS)
+            for c in range(9, 12):
+                ws.cell(row_i, c).fill = PatternFill("solid", fgColor=self._CLR_CUST)
+            ws.cell(row_i, 12).fill = PatternFill("solid", fgColor=self._CLR_PATCH)
+            ws.cell(row_i, 13).fill = PatternFill("solid", fgColor=self._CLR_NOTE)
+
+        # ── Tab 2: 安裝說明 ───────────────────────────────────────────────────
+        ws2 = wb.create_sheet("安裝說明")
+        self._write_header_row(ws2, ["Issue No", "安裝步驟"])
+        for row_i, iss in enumerate(issues, start=2):
+            ws2.cell(row_i, 1).value = iss.issue_no
+
+        # ── Tab 3: 檔案清單 ───────────────────────────────────────────────────
+        ws3 = wb.create_sheet("檔案清單")
+        self._write_header_row(ws3, ["子目錄", "檔名"])
+        file_row = 2
+        patch_dir = (Path(patch_rec.patch_dir)
+                     if patch_rec and patch_rec.patch_dir else None)
+        if patch_dir:
+            for sub in ("form", "sql", "muti"):
+                sub_path = patch_dir / sub
+                if sub_path.exists():
+                    for f in sorted(sub_path.iterdir()):
+                        if f.is_file():
+                            ws3.cell(file_row, 1).value = sub + "/"
+                            ws3.cell(file_row, 2).value = f.name
+                            file_row += 1
+
+        fname = f"{version_tag}_Issue清單整理.xlsx"
+        path = str(out / fname)
+        wb.save(path)
+        return path
 
     # ── 測試腳本 ─────────────────────────────────────────────────────────────
 
