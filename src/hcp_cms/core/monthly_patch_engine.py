@@ -204,20 +204,25 @@ class MonthlyPatchEngine:
         return m.group(1) if m else None
 
     def _find_extract_root(self, extract_dir: Path) -> Path:
-        """若解壓資料夾只有一個子資料夾（封存內頂層目錄），回傳該子資料夾；否則回傳 extract_dir。"""
+        """若解壓資料夾只有一個子資料夾（封存內頂層目錄），遞迴往下找直到有實際內容的層級。"""
         if not extract_dir.exists():
             return extract_dir
-        subdirs = [d for d in extract_dir.iterdir() if d.is_dir()]
-        if len(subdirs) == 1 and not any(f for f in extract_dir.iterdir() if f.is_file()):
-            return subdirs[0]
-        return extract_dir
+        current = extract_dir
+        while True:
+            entries = list(current.iterdir())
+            subdirs = [d for d in entries if d.is_dir()]
+            files = [f for f in entries if f.is_file()]
+            if len(subdirs) == 1 and not files:
+                current = subdirs[0]
+            else:
+                return current
 
     def _read_release_note(self, extract_dir: Path) -> list[dict[str, str]]:
-        """在解壓資料夾尋找 ReleaseNote，委託 SinglePatchEngine 解析。"""
+        """在解壓資料夾遞迴尋找 ReleaseNote，委託 SinglePatchEngine 解析。"""
         if not extract_dir.exists():
             return []
         from hcp_cms.core.patch_engine import SinglePatchEngine
-        for f in extract_dir.iterdir():
+        for f in sorted(extract_dir.rglob("*")):
             if not f.is_file():
                 continue
             low = f.name.lower()
