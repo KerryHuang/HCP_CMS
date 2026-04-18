@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import json
+import re
+
 try:
     from anthropic import Anthropic
 except ImportError:
@@ -10,6 +13,8 @@ except ImportError:
 _MODEL = "claude-sonnet-4-6"
 _MAX_RETRIES = 3
 _SUPPLEMENT_KEYS = ("修改原因", "原問題", "範例說明", "修正後", "注意事項")
+_INSUFFICIENT = "⚠ 資料不足，請人工補充"
+_SPARSE_THRESHOLD = 30  # 有效字數低於此值時加入稀疏提示
 
 
 class ClaudeContentService:
@@ -48,24 +53,65 @@ class ClaudeContentService:
         )
         return self._call_api(prompt, max_tokens=800)
 
-    def extract_supplement(self, mantis_text: str) -> dict[str, str]:
-        """分析 Mantis Issue 說明，回傳結構化補充說明五欄位。"""
+    def extract_supplement(
+        self,
+        release_note_description: str = "",
+        release_note_impact: str = "",
+        mantis_description: str = "",
+        mantis_notes: list[dict] | None = None,
+    ) -> dict[str, str]:
+        """分析三來源資料，回傳結構化補充說明五欄位。
+
+        mantis_notes: list of {"reporter": str, "date": str, "text": str}
+        """
         empty = {k: "" for k in _SUPPLEMENT_KEYS}
-        if self._client is None or not mantis_text.strip():
+        if self._client is None:
             return empty
-        prompt = (
-            "請根據以下 Mantis Issue 說明文字，以繁體中文提取並整理下列五個欄位，"
-            "以 JSON 格式回傳，key 為繁體中文欄位名稱：\n"
-            "欄位：修改原因、原問題、範例說明、修正後、注意事項\n"
-            "若某欄位無對應內容則值為空字串。只回傳 JSON，不要其他說明。\n\n"
-            f"Mantis 說明：\n{mantis_text}"
+
+        notes_list = mantis_notes or []
+        if notes_list:
+            notes_text = "\n".join(
+                f"[{n.get('date', '')}] {n.get('reporter', '')}：{n.get('text', '')}"
+                for n in notes_list
+            )
+        else:
+            notes_text = "（無活動記錄）"
+
+        all_text = " ".join([
+            release_note_description, release_note_impact,
+            mantis_description, notes_text,
+        ])
+        effective_chars = len(all_text.replace(" ", "").replace("　", "").replace("\n", ""))
+        sparse_hint = (
+            "\n⚠ 注意：以上資料非常有限，若無法合理填寫請直接填入資料不足標記。"
+            if effective_chars < _SPARSE_THRESHOLD else ""
         )
-        raw = self._call_api(prompt, max_tokens=600)
+
+        prompt = (
+            "你是 HCP ERP 系統的技術文件分析助理。\n"
+            "請根據以下來自三個來源的資料，以繁體中文填寫五個補充說明欄位。\n\n"
+            "【欄位定義】\n"
+            f"- 修改原因：此次修改的業務或技術背景，解釋「為什麼要改」\n"
+            f"- 原問題：修改前系統存在的問題現象，解釋「原本出了什麼問題」\n"
+            f"- 範例說明：具體操作情境或資料範例（如有）\n"
+            f"- 修正後：修改後的行為或效果說明\n"
+            f"- 注意事項：上線後測試重點、注意事項或相依模組\n\n"
+            f"【資料：ReleaseNote 說明】\n"
+            f"功能說明：{release_note_description or '（無）'}\n"
+            f"影響說明：{release_note_impact or '（無）'}\n\n"
+            f"【資料：Mantis 問題描述】\n"
+            f"{mantis_description or '（無）'}\n\n"
+            f"【資料：Mantis 活動筆記（依時間排列）】\n"
+            f"{notes_text}"
+            f"{sparse_hint}\n\n"
+            f"請以 JSON 格式回傳，key 為繁體中文欄位名稱。\n"
+            f'若某欄位無對應內容且無法合理推斷，值填入「{_INSUFFICIENT}」。\n'
+            f"只回傳 JSON，不要其他說明。"
+        )
+        raw = self._call_api(prompt, max_tokens=800)
         if not raw:
             return empty
         try:
-            import json
-            import re
             match = re.search(r"\{.*\}", raw, re.DOTALL)
             if not match:
                 return empty
