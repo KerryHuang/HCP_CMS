@@ -26,7 +26,6 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from hcp_cms.ui.supplement_editor_widget import SupplementEditorWidget
 from hcp_cms.ui.widgets.issue_table_widget import IssueTableWidget
 
 _STEPS = ["① 選月份", "② 選來源", "③ 匯入", "④ 編輯", "⑤ S2T",
@@ -48,6 +47,10 @@ class MonthlyPatchTab(QWidget):
     _verify_done           = Signal(object)
     _supplement_done       = Signal(int)
     _reanalyze_single_done = Signal(int, object)  # (issue_id, supplement dict)
+
+    open_supplement_editor     = Signal(list)           # user opens editor → load + switch tab
+    supplement_data_updated    = Signal(list)           # data refreshed → load silently
+    supplement_display_updated = Signal(int, object, bool)  # (issue_id, supplement, edited)
 
     def __init__(self, conn: sqlite3.Connection | None = None) -> None:
         super().__init__()
@@ -173,14 +176,9 @@ class MonthlyPatchTab(QWidget):
         reminder_group.setLayout(reminder_inner)
         layout.addWidget(reminder_group)
 
-        # Issue 表格（與補充說明編輯器互斥顯示）
+        # Issue 表格
         self._issue_table = IssueTableWidget(conn=self._conn)
         layout.addWidget(self._issue_table, stretch=2)
-
-        # 補充說明編輯器（預設隱藏）
-        self._supplement_editor = SupplementEditorWidget(conn=self._conn)
-        self._supplement_editor.setVisible(False)
-        layout.addWidget(self._supplement_editor, stretch=2)
 
         # 執行 Log
         self._log = QTextEdit()
@@ -216,9 +214,6 @@ class MonthlyPatchTab(QWidget):
         self._verify_done.connect(self._on_verify_result)
         self._supplement_done.connect(self._on_supplement_result)
         self._supplement_editor_btn.clicked.connect(self._on_supplement_editor_clicked)
-        self._supplement_editor.supplement_saved.connect(self._on_supplement_saved)
-        self._supplement_editor.reanalyze_requested.connect(self._on_reanalyze_single)
-        self._supplement_editor.reanalyze_all_requested.connect(self._on_reanalyze_all)
         self._reanalyze_single_done.connect(self._on_reanalyze_single_done)
 
         self._on_issue_source_changed(0)
@@ -652,30 +647,27 @@ class MonthlyPatchTab(QWidget):
         if all_ok and result:
             self._set_step(8)
 
-    def _reload_supplement_editor(self) -> None:
-        """從 DB 重新載入 Issue 清單至補充說明編輯器。"""
+    def _get_current_issues(self) -> list:
         if not self._conn:
-            return
+            return []
         patch_ids = (
             list(self._scan_patch_ids.values()) if self._scan_patch_ids
             else ([self._patch_id] if self._patch_id else [])
         )
         if not patch_ids:
-            return
+            return []
         from hcp_cms.data.repositories import PatchRepository
         repo = PatchRepository(self._conn)
         issues: list = []
         for pid in patch_ids:
             issues.extend(repo.list_issues_by_patch(pid))
-        self._supplement_editor.load_issues(issues)
+        return issues
+
+    def _reload_supplement_editor(self) -> None:
+        self.supplement_data_updated.emit(self._get_current_issues())
 
     def _on_supplement_editor_clicked(self) -> None:
-        """切換補充說明編輯器顯示／隱藏。"""
-        visible = not self._supplement_editor.isVisible()
-        self._supplement_editor.setVisible(visible)
-        self._issue_table.setVisible(not visible)
-        if visible:
-            self._reload_supplement_editor()
+        self.open_supplement_editor.emit(self._get_current_issues())
 
     def _on_supplement_saved(self, issue_id: int, supplement: dict) -> None:
         """儲存人工編輯的補充說明至 DB。"""
@@ -685,7 +677,7 @@ class MonthlyPatchTab(QWidget):
         repo = PatchRepository(self._conn)
         repo.update_issue_supplement(issue_id, supplement, manual=True)
         self._append_log("💾 Issue 補充說明已儲存（人工）")
-        self._supplement_editor.update_issue_display(issue_id, supplement, edited=True)
+        self.supplement_display_updated.emit(issue_id, supplement, True)
 
     def _on_reanalyze_single(self, issue_id: int) -> None:
         """單筆 Issue 重新從 Mantis 分析補充說明。"""
@@ -722,7 +714,7 @@ class MonthlyPatchTab(QWidget):
         threading.Thread(target=work, daemon=True).start()
 
     def _on_reanalyze_single_done(self, issue_id: int, supplement: object) -> None:
-        self._supplement_editor.update_issue_display(issue_id, supplement, edited=False)  # type: ignore[arg-type]
+        self.supplement_display_updated.emit(issue_id, supplement, False)
         self._append_log(f"✅ Issue（id={issue_id}）補充說明已重新分析")
 
     def _on_reanalyze_all(self) -> None:
