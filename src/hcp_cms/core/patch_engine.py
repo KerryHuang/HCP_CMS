@@ -235,6 +235,33 @@ class SinglePatchEngine:
 
     # ── 封存解壓縮 ────────────────────────────────────────────────────────────
 
+    def load_from_archive(self, archive_path: str, output_dir: str) -> tuple[int, str, int]:
+        """解壓 .7z 至 output_dir，掃描目錄，建立 DB Patch 記錄，讀 ReleaseNote。
+        Returns (patch_id, version_tag, issue_count)
+        """
+        import py7zr
+        archive = Path(archive_path)
+        out = Path(output_dir)
+        out.mkdir(parents=True, exist_ok=True)
+        with py7zr.SevenZipFile(str(archive), mode="r") as z:
+            z.extractall(path=str(out))
+        version_tag = self._parse_version_tag(archive.name)
+        patch = PatchRecord(type="single", patch_dir=str(out))
+        patch_id = self._repo.insert_patch(patch)
+        scan = self.scan_patch_dir(str(out))
+        issue_count = 0
+        if scan.get("release_note"):
+            issue_count = self.load_issues_from_release_doc(patch_id, scan["release_note"])
+        return patch_id, version_tag, issue_count
+
+    def _parse_version_tag(self, filename: str) -> str:
+        """從檔名解析版本標籤，優先比對 IP_合併_YYYYMMDD 格式。"""
+        m = re.search(r"IP_合併_\d{8}", filename)
+        if m:
+            return m.group(0)
+        stem = Path(filename).stem
+        return stem[:20] if len(stem) > 20 else stem
+
     def extract_patch_archives(self, patch_dir: str) -> list[str]:
         """解壓縮資料夾內所有 .7z 封存檔至同一資料夾，回傳已解壓縮的檔名清單。"""
         import py7zr

@@ -150,3 +150,69 @@ class TestGenerateTestScripts:
         assert any("追蹤表" in n and n.endswith(".xlsx") for n in names)
         for p in paths:
             assert Path(p).exists()
+
+
+class TestLoadFromArchive:
+    def test_parse_version_tag_extracts_ip_pattern(self, conn):
+        eng = SinglePatchEngine(conn)
+        assert eng._parse_version_tag("IP_合併_20261101_HCP11G.7z") == "IP_合併_20261101"
+
+    def test_parse_version_tag_fallback_to_stem(self, conn):
+        eng = SinglePatchEngine(conn)
+        assert eng._parse_version_tag("MyPatch.7z") == "MyPatch"
+
+    def test_parse_version_tag_long_stem_truncated(self, conn):
+        eng = SinglePatchEngine(conn)
+        tag = eng._parse_version_tag("A" * 30 + ".7z")
+        assert len(tag) <= 20
+
+    def test_load_from_archive_returns_tuple(self, conn, tmp_path):
+        from unittest.mock import MagicMock, patch
+        archive = tmp_path / "IP_合併_20261101.7z"
+        archive.write_bytes(b"fake")
+        extract_dir = tmp_path / "out"
+
+        mock_z = MagicMock()
+        mock_z.__enter__ = lambda s: mock_z
+        mock_z.__exit__ = MagicMock(return_value=False)
+
+        with patch("py7zr.SevenZipFile", return_value=mock_z), \
+             patch.object(SinglePatchEngine, "scan_patch_dir",
+                          return_value={"release_note": None, "form_files": [],
+                                        "sql_files": [], "muti_files": [],
+                                        "setup_bat": False, "install_guide": None,
+                                        "missing": []}):
+            eng = SinglePatchEngine(conn)
+            patch_id, version_tag, issue_count = eng.load_from_archive(
+                str(archive), str(extract_dir)
+            )
+        assert version_tag == "IP_合併_20261101"
+        assert isinstance(patch_id, int)
+        assert issue_count == 0
+
+    def test_load_from_archive_loads_issues_from_release_note(self, conn, tmp_path):
+        from unittest.mock import MagicMock, patch
+        archive = tmp_path / "IP_合併_20261201.7z"
+        archive.write_bytes(b"fake")
+        extract_dir = tmp_path / "out"
+        fake_release = str(tmp_path / "ReleaseNote.docx")
+
+        mock_z = MagicMock()
+        mock_z.__enter__ = lambda s: mock_z
+        mock_z.__exit__ = MagicMock(return_value=False)
+
+        fake_scan = {"release_note": fake_release, "form_files": ["A.fmx"],
+                     "sql_files": [], "muti_files": [],
+                     "setup_bat": False, "install_guide": None, "missing": []}
+        fake_issues = [{"issue_no": "0015659", "issue_type": "BugFix",
+                        "description": "修正", "region": "TW"}]
+
+        with patch("py7zr.SevenZipFile", return_value=mock_z), \
+             patch.object(SinglePatchEngine, "scan_patch_dir", return_value=fake_scan), \
+             patch.object(SinglePatchEngine, "read_release_doc", return_value=fake_issues):
+            eng = SinglePatchEngine(conn)
+            patch_id, version_tag, issue_count = eng.load_from_archive(
+                str(archive), str(extract_dir)
+            )
+        assert issue_count == 1
+        assert version_tag == "IP_合併_20261201"
