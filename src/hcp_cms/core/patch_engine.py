@@ -223,7 +223,7 @@ class SinglePatchEngine:
         return paths
 
     def _write_header_row(self, ws: object, headers: list[str],
-                          fgColor: str = "1F3864") -> None:
+                          fgColor: str = "1F3864") -> None:  # noqa: N803
         from openpyxl.styles import Alignment, Font, PatternFill
         for c, h in enumerate(headers, start=1):
             cell = ws.cell(1, c)
@@ -298,8 +298,6 @@ class SinglePatchEngine:
         path = str(out / fname)
         wb.save(path)
         return path
-
-    # ── 測試腳本 ─────────────────────────────────────────────────────────────
 
     # ── 封存解壓縮 ────────────────────────────────────────────────────────────
 
