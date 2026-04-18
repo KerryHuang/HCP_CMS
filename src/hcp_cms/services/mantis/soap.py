@@ -85,7 +85,7 @@ class MantisSoapClient(MantisClient):
             fixed_in_version = self._extract_xml(text, "fixed_in_version") or ""
             description = self._extract_xml(text, "description") or ""
 
-            notes_list, notes_count = self._parse_notes(text, max_count=5)
+            notes_list, notes_count = self._parse_notes(text, max_count=10)
 
             return MantisIssue(
                 id=issue_id,

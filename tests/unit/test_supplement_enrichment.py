@@ -59,3 +59,20 @@ def test_extract_supplement_sparse_data(monkeypatch):
         mantis_notes=[],
     )
     assert "以上資料非常有限" in captured["prompt"]
+
+
+# ── Task 2: MantisSoapClient ───────────────────────────────────────────────
+
+def test_parse_notes_limit_10():
+    """_parse_notes 應保留最後 10 條筆記。"""
+    from hcp_cms.services.mantis.soap import MantisSoapClient
+    # 建立 12 條假筆記的 XML
+    items_xml = "".join(
+        f"<item><id>{i}</id><reporter><name>u{i}</name></reporter>"
+        f"<text>note{i}</text><date_submitted>2026-03-{i:02d}T00:00:00Z</date_submitted></item>"
+        for i in range(1, 13)
+    )
+    xml = f"<notes>{items_xml}</notes>"
+    notes, total = MantisSoapClient._parse_notes(xml, max_count=10)
+    assert total == 12
+    assert len(notes) == 10
