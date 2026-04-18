@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QPushButton,
     QSpinBox,
+    QSplitter,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -161,7 +162,7 @@ class MonthlyPatchTab(QWidget):
         reminder_group = QGroupBox("📅 排班提醒（選填，留空則不顯示於通知信）")
         reminder_inner = QVBoxLayout()
         self._reminder_list = QListWidget()
-        self._reminder_list.setMaximumHeight(80)
+        self._reminder_list.setMaximumHeight(60)
         self._reminder_list.setToolTip("每條提醒可獨立刪除，切換月份自動清空")
         reminder_btn_row = QHBoxLayout()
         self._reminder_add_btn = QPushButton("＋ 新增")
@@ -176,20 +177,22 @@ class MonthlyPatchTab(QWidget):
         reminder_group.setLayout(reminder_inner)
         layout.addWidget(reminder_group)
 
-        # Issue 表格
-        self._issue_table = IssueTableWidget(conn=self._conn)
-        layout.addWidget(self._issue_table, stretch=2)
+        # 下半部：Issue 表格 / Log / 產出清單 — 可拖曳調整比例
+        bottom_splitter = QSplitter(Qt.Orientation.Vertical)
 
-        # 執行 Log
+        self._issue_table = IssueTableWidget(conn=self._conn)
+        bottom_splitter.addWidget(self._issue_table)
+
         self._log = QTextEdit()
         self._log.setReadOnly(True)
-        self._log.setMaximumHeight(150)
-        layout.addWidget(self._log)
+        bottom_splitter.addWidget(self._log)
 
-        # 產出清單
         self._output_list = QListWidget()
-        self._output_list.setMaximumHeight(100)
-        layout.addWidget(self._output_list)
+        bottom_splitter.addWidget(self._output_list)
+
+        bottom_splitter.setSizes([300, 120, 80])
+        bottom_splitter.setCollapsible(0, False)
+        layout.addWidget(bottom_splitter, stretch=1)
 
         # Signal / Slot 連線
         self._source_combo.currentIndexChanged.connect(self._on_issue_source_changed)
