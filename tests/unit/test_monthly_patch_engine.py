@@ -276,8 +276,8 @@ class TestScanMonthlyDir:
         assert len(issues) == 1
         assert issues[0].issue_no == "0016552"
         meta = json.loads(issues[0].mantis_detail)
-        assert "HRWF304" in meta["form_files"]
-        assert "pk_test" in meta["sql_files"]
+        assert any("HRWF304" in f for f in meta["form_files"])
+        assert any("pk_test" in f for f in meta["sql_files"])
 
     def test_scan_monthly_dir_mode_b_reorganizes(self, conn, tmp_path, monkeypatch):
         from hcp_cms.core.monthly_patch_engine import MonthlyPatchEngine
@@ -411,10 +411,12 @@ class TestGeneratePatchListFromDir:
 
         wb = load_workbook(paths[0])
         ws = wb["IT 發行通知"]
-        # Row 2, col 5 = FORM目錄
-        assert ws.cell(2, 5).value == "HRWF304"
-        # Row 2, col 6 = DB物件
-        assert ws.cell(2, 6).value == "pk_test"
+        # Row 7 = 資料起始列（1=標題, 3=meta, 5=section, 6=欄頭, 7+=資料）
+        assert ws.cell(6, 5).value == "FORM 目錄"   # 欄頭確認
+        form_val = ws.cell(7, 5).value or ""
+        assert "HRWF304" in form_val
+        sql_val = ws.cell(7, 6).value or ""
+        assert "pk_test" in sql_val
 
     def test_generate_test_report_hyperlink(self, conn, tmp_path):
         import json
@@ -440,8 +442,8 @@ class TestGeneratePatchListFromDir:
 
         wb = load_workbook(paths[0])
         ws = wb["問題修正補充說明"]
-        # Row 2 = 第一筆 issue，col 2 = 測試報告（含超連結）
-        cell = ws.cell(2, 2)
+        # Row 7 = 資料起始列，col 2 = 測試報告（含超連結）
+        cell = ws.cell(7, 2)
         assert cell.hyperlink is not None
         hyperlink_target = cell.hyperlink.target if hasattr(cell.hyperlink, "target") else str(cell.hyperlink)
         assert "0016552" in hyperlink_target
@@ -468,7 +470,8 @@ class TestGeneratePatchListFromDir:
 
         wb = load_workbook(paths[0])
         ws_it = wb["IT 發行通知"]
-        headers = [ws_it.cell(1, c).value for c in range(1, 9)]
+        # 欄頭在 Row 6（Row 1=標題, Row 3=meta, Row 5=section header, Row 6=欄頭）
+        headers = [ws_it.cell(6, c).value for c in range(1, 9)]
         assert headers == ["Issue No", "類型", "程式代號", "說明", "FORM 目錄", "DB 物件", "多語更新", "備註"]
 
     def test_hr_sheet_column_names(self, conn, tmp_path):
@@ -492,7 +495,8 @@ class TestGeneratePatchListFromDir:
 
         wb = load_workbook(paths[0])
         ws_hr = wb["HR 發行通知"]
-        assert ws_hr.cell(1, 4).value == "程式代號"
+        # 欄頭在 Row 6
+        assert ws_hr.cell(6, 4).value == "程式代號"
 
     def test_it_sheet_issue_no_hyperlink(self, conn, tmp_path):
         import json
@@ -517,7 +521,8 @@ class TestGeneratePatchListFromDir:
 
         wb = load_workbook(paths[0])
         ws_it = wb["IT 發行通知"]
-        cell = ws_it.cell(2, 1)
+        # 資料從 Row 7 開始
+        cell = ws_it.cell(7, 1)
         assert cell.hyperlink is not None
         assert "0016552" in str(cell.hyperlink.target if hasattr(cell.hyperlink, "target") else cell.hyperlink)
 
@@ -549,10 +554,11 @@ class TestGeneratePatchListFromDir:
 
         wb = load_workbook(paths[0])
         ws = wb["問題修正補充說明"]
-        headers = [ws.cell(1, c).value for c in range(1, 8)]
+        # 欄頭在 Row 6，資料從 Row 7 開始
+        headers = [ws.cell(6, c).value for c in range(1, 8)]
         assert headers == ["Issue No", "測試報告", "修改原因", "原問題", "範例說明", "修正後", "注意事項"]
-        assert ws.cell(2, 3).value == "原因說明"
-        assert ws.cell(2, 4).value == "問題描述"
+        assert ws.cell(7, 3).value == "原因說明"
+        assert ws.cell(7, 4).value == "問題描述"
 
 
 class TestGenerateNotifyHtmlFromDir:
@@ -643,7 +649,8 @@ class TestFetchSupplements:
             mock_creds.return_value.retrieve.return_value = ""
             eng = MonthlyPatchEngine(conn)
             count = eng.fetch_supplements(pid)
-        assert count == 0
+        from hcp_cms.core.monthly_patch_engine import MonthlyPatchEngine as MPE
+        assert count == MPE._FETCH_NO_CONN
 
 
 class TestRunS2T:

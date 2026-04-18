@@ -143,14 +143,21 @@ class MonthlyPatchEngine:
             logging.warning("不支援的封存格式，略過 [%s]", archive.name)
 
     def _list_files(self, directory: Path, extensions: list[str], keep_ext: bool = False) -> list[str]:
-        """列出目錄內符合副檔名的檔案，keep_ext=False 則去副檔名。"""
+        """列出目錄內符合副檔名的檔案，回傳 '檔名\n(YYYY-MM-DD)' 格式（含最後修改日期）。"""
+        import datetime
         if not directory.exists():
             return []
-        return [
-            f.name if keep_ext else f.stem
-            for f in sorted(directory.iterdir())
-            if f.is_file() and f.suffix.lower() in extensions
-        ]
+        result = []
+        for f in sorted(directory.iterdir()):
+            if not f.is_file() or f.suffix.lower() not in extensions:
+                continue
+            name = f.name if keep_ext else f.stem
+            try:
+                mtime = datetime.date.fromtimestamp(f.stat().st_mtime).isoformat()
+                result.append(f"{name}\n({mtime})")
+            except OSError:
+                result.append(name)
+        return result
 
     def _extract_issue_no(self, filename: str) -> str | None:
         """從封存檔名解析 7 位數 Issue No，如 '01.IP_20241128_0016552_11G.7z' → '0016552'。"""
@@ -633,15 +640,57 @@ class MonthlyPatchEngine:
                 iss.issue_no: self._find_test_report(base, version, iss.issue_no)
                 for iss in issues
             }
+            fname = f"PATCH_LIST_{month_str}_{version}"
             wb = Workbook()
+
+            # ── 共用：標題列結構輔助 ──
+            hdr_font = Font(name="微軟正黑體", size=12, bold=True, color="FFFFFF")
+            hdr_fill = PatternFill("solid", fgColor="1F3864")
+            hdr_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            title_font = Font(name="微軟正黑體", size=14, bold=True, color="FFFFFF")
+            title_fill = PatternFill("solid", fgColor="1F3864")
+            meta_font  = Font(name="微軟正黑體", size=11)
+            section_font = Font(name="微軟正黑體", size=11, bold=True, color="1F3864")
+
+            def _write_sheet_header(ws, title: str, col_count: int, col_headers: list[str]) -> int:
+                """寫入標題列(R1)、meta資訊(R3)、section header(R5)、欄頭(R6)，回傳資料起始列號。"""
+                # R1: 標題（合併整列）
+                ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=col_count)
+                c = ws.cell(1, 1, title)
+                c.font = title_font
+                c.fill = title_fill
+                c.alignment = Alignment(horizontal="center", vertical="center")
+                ws.row_dimensions[1].height = 30
+                # R3: meta
+                for col, val in [(1, "發行日期"), (3, "Patch No."), (4, fname),
+                                 (5, "系統模組"), (6, "HCP"), (7, "準備人員")]:
+                    ws.cell(3, col, val).font = meta_font
+                # R5: section header（合併整列）
+                ws.merge_cells(start_row=5, start_column=1, end_row=5, end_column=col_count)
+                section_title = title.split("【")[-1].rstrip("】") if "【" in title else ""
+                c5 = ws.cell(5, 1, f"▌ Release Note  ─  {section_title} 視角" if section_title else "▌ Release Note")
+                c5.font = section_font
+                c5.alignment = Alignment(vertical="center")
+                # R6: 欄頭
+                for col, h in enumerate(col_headers, start=1):
+                    c6 = ws.cell(6, col, h)
+                    c6.font = hdr_font
+                    c6.fill = hdr_fill
+                    c6.alignment = hdr_align
+                ws.row_dimensions[6].height = 30
+                return 7  # 資料從第 7 列開始
+
+            def _fmt_files(files: list[str]) -> str:
+                return "\n".join(files) if files else "—"
 
             # ① IT 發行通知
             ws_it = wb.active
             ws_it.title = "IT 發行通知"
-            self._write_patch_header(
-                ws_it, ["Issue No", "類型", "程式代號", "說明", "FORM 目錄", "DB 物件", "多語更新", "備註"]
+            it_headers = ["Issue No", "類型", "程式代號", "說明", "FORM 目錄", "DB 物件", "多語更新", "備註"]
+            data_start = _write_sheet_header(
+                ws_it, f"HCP 系統更新通知\u3000{fname}\u3000【IT 技術人員】", 8, it_headers
             )
-            for i, iss in enumerate(issues, start=2):
+            for i, iss in enumerate(issues, start=data_start):
                 meta = self._parse_scan_meta(iss)
                 report_path = report_cache[iss.issue_no]
                 clr = self._CLR_ENH if iss.issue_type == "Enhancement" else self._CLR_BUG
@@ -653,22 +702,26 @@ class MonthlyPatchEngine:
                 _set_data_cell(ws_it.cell(i, 2), iss.issue_type)
                 _set_data_cell(ws_it.cell(i, 3), iss.program_code)
                 _set_data_cell(ws_it.cell(i, 4), iss.description)
-                _set_data_cell(ws_it.cell(i, 5), "、".join(meta.get("form_files") or []))
-                _set_data_cell(ws_it.cell(i, 6), "、".join(meta.get("sql_files") or []))
-                _set_data_cell(ws_it.cell(i, 7), "\n".join(meta.get("muti_files") or []))
+                _set_data_cell(ws_it.cell(i, 5), _fmt_files(meta.get("form_files") or []))
+                _set_data_cell(ws_it.cell(i, 6), _fmt_files(meta.get("sql_files") or []))
+                _set_data_cell(ws_it.cell(i, 7), _fmt_files(meta.get("muti_files") or []))
                 _set_data_cell(ws_it.cell(i, 8), None)
                 for c in range(1, 9):
                     ws_it.cell(i, c).fill = row_fill
 
             # ② HR 發行通知
             ws_hr = wb.create_sheet("HR 發行通知")
-            self._write_patch_header(ws_hr, [
+            hr_headers = [
                 "Issue No", "計區域", "類型", "程式代號", "程式名稱",
-                "功能說明", "影響說明/用途", "相關程式(FORM)",
+                "功能說明", "影響說明/用途", "相關程式\n(FORM)",
                 "上線所需動作", "測試方向及注意事項", "備註",
-            ])
-            for i, iss in enumerate(issues, start=2):
+            ]
+            data_start = _write_sheet_header(
+                ws_hr, f"HCP 系統更新通知\u3000{fname}\u3000【HR 業務人員】", 11, hr_headers
+            )
+            for i, iss in enumerate(issues, start=data_start):
                 meta = self._parse_scan_meta(iss)
+                supplement = meta.get("supplement") or {}
                 region_fill = PatternFill("solid", fgColor={
                     "TW": self._CLR_TW, "CN": self._CLR_CN
                 }.get(iss.region or "", self._CLR_BOTH))
@@ -682,8 +735,10 @@ class MonthlyPatchEngine:
                 _set_data_cell(ws_hr.cell(i, 4), iss.program_code)
                 _set_data_cell(ws_hr.cell(i, 5), iss.program_name)
                 _set_data_cell(ws_hr.cell(i, 6), iss.description)
-                _set_data_cell(ws_hr.cell(i, 7), iss.impact)
-                _set_data_cell(ws_hr.cell(i, 8), "、".join(meta.get("form_files") or []))
+                # 影響說明/用途：優先 Mantis supplement，否則 impact 欄位
+                impact_val = supplement.get("修正後") or supplement.get("修改原因") or iss.impact
+                _set_data_cell(ws_hr.cell(i, 7), impact_val)
+                _set_data_cell(ws_hr.cell(i, 8), _fmt_files(meta.get("form_files") or []))
                 _set_data_cell(ws_hr.cell(i, 9), "請與資訊單位確認是否已完成更新\n確認更新完成再進行測試")
                 ws_hr.cell(i, 9).fill = PatternFill("solid", fgColor="FFF9C4")
                 _set_data_cell(ws_hr.cell(i, 10), iss.test_direction)
@@ -693,10 +748,11 @@ class MonthlyPatchEngine:
 
             # ③ 問題修正補充說明（7 欄，含 Mantis supplement）
             ws_supp = wb.create_sheet("問題修正補充說明")
-            self._write_patch_header(ws_supp, [
-                "Issue No", "測試報告", "修改原因", "原問題", "範例說明", "修正後", "注意事項"
-            ])
-            for i, iss in enumerate(issues, start=2):
+            supp_headers = ["Issue No", "測試報告", "修改原因", "原問題", "範例說明", "修正後", "注意事項"]
+            data_start = _write_sheet_header(
+                ws_supp, f"問題修正補充說明\u3000{fname}", 7, supp_headers
+            )
+            for i, iss in enumerate(issues, start=data_start):
                 meta = self._parse_scan_meta(iss)
                 supplement = meta.get("supplement") or {}
                 _set_data_cell(ws_supp.cell(i, 1), iss.issue_no)
@@ -712,8 +768,7 @@ class MonthlyPatchEngine:
                 _set_data_cell(ws_supp.cell(i, 6), supplement.get("修正後", ""))
                 _set_data_cell(ws_supp.cell(i, 7), supplement.get("注意事項", ""))
 
-            fname = f"PATCH_LIST_{month_str}_{version}.xlsx"
-            out_path = base / version / fname
+            out_path = base / version / f"{fname}.xlsx"
             out_path.parent.mkdir(parents=True, exist_ok=True)
             try:
                 wb.save(str(out_path))

@@ -106,8 +106,11 @@ class SinglePatchEngine:
         except Exception:
             return None
 
+    # 從 description 解析 [程式代號][程式名稱] 的 pattern
+    _PROG_RE = re.compile(r"^\[([A-Z0-9]+)\]\[([^\]]+)\]")
+
     def _parse_release_note_text(self, text: str) -> list[dict[str, str]]:
-        """從文字中辨識 Issue 編號、類型、說明。"""
+        """從文字中辨識 Issue 編號、類型、說明，並解析程式代號/名稱。"""
         issues: list[dict[str, str]] = []
         current_type = _ISSUE_TYPE_BUGFIX
         for line in text.split("\n"):
@@ -123,10 +126,14 @@ class SinglePatchEngine:
                 continue
             m = re.match(r"(\d{7})\s+(.*)", stripped)
             if m:
+                desc = m.group(2).strip()
+                prog_m = self._PROG_RE.match(desc)
                 issues.append({
                     "issue_no": m.group(1),
                     "issue_type": current_type,
-                    "description": m.group(2).strip(),
+                    "description": desc,
+                    "program_code": prog_m.group(1) if prog_m else "",
+                    "program_name": prog_m.group(2) if prog_m else "",
                     "region": "共用",
                 })
         return issues
