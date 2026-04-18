@@ -323,3 +323,61 @@ class TestGenerateReleaseNotice:
         headers = [ws.cell(1, c).value for c in range(1, ws.max_column + 1)]
         assert "客服驗證" not in headers
         assert "可納入大PATCH" not in headers
+
+
+class TestGenerateIssueSplit:
+    @pytest.fixture
+    def engine_with_patch(self, conn):
+        from hcp_cms.data.models import PatchIssue, PatchRecord
+        from hcp_cms.data.repositories import PatchRepository
+        repo = PatchRepository(conn)
+        pid = repo.insert_patch(PatchRecord(type="single"))
+        repo.insert_issue(PatchIssue(patch_id=pid, issue_no="0015659",
+                                     issue_type="BugFix", region="TW",
+                                     program_code="PA001", description="修正",
+                                     sort_order=1))
+        repo.insert_issue(PatchIssue(patch_id=pid, issue_no="0015660",
+                                     issue_type="Enhancement", region="CN",
+                                     description="新增", sort_order=2))
+        return SinglePatchEngine(conn), pid
+
+    def test_creates_file_with_version_tag(self, engine_with_patch, tmp_path):
+        eng, pid = engine_with_patch
+        path = eng.generate_issue_split(pid, str(tmp_path), "IP_合併_20261101")
+        assert Path(path).exists()
+        assert "IP_合併_20261101_Issue清單" in path
+
+    def test_it_sheet_8_columns(self, engine_with_patch, tmp_path):
+        import openpyxl
+        eng, pid = engine_with_patch
+        path = eng.generate_issue_split(pid, str(tmp_path), "IP_合併_20261101")
+        wb = openpyxl.load_workbook(path)
+        assert "IT" in wb.sheetnames
+        ws = wb["IT"]
+        headers = [ws.cell(1, c).value for c in range(1, ws.max_column + 1)]
+        assert len(headers) == 8
+        assert headers[0] == "Issue No"
+        assert headers[-1] == "備註"
+
+    def test_hr_sheet_11_columns(self, engine_with_patch, tmp_path):
+        import openpyxl
+        eng, pid = engine_with_patch
+        path = eng.generate_issue_split(pid, str(tmp_path), "IP_合併_20261101")
+        wb = openpyxl.load_workbook(path)
+        assert "HR" in wb.sheetnames
+        ws = wb["HR"]
+        headers = [ws.cell(1, c).value for c in range(1, ws.max_column + 1)]
+        assert len(headers) == 11
+        assert "計區域" in headers
+        assert "上線所需動作" in headers
+
+    def test_hr_sheet_fixed_action_text(self, engine_with_patch, tmp_path):
+        import openpyxl
+        eng, pid = engine_with_patch
+        path = eng.generate_issue_split(pid, str(tmp_path), "IP_合併_20261101")
+        wb = openpyxl.load_workbook(path)
+        ws = wb["HR"]
+        action_col = 9
+        for row in range(2, ws.max_row + 1):
+            val = ws.cell(row, action_col).value
+            assert val == "請與資訊單位確認是否已完成更新，確認更新完成再進行測試"

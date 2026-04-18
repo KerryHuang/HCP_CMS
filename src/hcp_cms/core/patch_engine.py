@@ -140,6 +140,9 @@ class SinglePatchEngine:
     _CLR_ENH   = "E2EFDA"   # Enhancement 列
     _CLR_BUG   = "FCE4D6"   # BugFix 列
     _CLR_WARN  = "FFF3CD"   # 待確認
+    _CLR_REGION_CN   = "FFE0B2"   # HR 計區域 CN
+    _CLR_REGION_TW   = "DBEAFE"   # HR 計區域 TW
+    _CLR_REGION_COMM = "DCFCE7"   # HR 計區域 共用
 
     def generate_excel_reports(self, patch_id: int, output_dir: str) -> list[str]:
         """產生 3 份 Excel：Issue清單整理、發行通知、IT_HR清單。"""
@@ -318,6 +321,64 @@ class SinglePatchEngine:
             ws.cell(row_i, 3).value = iss.description
 
         fname = f"{version_tag}_發行通知.xlsx"
+        path = str(out / fname)
+        wb.save(path)
+        return path
+
+    def generate_issue_split(self, patch_id: int, output_dir: str,
+                             version_tag: str) -> str:
+        """產出 {version_tag}_Issue清單.xlsx（IT/HR 2 頁籤）。"""
+        from openpyxl import Workbook
+        from openpyxl.styles import PatternFill
+
+        issues = self._repo.list_issues_by_patch(patch_id)
+        out = Path(output_dir)
+        out.mkdir(parents=True, exist_ok=True)
+
+        wb = Workbook()
+
+        # ── IT sheet ──────────────────────────────────────────────────────────
+        ws_it = wb.active
+        ws_it.title = "IT"
+        it_headers = ["Issue No", "類型", "程式代號", "說明",
+                      "FORM 目錄", "DB 物件", "多語更新", "備註"]
+        self._write_header_row(ws_it, it_headers, fgColor="1F4E79")  # noqa: N803
+        for row_i, iss in enumerate(issues, start=2):
+            ws_it.cell(row_i, 1).value = iss.issue_no
+            ws_it.cell(row_i, 2).value = iss.issue_type
+            ws_it.cell(row_i, 3).value = iss.program_code
+            ws_it.cell(row_i, 4).value = iss.description
+            row_clr = self._CLR_ENH if iss.issue_type == "Enhancement" else self._CLR_BUG
+            ws_it.cell(row_i, 2).fill = PatternFill("solid", fgColor=row_clr)
+
+        # ── HR sheet ──────────────────────────────────────────────────────────
+        ws_hr = wb.create_sheet("HR")
+        hr_headers = ["Issue No", "計區域", "類型", "程式代號", "程式名稱",
+                      "功能說明", "影響說明/用途", "相關程式(FORM)",
+                      "上線所需動作", "測試方向及注意事項", "備註"]
+        self._write_header_row(ws_hr, hr_headers, fgColor="1E5631")  # noqa: N803
+        _region_clr = {"CN": self._CLR_REGION_CN, "TW": self._CLR_REGION_TW,
+                       "共用": self._CLR_REGION_COMM}
+        for row_i, iss in enumerate(issues, start=2):
+            ws_hr.cell(row_i, 1).value = iss.issue_no
+            ws_hr.cell(row_i, 2).value = iss.region
+            ws_hr.cell(row_i, 3).value = iss.issue_type
+            ws_hr.cell(row_i, 4).value = iss.program_code
+            ws_hr.cell(row_i, 5).value = iss.program_name
+            ws_hr.cell(row_i, 6).value = iss.description
+            ws_hr.cell(row_i, 7).value = iss.impact
+            ws_hr.cell(row_i, 9).value = (
+                "請與資訊單位確認是否已完成更新，確認更新完成再進行測試"
+            )
+            ws_hr.cell(row_i, 10).value = iss.test_direction
+            ws_hr.cell(row_i, 2).fill = PatternFill(
+                "solid",
+                fgColor=_region_clr.get(iss.region or "共用", self._CLR_REGION_COMM),
+            )
+            row_clr = self._CLR_ENH if iss.issue_type == "Enhancement" else self._CLR_BUG
+            ws_hr.cell(row_i, 3).fill = PatternFill("solid", fgColor=row_clr)
+
+        fname = f"{version_tag}_Issue清單.xlsx"
         path = str(out / fname)
         wb.save(path)
         return path
