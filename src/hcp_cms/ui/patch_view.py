@@ -51,9 +51,17 @@ class PatchView(QWidget):
         self._supplement_tab.reanalyze_requested.connect(monthly_tab._on_reanalyze_single)
         self._supplement_tab.reanalyze_all_requested.connect(monthly_tab._on_reanalyze_all)
 
+        # 切換到補充說明 Tab 時自動載入 Issue 清單
+        self._monthly_tab = monthly_tab
+        self._tabs.currentChanged.connect(self._on_tab_changed)
+
     def _on_open_supplement_editor(self, issues: list) -> None:
         self._supplement_tab.load_issues(issues)
         self._tabs.setCurrentWidget(self._supplement_tab)
+
+    def _on_tab_changed(self, index: int) -> None:
+        if self._tabs.widget(index) is self._supplement_tab:
+            self._supplement_tab.load_issues(self._monthly_tab._get_current_issues())
 
     def _on_supplement_display_updated(self, issue_id: int, supplement: object, edited: bool) -> None:
         self._supplement_tab.update_issue_display(issue_id, supplement, edited=edited)  # type: ignore[arg-type]
