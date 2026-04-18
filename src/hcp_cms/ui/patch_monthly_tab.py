@@ -34,7 +34,7 @@ _CLR_CURRENT = "color: #3b82f6; font-weight: bold;"
 _CLR_PENDING = "color: #64748b;"
 _MONTHS = [f"{m:02d}月" for m in range(1, 13)]
 _SOURCE_FILE = "上傳 .txt / .json"
-_SOURCE_MANTIS = "Mantis 瀏覽器"
+_SOURCE_MANTIS = "Mantis 瀏覽器（尚未開發）"
 _SOURCE_FOLDER = "掃描資料夾"
 
 
@@ -237,10 +237,13 @@ class MonthlyPatchTab(QWidget):
         current = self._source_combo.currentText()
         is_file = current == _SOURCE_FILE
         is_folder = current == _SOURCE_FOLDER
+        is_mantis = current == _SOURCE_MANTIS
         self._file_edit.setVisible(is_file)
         self._file_btn.setVisible(is_file)
         self._scan_edit.setVisible(is_folder)
         self._scan_btn.setVisible(is_folder)
+        if is_mantis:
+            self._append_log("⚠️ Mantis 瀏覽器自動抓取功能尚未開發完成，請改用「上傳 .txt / .json」或「掃描資料夾」")
 
     def _on_scan_browse_clicked(self) -> None:
         path = QFileDialog.getExistingDirectory(self, "選擇月份 Patch 資料夾")
@@ -271,6 +274,10 @@ class MonthlyPatchTab(QWidget):
         if not self._conn:
             return
         source_text = self._source_combo.currentText()
+        if source_text == _SOURCE_MANTIS:
+            self._append_log("⚠️ Mantis 瀏覽器自動抓取功能尚未開發完成，請改用其他來源")
+            self._import_btn.setEnabled(True)
+            return
         if source_text == _SOURCE_FILE and not self._file_path:
             self._append_log("⚠️ 請先選擇檔案")
             return
