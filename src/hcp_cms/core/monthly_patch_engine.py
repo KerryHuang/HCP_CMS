@@ -324,7 +324,11 @@ class MonthlyPatchEngine:
     _FETCH_NO_CONN  = -1   # Mantis 連線失敗
     _FETCH_NO_ISSUE = -2   # 無 Issue 可處理
 
-    def fetch_supplements(self, patch_id: int) -> int:
+    def fetch_supplements(
+        self,
+        patch_id: int,
+        progress: Callable[[str], None] | None = None,
+    ) -> int:
         """從 Mantis 取得各 Issue 說明，以 Claude 整理補充說明五欄位。
 
         回傳值：
@@ -332,6 +336,10 @@ class MonthlyPatchEngine:
             -1    → Mantis 連線失敗
             -2    → 該 Patch 無 Issue
         """
+        def _log(msg: str) -> None:
+            if progress:
+                progress(msg)
+
         client = self._build_mantis_client()
         if client is None:
             return self._FETCH_NO_CONN
@@ -341,12 +349,16 @@ class MonthlyPatchEngine:
             return self._FETCH_NO_ISSUE
         count = 0
         for iss in issues:
+            mantis_id = iss.issue_no.lstrip("0") or "0"
+            _log(f"  🔍 查詢 Issue {iss.issue_no} (Mantis id={mantis_id})…")
             supplement = self._fetch_supplement(iss.issue_no, client, svc)
             if not any(supplement.values()):
+                _log(f"  ⚠️ Issue {iss.issue_no}：Mantis 無資料（{client.last_error or '補充欄位為空'}）")
                 continue
             existing = self._parse_scan_meta(iss)
             existing["supplement"] = supplement
             self._repo.update_issue_mantis_detail(iss.issue_id, json.dumps(existing, ensure_ascii=False))
+            _log(f"  ✅ Issue {iss.issue_no}：補充說明已更新")
             count += 1
         return count
 
@@ -355,12 +367,11 @@ class MonthlyPatchEngine:
     ) -> dict[str, str]:
         """呼叫 Mantis + Claude，回傳補充說明五欄位 dict。"""
         empty = {"修改原因": "", "原問題": "", "範例說明": "", "修正後": "", "注意事項": ""}
-        mantis_id = issue_no.lstrip("0") or "0"
         try:
-            issue = client.get_issue(mantis_id)
+            issue = client.get_issue(issue_no.lstrip("0") or "0")
             if issue is None:
-                logging.warning("fetch_supplement: Mantis 找不到 issue_no=%s (id=%s): %s",
-                                issue_no, mantis_id, client.last_error)
+                logging.warning("fetch_supplement: Mantis 找不到 issue_no=%s: %s",
+                                issue_no, client.last_error)
                 return empty
             notes_text = "\n".join(n.text for n in (issue.notes_list or []))
             full_text = f"{issue.description}\n{notes_text}".strip()

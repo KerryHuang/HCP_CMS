@@ -519,7 +519,10 @@ class MonthlyPatchTab(QWidget):
             total = 0
             for pid in patch_ids_list:
                 if pid is not None:
-                    total += eng.fetch_supplements(pid)
+                    total += eng.fetch_supplements(
+                        pid,
+                        progress=lambda msg: self._import_log.emit(msg),
+                    )
             return total
 
         threading.Thread(target=lambda: self._supplement_done.emit(work()), daemon=True).start()
