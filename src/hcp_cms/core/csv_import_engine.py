@@ -151,12 +151,14 @@ class CsvImportEngine:
 
     def __init__(self, conn: sqlite3.Connection) -> None:
         from hcp_cms.core.custom_column_manager import CustomColumnManager
+        from hcp_cms.data.fts import FTSManager
         from hcp_cms.data.repositories import CaseRepository, CompanyRepository
 
         self._conn = conn
         self._case_repo = CaseRepository(conn)
         self._company_repo = CompanyRepository(conn)
         self._custom_col_mgr = CustomColumnManager(conn)
+        self._fts = FTSManager(conn)
 
     def create_custom_columns(
         self, requests: list[tuple[str, str]]
@@ -329,6 +331,7 @@ class CsvImportEngine:
                                     self._case_repo.update_extra_field(
                                         case_id, db_col, (row.get(csv_col) or "").strip() or None
                                     )
+                            self._fts.index_case(case_id, subject_val, None, None)
                             result.overwritten += 1
                     else:
                         self._insert_case(case_dict)
@@ -338,6 +341,7 @@ class CsvImportEngine:
                                 self._case_repo.update_extra_field(
                                     case_id, db_col, (row.get(csv_col) or "").strip() or None
                                 )
+                        self._fts.index_case(case_id, subject_val, None, None)
                         result.success += 1
 
                 except Exception as e:
@@ -348,6 +352,18 @@ class CsvImportEngine:
             progress_cb(total, total)
         self._case_repo.reload_custom_columns()
         return result
+
+    def rebuild_fts_index(self) -> int:
+        """對所有 cs_cases 重建 FTS 索引，回傳更新筆數。
+
+        用於修復歷史匯入資料未建立索引的情況。
+        """
+        rows = self._conn.execute(
+            "SELECT case_id, subject, progress, notes FROM cs_cases"
+        ).fetchall()
+        for row in rows:
+            self._fts.index_case(row[0], row[1], row[2], row[3])
+        return len(rows)
 
     def _insert_case(self, case_dict: dict[str, object]) -> None:
         cols = list(case_dict.keys())

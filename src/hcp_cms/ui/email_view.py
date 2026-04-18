@@ -6,6 +6,7 @@ import contextlib
 import sqlite3
 import threading
 import traceback
+import warnings
 from html import escape
 from pathlib import Path
 
@@ -48,6 +49,7 @@ class EmailView(QWidget):
     navigate_to_cases = Signal()  # 匯入完成後請求跳轉至案件管理
     _worker_done = Signal(object)  # 背景工作完成（跨線程安全）
     _worker_error = Signal(str)  # 背景工作失敗
+    _worker_log = Signal(str)   # 背景執行緒的中間診斷訊息
     _mail_arrived = Signal(object)  # 逐封信件串流顯示
 
     def _build_base_style(self, p: ColorPalette) -> str:
@@ -270,6 +272,7 @@ class EmailView(QWidget):
         self._log.setFixedHeight(120)
         self._log.setPlaceholderText("處理日誌...")
         inbox_layout.addWidget(self._log)
+        self._worker_log.connect(self._log.append, Qt.ConnectionType.QueuedConnection)
 
         # Schedule settings（屬於收件排程，放在收件 tab 內）
         schedule_group = QGroupBox("自動排程")
@@ -300,9 +303,11 @@ class EmailView(QWidget):
         self._progress.setVisible(True)
 
         # 先斷開舊 slot 再建新連線（首次無連線時靜默跳過）
-        with contextlib.suppress(RuntimeError):
+        with warnings.catch_warnings(), contextlib.suppress(RuntimeError):
+            warnings.simplefilter("ignore", RuntimeWarning)
             self._worker_done.disconnect()
-        with contextlib.suppress(RuntimeError):
+        with warnings.catch_warnings(), contextlib.suppress(RuntimeError):
+            warnings.simplefilter("ignore", RuntimeWarning)
             self._worker_error.disconnect()
         self._worker_done.connect(on_done, Qt.ConnectionType.QueuedConnection)
         self._worker_error.connect(on_error, Qt.ConnectionType.QueuedConnection)
@@ -553,7 +558,8 @@ class EmailView(QWidget):
                 self._fetch_imported_count += 1
 
         # 連接串流 signal
-        with contextlib.suppress(RuntimeError):
+        with warnings.catch_warnings(), contextlib.suppress(RuntimeError):
+            warnings.simplefilter("ignore", RuntimeWarning)
             self._mail_arrived.disconnect()
         self._mail_arrived.connect(on_mail, Qt.ConnectionType.QueuedConnection)
 
@@ -565,7 +571,16 @@ class EmailView(QWidget):
                     self._mail_arrived.emit(mail)
                 except RuntimeError:
                     pass  # widget 已關閉，靜默略過
-            emails = provider.fetch_messages(since=since, until=until, on_message=_emit_mail)
+
+            def _log(msg: str) -> None:
+                try:
+                    self._worker_log.emit(msg)
+                except RuntimeError:
+                    pass
+
+            emails = provider.fetch_messages(
+                since=since, until=until, on_message=_emit_mail, log_cb=_log
+            )
             return {"count": len(emails)}
 
         def on_done(result: object) -> None:

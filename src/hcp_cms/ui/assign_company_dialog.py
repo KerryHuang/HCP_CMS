@@ -26,7 +26,7 @@ class AssignCompanyDialog(QDialog):
         self._selected_company_id: str | None = None
         self._case_count = case_count
         companies = CompanyRepository(conn).list_all()
-        self._companies = sorted(companies, key=lambda c: c.name)
+        self._companies = sorted(companies, key=lambda c: (c.domain or "").lower())
         self._setup_ui()
 
     def _setup_ui(self) -> None:

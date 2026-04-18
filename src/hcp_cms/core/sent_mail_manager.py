@@ -34,9 +34,18 @@ class SentMailManager:
         self._case_repo = CaseRepository(conn)
         self._company_repo = CompanyRepository(conn)
 
-    def fetch_and_enrich(self, since: datetime, until: datetime) -> list[EnrichedSentMail]:
-        """從 MailProvider 抓取寄件，過濾日期範圍，補充公司與案件資訊。"""
-        raw_list = self._provider.fetch_sent_messages(since=since)
+    def fetch_and_enrich(
+        self,
+        since: datetime,
+        until: datetime,
+        raw_list: list | None = None,
+    ) -> list[EnrichedSentMail]:
+        """從 MailProvider 抓取寄件，過濾日期範圍，補充公司與案件資訊。
+
+        raw_list 若已提供，直接使用而不重新抓取（避免重複 IMAP 連線）。
+        """
+        if raw_list is None:
+            raw_list = self._provider.fetch_sent_messages(since=since)
         results: list[EnrichedSentMail] = []
         for raw in raw_list:
             if raw.date and not _date_in_range(raw.date, since, until):

@@ -467,6 +467,8 @@ class CsvImportWorker(QThread):
                 self._strategy,
                 progress_cb=lambda c, t: self.progress.emit(c, t),
             )
+            # 重建全部 FTS 索引（含歷史未索引的案件）
+            engine.rebuild_fts_index()
             self.finished.emit(result)
         except Exception as e:
             err = ImportResult(failed=1, errors=[str(e)])

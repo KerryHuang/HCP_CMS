@@ -153,6 +153,7 @@ class SentMailTab(QWidget):
 
     _worker_done = Signal(object)
     _worker_error = Signal(str)
+    _worker_info = Signal(str)  # 背景執行緒的中間診斷訊息
 
     def __init__(self, conn: sqlite3.Connection | None = None, theme_mgr: ThemeManager | None = None) -> None:
         super().__init__()
@@ -278,6 +279,7 @@ class SentMailTab(QWidget):
 
         self._worker_done.connect(self._on_worker_done, Qt.ConnectionType.QueuedConnection)
         self._worker_error.connect(self._on_worker_error, Qt.ConnectionType.QueuedConnection)
+        self._worker_info.connect(self._log.append, Qt.ConnectionType.QueuedConnection)
 
     def _apply_theme(self, p: ColorPalette) -> None:
         """套用主題色彩。"""
@@ -354,7 +356,29 @@ class SentMailTab(QWidget):
         provider = self._provider
 
         def _work() -> list[EnrichedSentMail]:
-            return SentMailManager(conn, provider).fetch_and_enrich(since, until)
+            # 步驟 1：從 IMAP 取得原始寄件清單
+            raw_list = provider.fetch_sent_messages(since=since)
+            if not raw_list:
+                self._worker_info.emit(
+                    "⚠️ 寄件夾未找到或該日期區間無郵件（raw=0）。"
+                    "請確認信箱連線正常，或寄件夾名稱是否在常見清單內。"
+                )
+                return []
+            self._worker_info.emit(
+                f"📬 從寄件夾取得 {len(raw_list)} 封原始郵件，開始日期過濾..."
+            )
+            # 步驟 2：日期過濾 + 豐富化（傳入 raw_list 避免重複抓取）
+            results = SentMailManager(conn, provider).fetch_and_enrich(
+                since, until, raw_list=raw_list
+            )
+            if not results:
+                first_dates = [r.date for r in raw_list[:3] if r.date]
+                self._worker_info.emit(
+                    f"⚠️ {len(raw_list)} 封郵件均不在 {since.strftime('%Y/%m/%d')} 範圍內。"
+                    f"前幾封郵件日期：{first_dates}。"
+                    "可能是日期格式無法解析，或時區偏移導致日期錯位。"
+                )
+            return results
 
         def _thread() -> None:
             try:

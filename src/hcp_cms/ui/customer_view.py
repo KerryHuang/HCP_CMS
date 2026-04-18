@@ -6,6 +6,7 @@ from __future__ import annotations
 import sqlite3
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -23,6 +24,8 @@ from PySide6.QtWidgets import (
 )
 
 from hcp_cms.core.customer_manager import CustomerManager
+from hcp_cms.services.credential import CredentialManager
+from hcp_cms.services.mantis.soap import MantisSoapClient
 from hcp_cms.ui.theme import ColorPalette, ThemeManager
 
 # 客戶公司固定欄（不含負責客服/業務，後者用 QComboBox）
@@ -32,7 +35,7 @@ _COMPANY_FIXED_COLS: list[tuple[str, str]] = [
     ("別名", "alias"),
     ("聯絡資訊", "contact_info"),
 ]
-_COMPANY_TOTAL_COLS = len(_COMPANY_FIXED_COLS) + 2  # +負責客服 +負責業務
+_COMPANY_TOTAL_COLS = len(_COMPANY_FIXED_COLS) + 3  # +負責客服 +負責業務 +HcpVersion
 
 _STAFF_COLS: list[tuple[str, str]] = [
     ("姓名 *", "name"),
@@ -159,14 +162,19 @@ class CustomerView(QWidget):
             self._on_add_company_row,
             self._on_delete_company,
         )
+        # 在工具列右側加入 Mantis 同步按鈕
+        sync_btn = QPushButton("🔄 從 Mantis 同步 HcpVersion")
+        sync_btn.setToolTip("連線 Mantis，依使用者 email 網域比對公司，同步 HcpVersion 欄位")
+        sync_btn.clicked.connect(self._on_sync_hcp_version)
+        toolbar.layout().insertWidget(toolbar.layout().count() - 1, sync_btn)
         layout.addWidget(toolbar)
-        headers = [c[0] for c in _COMPANY_FIXED_COLS] + ["負責客服", "負責業務"]
+        headers = ["HcpVersion"] + [c[0] for c in _COMPANY_FIXED_COLS] + ["負責客服", "負責業務"]
         self._company_table = QTableWidget(0, _COMPANY_TOTAL_COLS)
         self._company_table.setHorizontalHeaderLabels(headers)
         self._company_table.horizontalHeader().setStretchLastSection(True)
         self._company_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        # 設定各欄初始寬度：公司名稱、網域、別名、聯絡資訊、負責客服、負責業務
-        for col, width in enumerate([180, 160, 120, 200, 130, 130]):
+        # 設定各欄初始寬度：HcpVersion、公司名稱、網域、別名、聯絡資訊、負責客服、負責業務
+        for col, width in enumerate([80, 180, 160, 120, 200, 130, 130]):
             self._company_table.setColumnWidth(col, width)
         self._company_table.verticalHeader().setDefaultSectionSize(28)
         layout.addWidget(self._company_table)
@@ -225,22 +233,41 @@ class CustomerView(QWidget):
             return
         mgr = CustomerManager(self._conn)
         companies = mgr.list_companies()
+
+        # 依負責客服排列（JILL → YOGA → 其他），再依網域字母排列
+        _CS_ORDER = {"JILL": 0, "YOGA": 1}
+        cs_id_to_name = {sid: name.upper() for name, sid in self._cs_staff_options if sid}
+
+        def _sort_key(comp):
+            cs_name = cs_id_to_name.get(comp.cs_staff_id or "", "")
+            return (_CS_ORDER.get(cs_name, 2), (comp.domain or "").lower())
+
+        companies.sort(key=_sort_key)
+
         tbl = self._company_table
         tbl.setRowCount(0)
         for comp in companies:
             row = tbl.rowCount()
             tbl.insertRow(row)
+            # Col 0: HcpVersion（唯讀）
+            hcp_item = QTableWidgetItem(comp.hcp_version or "")
+            hcp_item.setFlags(hcp_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            hcp_item.setForeground(QColor("#93c5fd"))
+            tbl.setItem(row, 0, hcp_item)
+            # Col 1-4: 固定欄位
             vals = [comp.name, comp.domain or "", comp.alias or "", comp.contact_info or ""]
-            for col, val in enumerate(vals):
+            for offset, val in enumerate(vals):
+                col = offset + 1
                 item = QTableWidgetItem(val)
-                if col == 0:
+                if col == 1:
                     # 將 company_id 藏入 UserRole，供儲存時直接定位記錄
                     item.setData(Qt.ItemDataRole.UserRole, comp.company_id)
                 tbl.setItem(row, col, item)
+            # Col 5-6: 人員 ComboBox
             cs_cb = self._make_staff_combo(self._cs_staff_options, comp.cs_staff_id)
-            tbl.setCellWidget(row, 4, cs_cb)
+            tbl.setCellWidget(row, 5, cs_cb)
             sales_cb = self._make_staff_combo(self._sales_staff_options, comp.sales_staff_id)
-            tbl.setCellWidget(row, 5, sales_cb)
+            tbl.setCellWidget(row, 6, sales_cb)
 
     def _make_staff_combo(self, options: list[tuple[str, str]], current_id: str | None) -> QComboBox:
         cb = QComboBox()
@@ -271,12 +298,18 @@ class CustomerView(QWidget):
         tbl = self._company_table
         row = tbl.rowCount()
         tbl.insertRow(row)
-        for col in range(len(_COMPANY_FIXED_COLS)):
+        # Col 0: HcpVersion（唯讀，新增列預設空白）
+        hcp_item = QTableWidgetItem("")
+        hcp_item.setFlags(hcp_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+        hcp_item.setForeground(QColor("#93c5fd"))
+        tbl.setItem(row, 0, hcp_item)
+        # Col 1-4: 固定欄位
+        for col in range(1, len(_COMPANY_FIXED_COLS) + 1):
             tbl.setItem(row, col, QTableWidgetItem(""))
         cs_cb = self._make_staff_combo(self._cs_staff_options, None)
-        tbl.setCellWidget(row, 4, cs_cb)
+        tbl.setCellWidget(row, 5, cs_cb)
         sales_cb = self._make_staff_combo(self._sales_staff_options, None)
-        tbl.setCellWidget(row, 5, sales_cb)
+        tbl.setCellWidget(row, 6, sales_cb)
 
     def _on_add_cs_row(self) -> None:
         row = self._cs_table.rowCount()
@@ -294,15 +327,15 @@ class CustomerView(QWidget):
         tbl = self._company_table
         rows = []
         for r in range(tbl.rowCount()):
-            name_item = tbl.item(r, 0)
-            cs_cb = tbl.cellWidget(r, 4)
-            sales_cb = tbl.cellWidget(r, 5)
+            name_item = tbl.item(r, 1)
+            cs_cb = tbl.cellWidget(r, 5)
+            sales_cb = tbl.cellWidget(r, 6)
             rows.append({
                 "company_id":    name_item.data(Qt.ItemDataRole.UserRole) if name_item else None,
                 "name":          (name_item.text() if name_item else "").strip(),
-                "domain":        (tbl.item(r, 1).text() if tbl.item(r, 1) else "").strip(),
-                "alias":         (tbl.item(r, 2).text() if tbl.item(r, 2) else "").strip(),
-                "contact_info":  (tbl.item(r, 3).text() if tbl.item(r, 3) else "").strip(),
+                "domain":        (tbl.item(r, 2).text() if tbl.item(r, 2) else "").strip(),
+                "alias":         (tbl.item(r, 3).text() if tbl.item(r, 3) else "").strip(),
+                "contact_info":  (tbl.item(r, 4).text() if tbl.item(r, 4) else "").strip(),
                 "cs_staff_id":   cs_cb.currentData() if cs_cb else None,
                 "sales_staff_id": sales_cb.currentData() if sales_cb else None,
             })
@@ -440,7 +473,7 @@ class CustomerView(QWidget):
         mgr = CustomerManager(self._conn)
         try:
             for index in sorted(rows, key=lambda i: i.row(), reverse=True):
-                domain_item = tbl.item(index.row(), 1)
+                domain_item = tbl.item(index.row(), 2)
                 if domain_item:
                     company = mgr.get_company_by_domain(domain_item.text().strip())
                     if company:
@@ -475,6 +508,45 @@ class CustomerView(QWidget):
                 staff = mgr.get_staff_by_email(email_item.text().strip())
                 if staff:
                     mgr.delete_staff(staff.staff_id)
+        self.refresh()
+
+    def _on_sync_hcp_version(self) -> None:
+        """從 Mantis 同步所有使用者的 HcpVersion 至 companies 表。"""
+        if not self._conn:
+            return
+        creds = CredentialManager()
+        url = creds.retrieve("mantis_url") or ""
+        user = creds.retrieve("mantis_user") or ""
+        pwd = creds.retrieve("mantis_password") or ""
+        if not url:
+            QMessageBox.warning(
+                self, "尚未設定",
+                "請先至「系統設定」→「Mantis SOAP 連線設定」填寫連線資訊。"
+            )
+            return
+        # 萃取 base URL
+        from urllib.parse import urlparse
+        parsed = urlparse(url)
+        path = parsed.path
+        if ".php" in path:
+            path = path[:path.rfind("/")]
+        base_url = f"{parsed.scheme}://{parsed.netloc}{path}".rstrip("/")
+
+        client = MantisSoapClient(base_url, username=user, password=pwd)
+        if not client.connect():
+            QMessageBox.critical(self, "連線失敗", f"無法連線至 Mantis：{client.last_error}")
+            return
+
+        mgr = CustomerManager(self._conn)
+        updated, err = mgr.sync_hcp_version_from_mantis(client)
+        if err:
+            QMessageBox.warning(self, "同步失敗", f"同步時發生錯誤：{err}")
+        else:
+            QMessageBox.information(
+                self, "同步完成",
+                f"成功更新 {updated} 筆公司的 HcpVersion。" if updated
+                else "所有公司的 HcpVersion 均已是最新，無需更新。"
+            )
         self.refresh()
 
     def _on_reassociate_cases(self) -> None:

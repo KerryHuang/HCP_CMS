@@ -193,3 +193,85 @@ class CustomerManager:
         if matched:
             self._conn.commit()
         return matched
+
+    # ── Mantis HcpVersion 同步 ────────────────────────────────────────────
+
+    def sync_hcp_version_from_mantis(self, client) -> tuple[int, str]:
+        """從 Mantis 使用者清單同步 HcpVersion 至 companies 表。
+
+        比對策略：取 Mantis 使用者 email 的網域，與 companies.domain 配對。
+
+        Args:
+            client: MantisSoapClient（已呼叫 connect() 且成功連線）
+
+        Returns:
+            (updated_count, error_message)；error_message 為空字串表示成功
+        """
+        users = client.get_users_hcp_version()
+        if not users and client.last_error:
+            return 0, client.last_error
+
+        companies = self._company_repo.list_all()
+        domain_to_company: dict[str, Company] = {
+            (c.domain or "").lower(): c for c in companies if c.domain
+        }
+        # 以公司名稱配對（Mantis 使用者的「真實姓名」即公司中文名稱）
+        name_to_company: dict[str, Company] = {
+            c.name.strip(): c for c in companies if c.name
+        }
+
+        # 建立 domain 關鍵字索引（僅取主網域第一段，如 alphanetworks.com.tw → alphanetworks）
+        domain_keyword_to_company: dict[str, Company] = {}
+        for c in companies:
+            if c.domain:
+                keyword = c.domain.lower().split(".")[0]
+                domain_keyword_to_company[keyword] = c
+
+        updated = 0
+        for user in users:
+            hcp_version = user.get("hcp_version", "")
+            if not hcp_version:
+                continue
+
+            company = None
+
+            # 策略 1：real_name（真實姓名）包含 companies.name（簡稱）
+            # 例：Mantis「明泰科技股份有限公司」⊇ 系統「明泰」
+            real_name = user.get("real_name", "").strip()
+            if real_name:
+                # 先嘗試完全比對
+                company = name_to_company.get(real_name)
+                # 再嘗試包含比對（系統簡稱 in Mantis 全名）
+                if not company:
+                    for sys_name, cand in name_to_company.items():
+                        if sys_name and sys_name in real_name:
+                            company = cand
+                            break
+
+            # 策略 2：email 網域比對 companies.domain
+            if not company:
+                email = user.get("email", "")
+                if "@" in email:
+                    user_domain = email.split("@")[-1].strip().lower()
+                    company = domain_to_company.get(user_domain)
+                    if not company:
+                        parts = user_domain.split(".")
+                        if len(parts) > 2:
+                            company = domain_to_company.get(".".join(parts[1:]))
+
+            # 策略 3：Mantis 使用者名稱含有公司 domain 關鍵字
+            # 例：username="Alphanetworks-User" → 關鍵字 "alphanetworks" → 比對 domain 首段
+            if not company:
+                username = user.get("username", "").strip().lower()
+                if username:
+                    for keyword, cand in domain_keyword_to_company.items():
+                        if keyword in username:
+                            company = cand
+                            break
+
+            if company and company.hcp_version != hcp_version:
+                company.hcp_version = hcp_version
+                self._company_repo.update(company)
+                updated += 1
+
+        return updated, ""

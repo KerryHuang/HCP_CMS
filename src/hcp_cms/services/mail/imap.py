@@ -54,37 +54,37 @@ class IMAPProvider(MailProvider):
         until: datetime | None = None,
         folder: str = "INBOX",
         on_message: object = None,
+        log_cb: object = None,
     ) -> list[RawEmail]:
         if not self._conn:
+            if log_cb:
+                log_cb("⚠️ IMAP 連線尚未建立，請先點「連線」。")
             return []
         with self._lock:
             try:
-                self._conn.select(folder)
-                criteria = "ALL"
-                if since:
-                    criteria = f'(SINCE "{since.strftime("%d-%b-%Y")}")'
-                if until:
-                    # IMAP BEFORE 不含當天，需 +1 天
-                    from datetime import timedelta
-
-                    before_date = until + timedelta(days=1)
-                    criteria = f'(SINCE "{since.strftime("%d-%b-%Y")}" BEFORE "{before_date.strftime("%d-%b-%Y")}")'
-
-                _, msg_nums = self._conn.search(None, criteria)
-                nums = msg_nums[0].split()
-                results = []
-                for num in nums:
-                    _, data = self._conn.fetch(num, "(RFC822)")
-                    if data[0] is None:
-                        continue
-                    msg = email.message_from_bytes(data[0][1])
-                    parsed = self._parse_email(msg)
-                    results.append(parsed)
-                    if on_message:
-                        on_message(parsed)
-                return results
-            except Exception:
-                return []
+                return self._fetch_messages_locked(
+                    since=since, until=until, folder=folder,
+                    on_message=on_message, log_cb=log_cb,
+                )
+            except Exception as e:
+                if log_cb:
+                    log_cb(f"⚠️ IMAP 連線中斷（{e}），嘗試自動重新連線...")
+                if self._reconnect_locked():
+                    if log_cb:
+                        log_cb("✅ 重新連線成功，重試取得信件...")
+                    try:
+                        return self._fetch_messages_locked(
+                            since=since, until=until, folder=folder,
+                            on_message=on_message, log_cb=log_cb,
+                        )
+                    except Exception as e2:
+                        if log_cb:
+                            log_cb(f"❌ IMAP 錯誤：{e2}（請手動重新連線）")
+                        return []
+                else:
+                    if log_cb:
+                        log_cb("❌ IMAP 自動重新連線失敗，請手動點「連線」重試。")
+                    return []
 
     def fetch_sent_messages(self, since: datetime | None = None) -> list[RawEmail]:
         with self._lock:
@@ -94,42 +94,62 @@ class IMAPProvider(MailProvider):
             # 直接呼叫底層避免重複取鎖，_find_sent_folder 已在鎖內執行
             return self._fetch_messages_locked(since=since, folder=folder)
 
+    def _reconnect_locked(self) -> bool:
+        """在 _lock 保護下重新建立 IMAP 連線。"""
+        try:
+            if self._conn:
+                try:
+                    self._conn.logout()
+                except Exception:
+                    pass
+            if self._use_ssl:
+                self._conn = imaplib.IMAP4_SSL(self._host, self._port)
+            else:
+                self._conn = imaplib.IMAP4(self._host, self._port)
+            self._conn.login(self._username, self._password)
+            return True
+        except Exception:
+            self._conn = None
+            return False
+
     def _fetch_messages_locked(
         self,
         since: datetime | None = None,
         until: datetime | None = None,
         folder: str = "INBOX",
         on_message: object = None,
+        log_cb: object = None,
     ) -> list[RawEmail]:
         """已在 _lock 保護下執行的 fetch，不重複取鎖。"""
         if not self._conn:
             return []
-        try:
-            self._conn.select(folder)
-            criteria = "ALL"
-            if since:
-                criteria = f'(SINCE "{since.strftime("%d-%b-%Y")}")'
-            if until:
-                from datetime import timedelta
+        self._conn.select(folder)
+        criteria = "ALL"
+        if since:
+            criteria = f'(SINCE "{since.strftime("%d-%b-%Y")}")'
+        if until:
+            from datetime import timedelta
 
-                before_date = until + timedelta(days=1)
-                criteria = f'(SINCE "{since.strftime("%d-%b-%Y")}" BEFORE "{before_date.strftime("%d-%b-%Y")}")'
+            before_date = until + timedelta(days=1)
+            criteria = f'(SINCE "{since.strftime("%d-%b-%Y")}" BEFORE "{before_date.strftime("%d-%b-%Y")}")'
 
-            _, msg_nums = self._conn.search(None, criteria)
-            nums = msg_nums[0].split()
-            results = []
-            for num in nums:
-                _, data = self._conn.fetch(num, "(RFC822)")
-                if data[0] is None:
-                    continue
-                msg = email.message_from_bytes(data[0][1])
-                parsed = self._parse_email(msg)
-                results.append(parsed)
-                if on_message:
-                    on_message(parsed)
-            return results
-        except Exception:
-            return []
+        if log_cb:
+            log_cb(f"🔍 IMAP 搜尋：{folder} {criteria}")
+        _, msg_nums = self._conn.search(None, criteria)
+        nums = msg_nums[0].split()
+        if log_cb:
+            log_cb(f"📨 IMAP 搜尋命中 {len(nums)} 封")
+        results = []
+        for num in nums:
+            _, data = self._conn.fetch(num, "(RFC822)")
+            if data[0] is None:
+                continue
+            msg = email.message_from_bytes(data[0][1])
+            parsed = self._parse_email(msg)
+            results.append(parsed)
+            if on_message:
+                on_message(parsed)
+        return results
 
     def _find_sent_folder(self) -> str | None:
         """找出 IMAP 伺服器的寄件夾名稱。

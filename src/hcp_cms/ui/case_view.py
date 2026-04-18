@@ -206,11 +206,13 @@ class CaseView(QWidget):
                     if keyword in (c.name or "") or keyword in (c.alias or "")
                 }
                 all_cases = repo.list_all()
+                kw_lower = keyword.lower()
+                kw_parts = kw_lower.split()
                 cases = [
                     c for c in all_cases
                     if c.case_id in matched_ids
                     or c.company_id in matched_company_ids
-                    or keyword in (c.subject or "")
+                    or all(p in (c.subject or "").lower() for p in kw_parts)
                 ]
             elif status_filter == "全部":
                 cases = repo.list_all()
