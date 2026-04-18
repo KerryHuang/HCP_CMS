@@ -98,6 +98,7 @@ def test_load_result_enables_generate_buttons(qtbot, db):
     assert tab._release_notice_btn.isEnabled()
     assert tab._issue_split_btn.isEnabled()
     assert tab._test_scripts_btn.isEnabled()
+    assert tab._step_labels[2].styleSheet() == "color: #3b82f6; font-weight: bold;"
 
 
 def test_load_result_error_keeps_buttons_disabled(qtbot, db):
@@ -135,6 +136,7 @@ def test_generate_result_appends_to_output_list(qtbot, db):
               "error": None}
     tab._on_generate_result(result)
     assert tab._output_list.count() == 1
+    assert tab._step_labels[4].styleSheet() == "color: #3b82f6; font-weight: bold;"
 
 
 def test_generate_done_signal_emitted(qtbot, db, tmp_path):
