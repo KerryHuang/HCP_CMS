@@ -299,6 +299,29 @@ class SinglePatchEngine:
         wb.save(path)
         return path
 
+    def generate_release_notice(self, patch_id: int, output_dir: str,
+                                 version_tag: str) -> str:
+        """產出 {version_tag}_發行通知.xlsx（1 頁籤，對外客戶用）。"""
+        from openpyxl import Workbook
+
+        issues = self._repo.list_issues_by_patch(patch_id)
+        out = Path(output_dir)
+        out.mkdir(parents=True, exist_ok=True)
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "發行通知"
+        self._write_header_row(ws, ["Issue No", "類型", "說明", "相關程式", "安裝步驟"])
+        for row_i, iss in enumerate(issues, start=2):
+            ws.cell(row_i, 1).value = iss.issue_no
+            ws.cell(row_i, 2).value = iss.issue_type
+            ws.cell(row_i, 3).value = iss.description
+
+        fname = f"{version_tag}_發行通知.xlsx"
+        path = str(out / fname)
+        wb.save(path)
+        return path
+
     # ── 封存解壓縮 ────────────────────────────────────────────────────────────
 
     def load_from_archive(self, archive_path: str, output_dir: str) -> tuple[int, str, int]:

@@ -281,3 +281,45 @@ class TestGenerateIssueList:
                       if ws.cell(r, 2).value]
         assert "PAYROLL.fmx" in file_names
         assert "update.sql" in file_names
+
+
+class TestGenerateReleaseNotice:
+    @pytest.fixture
+    def engine_with_patch(self, conn):
+        from hcp_cms.data.models import PatchIssue, PatchRecord
+        from hcp_cms.data.repositories import PatchRepository
+        repo = PatchRepository(conn)
+        pid = repo.insert_patch(PatchRecord(type="single"))
+        repo.insert_issue(PatchIssue(patch_id=pid, issue_no="0015659",
+                                     issue_type="BugFix", description="修正薪資",
+                                     sort_order=1))
+        repo.insert_issue(PatchIssue(patch_id=pid, issue_no="0015660",
+                                     issue_type="Enhancement", description="新增功能",
+                                     sort_order=2))
+        return SinglePatchEngine(conn), pid
+
+    def test_creates_file_with_version_tag(self, engine_with_patch, tmp_path):
+        eng, pid = engine_with_patch
+        path = eng.generate_release_notice(pid, str(tmp_path), "IP_合併_20261101")
+        assert Path(path).exists()
+        assert "IP_合併_20261101_發行通知" in path
+
+    def test_single_sheet_with_5_columns(self, engine_with_patch, tmp_path):
+        import openpyxl
+        eng, pid = engine_with_patch
+        path = eng.generate_release_notice(pid, str(tmp_path), "IP_合併_20261101")
+        wb = openpyxl.load_workbook(path)
+        assert len(wb.sheetnames) == 1
+        ws = wb.active
+        headers = [ws.cell(1, c).value for c in range(1, ws.max_column + 1)]
+        assert headers == ["Issue No", "類型", "說明", "相關程式", "安裝步驟"]
+
+    def test_no_tracking_columns(self, engine_with_patch, tmp_path):
+        import openpyxl
+        eng, pid = engine_with_patch
+        path = eng.generate_release_notice(pid, str(tmp_path), "IP_合併_20261101")
+        wb = openpyxl.load_workbook(path)
+        ws = wb.active
+        headers = [ws.cell(1, c).value for c in range(1, ws.max_column + 1)]
+        assert "客服驗證" not in headers
+        assert "可納入大PATCH" not in headers
