@@ -228,3 +228,30 @@ def test_fetch_supplement_single_not_found(db_conn):
     eng = MonthlyPatchEngine(db_conn)
     result = eng.fetch_supplement_single(999999)
     assert result == {"修改原因": "", "原問題": "", "範例說明": "", "修正後": "", "注意事項": ""}
+
+
+# ── Task 5: SupplementEditorWidget ────────────────────────────────────────
+
+def test_supplement_status_empty():
+    from hcp_cms.ui.supplement_editor_widget import SupplementEditorWidget
+    assert SupplementEditorWidget.supplement_status({}, False) == "empty"
+    assert SupplementEditorWidget.supplement_status(None, False) == "empty"  # type: ignore
+
+
+def test_supplement_status_complete():
+    from hcp_cms.ui.supplement_editor_widget import SupplementEditorWidget
+    full = {"修改原因": "A", "原問題": "B", "範例說明": "C", "修正後": "D", "注意事項": "E"}
+    assert SupplementEditorWidget.supplement_status(full, False) == "complete"
+
+
+def test_supplement_status_insufficient():
+    from hcp_cms.ui.supplement_editor_widget import SupplementEditorWidget
+    insuff = {"修改原因": "⚠ 資料不足，請人工補充", "原問題": "", "範例說明": "", "修正後": "", "注意事項": ""}
+    assert SupplementEditorWidget.supplement_status(insuff, False) == "insufficient"
+
+
+def test_supplement_status_edited_overrides():
+    from hcp_cms.ui.supplement_editor_widget import SupplementEditorWidget
+    full = {"修改原因": "A", "原問題": "B", "範例說明": "C", "修正後": "D", "注意事項": "E"}
+    assert SupplementEditorWidget.supplement_status(full, True) == "edited"
+    assert SupplementEditorWidget.supplement_status({}, True) == "edited"
