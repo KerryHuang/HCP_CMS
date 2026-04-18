@@ -151,6 +151,21 @@ class TestGenerateTestScripts:
         for p in paths:
             assert Path(p).exists()
 
+    def test_version_tag_prefixes_filenames(self, engine_with_patch, tmp_path):
+        eng, pid = engine_with_patch
+        paths = eng.generate_test_scripts(pid, output_dir=str(tmp_path),
+                                          version_tag="IP_合併_20261101")
+        names = [Path(p).name for p in paths]
+        assert all(n.startswith("IP_合併_20261101_") for n in names)
+
+    def test_no_version_tag_uses_plain_filenames(self, engine_with_patch, tmp_path):
+        eng, pid = engine_with_patch
+        paths = eng.generate_test_scripts(pid, output_dir=str(tmp_path))
+        names = [Path(p).name for p in paths]
+        assert any(n == "測試腳本_客服版.docx" for n in names)
+        assert any(n == "測試腳本_客戶版.docx" for n in names)
+        assert any(n == "測試追蹤表.xlsx" for n in names)
+
 
 class TestLoadFromArchive:
     def test_parse_version_tag_extracts_ip_pattern(self, conn):

@@ -461,12 +461,14 @@ class SinglePatchEngine:
 
     # ── 測試腳本 ─────────────────────────────────────────────────────────────
 
-    def generate_test_scripts(self, patch_id: int, output_dir: str) -> list[str]:
+    def generate_test_scripts(self, patch_id: int, output_dir: str,
+                              version_tag: str = "") -> list[str]:
         """產生測試腳本_客服版.docx、客戶版.docx、測試追蹤表.xlsx。"""
         import docx as python_docx
         from openpyxl import Workbook
 
         issues = self._repo.list_issues_by_patch(patch_id)
+        prefix = f"{version_tag}_" if version_tag else ""
         out = Path(output_dir)
         out.mkdir(parents=True, exist_ok=True)
         paths = []
@@ -479,7 +481,7 @@ class SinglePatchEngine:
             doc_cs.add_paragraph(f"說明：{iss.description or ''}")
             doc_cs.add_paragraph(f"測試步驟：{iss.test_direction or '請填寫'}")
             doc_cs.add_paragraph("測試人員：＿＿＿＿　審核人員：＿＿＿＿")
-        p_cs = str(out / "測試腳本_客服版.docx")
+        p_cs = str(out / f"{prefix}測試腳本_客服版.docx")
         doc_cs.save(p_cs)
         paths.append(p_cs)
 
@@ -491,7 +493,7 @@ class SinglePatchEngine:
             doc_cu.add_paragraph(f"說明：{iss.description or ''}")
             doc_cu.add_paragraph("□ 正常　□ 異常")
             doc_cu.add_paragraph("客戶回覆日期：＿＿＿＿　簽名：＿＿＿＿")
-        p_cu = str(out / "測試腳本_客戶版.docx")
+        p_cu = str(out / f"{prefix}測試腳本_客戶版.docx")
         doc_cu.save(p_cu)
         paths.append(p_cu)
 
@@ -499,15 +501,17 @@ class SinglePatchEngine:
         wb = Workbook()
         ws_cs = wb.active
         ws_cs.title = "客服驗證"
-        self._write_header_row(ws_cs, ["Issue No", "說明", "測試結果(PASS/FAIL)", "測試日期", "備註"])
+        self._write_header_row(ws_cs, ["Issue No", "說明", "測試結果(PASS/FAIL)",
+                                       "測試日期", "備註"])
         ws_cu = wb.create_sheet("客戶驗證")
-        self._write_header_row(ws_cu, ["Issue No", "說明", "測試結果(正常/異常)", "回覆日期", "備註"])
+        self._write_header_row(ws_cu, ["Issue No", "說明", "測試結果(正常/異常)",
+                                       "回覆日期", "備註"])
         for i, iss in enumerate(issues, start=2):
             ws_cs.cell(i, 1).value = iss.issue_no
             ws_cs.cell(i, 2).value = iss.description
             ws_cu.cell(i, 1).value = iss.issue_no
             ws_cu.cell(i, 2).value = iss.description
-        p_tr = str(out / "測試追蹤表.xlsx")
+        p_tr = str(out / f"{prefix}測試追蹤表.xlsx")
         wb.save(p_tr)
         paths.append(p_tr)
 
