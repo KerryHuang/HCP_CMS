@@ -25,10 +25,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from hcp_cms.ui.supplement_editor_widget import SupplementEditorWidget
 from hcp_cms.ui.widgets.issue_table_widget import IssueTableWidget
 
 _STEPS = ["① 選月份", "② 選來源", "③ 匯入", "④ 編輯", "⑤ S2T",
-          "⑥ Excel", "⑦ 驗證", "⑧ 通知信", "⑨ 完成"]
+          "⑥ 補充說明", "⑦ Excel", "⑧ 驗證", "⑨ 通知信", "⑩ 完成"]
 _CLR_DONE = "color: #22c55e; font-weight: bold;"
 _CLR_CURRENT = "color: #3b82f6; font-weight: bold;"
 _CLR_PENDING = "color: #64748b;"
@@ -139,12 +140,14 @@ class MonthlyPatchTab(QWidget):
         action_row = QHBoxLayout()
         self._import_btn = QPushButton("📥 匯入 Issue")
         self._s2t_btn = QPushButton("🔤 S2T 轉換")
+        self._supplement_editor_btn = QPushButton("📋 補充說明")
         self._generate_excel_btn = QPushButton("📊 產生 Excel")
         self._verify_btn = QPushButton("🔗 驗證超連結")
         self._generate_html_btn = QPushButton("✉️ 產生通知信")
         self._regenerate_btn = QPushButton("🔄 重新產出")
-        for btn in [self._import_btn, self._s2t_btn, self._generate_excel_btn,
-                    self._verify_btn, self._generate_html_btn, self._regenerate_btn]:
+        for btn in [self._import_btn, self._s2t_btn, self._supplement_editor_btn,
+                    self._generate_excel_btn, self._verify_btn,
+                    self._generate_html_btn, self._regenerate_btn]:
             action_row.addWidget(btn)
         action_row.addStretch()
         layout.addLayout(action_row)
@@ -168,9 +171,14 @@ class MonthlyPatchTab(QWidget):
         reminder_group.setLayout(reminder_inner)
         layout.addWidget(reminder_group)
 
-        # Issue 表格
+        # Issue 表格（與補充說明編輯器互斥顯示）
         self._issue_table = IssueTableWidget(conn=self._conn)
         layout.addWidget(self._issue_table, stretch=2)
+
+        # 補充說明編輯器（預設隱藏）
+        self._supplement_editor = SupplementEditorWidget(conn=self._conn)
+        self._supplement_editor.setVisible(False)
+        layout.addWidget(self._supplement_editor, stretch=2)
 
         # 執行 Log
         self._log = QTextEdit()
@@ -205,6 +213,10 @@ class MonthlyPatchTab(QWidget):
         self._s2t_done.connect(self._on_s2t_result)
         self._verify_done.connect(self._on_verify_result)
         self._supplement_done.connect(self._on_supplement_result)
+        self._supplement_editor_btn.clicked.connect(self._on_supplement_editor_clicked)
+        self._supplement_editor.supplement_saved.connect(self._on_supplement_saved)
+        self._supplement_editor.reanalyze_requested.connect(self._on_reanalyze_single)
+        self._supplement_editor.reanalyze_all_requested.connect(self._on_reanalyze_all)
 
         self._on_issue_source_changed(0)
         self._set_step(0)
@@ -375,7 +387,8 @@ class MonthlyPatchTab(QWidget):
     def _enable_operation_buttons(self) -> None:
         """啟用所有操作按鈕（Excel、通知信、S2T、驗證、重新產出）。"""
         for btn in [self._generate_excel_btn, self._generate_html_btn,
-                    self._s2t_btn, self._verify_btn, self._regenerate_btn]:
+                    self._s2t_btn, self._supplement_editor_btn,
+                    self._verify_btn, self._regenerate_btn]:
             btn.setEnabled(True)
 
     def _on_generate_excel_clicked(self) -> None:
@@ -462,7 +475,7 @@ class MonthlyPatchTab(QWidget):
         for path in result.get("paths", []):
             self._output_list.addItem(QListWidgetItem(path))
             self._append_log(f"✅ {path}")
-        step = 6 if result.get("type") == "excel" else 8
+        step = 7 if result.get("type") == "excel" else 9
         self._set_step(step)
 
     def _on_regenerate_clicked(self) -> None:
@@ -594,6 +607,8 @@ class MonthlyPatchTab(QWidget):
             self._append_log(f"✅ 補充說明已更新：{count} 筆")
         else:
             self._append_log("ℹ️ 補充說明：Mantis 無對應資料或補充欄位為空")
+        self._set_step(6)
+        self._reload_supplement_editor()
 
     def _on_verify_clicked(self) -> None:
         if not self._scan_dir:
@@ -633,3 +648,115 @@ class MonthlyPatchTab(QWidget):
                     self._append_log(f"   → {f}")
         if all_ok and result:
             self._set_step(7)
+
+    def _reload_supplement_editor(self) -> None:
+        """從 DB 重新載入 Issue 清單至補充說明編輯器。"""
+        if not self._conn:
+            return
+        patch_ids = list(self._scan_patch_ids.values()) if self._scan_patch_ids else []
+        if self._patch_id:
+            patch_ids = [self._patch_id]
+        if not patch_ids:
+            return
+        from hcp_cms.data.repositories import PatchRepository
+        repo = PatchRepository(self._conn)
+        issues: list = []
+        for pid in patch_ids:
+            issues.extend(repo.list_issues_by_patch(pid))
+        self._supplement_editor.load_issues(issues)
+
+    def _on_supplement_editor_clicked(self) -> None:
+        """切換補充說明編輯器顯示／隱藏。"""
+        visible = not self._supplement_editor.isVisible()
+        self._supplement_editor.setVisible(visible)
+        self._issue_table.setVisible(not visible)
+        if visible:
+            self._reload_supplement_editor()
+
+    def _on_supplement_saved(self, issue_id: int, supplement: dict) -> None:
+        """儲存人工編輯的補充說明至 DB。"""
+        if not self._conn:
+            return
+        from hcp_cms.data.repositories import PatchRepository
+        repo = PatchRepository(self._conn)
+        repo.update_issue_supplement(issue_id, supplement, manual=True)
+        self._append_log("💾 Issue 補充說明已儲存（人工）")
+        self._supplement_editor.update_issue_display(issue_id, supplement, edited=True)
+
+    def _on_reanalyze_single(self, issue_id: int) -> None:
+        """單筆 Issue 重新從 Mantis 分析補充說明。"""
+        if not self._conn:
+            return
+        conn = self._conn
+        # 檢查是否已人工編輯，若是則詢問確認
+        import json
+
+        from hcp_cms.data.repositories import PatchRepository
+        repo = PatchRepository(conn)
+        iss = repo.get_issue_by_id(issue_id)
+        if iss and iss.mantis_detail:
+            try:
+                detail = json.loads(iss.mantis_detail)
+                if detail.get("supplement_edited", False):
+                    from PySide6.QtWidgets import QMessageBox
+                    reply = QMessageBox.question(
+                        self, "覆蓋人工編輯", "此 Issue 已人工編輯過，確定要用 AI 重新分析並覆蓋？",
+                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    )
+                    if reply == QMessageBox.StandardButton.No:
+                        return
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        self._append_log(f"🔄 重新分析 Issue（id={issue_id}）…")
+
+        def work() -> tuple[int, dict]:
+            from hcp_cms.core.monthly_patch_engine import MonthlyPatchEngine
+            eng = MonthlyPatchEngine(conn)
+            supplement = eng.fetch_supplement_single(issue_id)
+            return issue_id, supplement
+
+        def on_done(result: tuple[int, dict]) -> None:
+            iid, supplement = result
+            repo2 = PatchRepository(conn)
+            repo2.update_issue_supplement(iid, supplement, manual=False)
+            self._supplement_editor.update_issue_display(iid, supplement, edited=False)
+            self._append_log(f"✅ Issue（id={iid}）補充說明已重新分析")
+
+        import threading
+        threading.Thread(
+            target=lambda: on_done(work()), daemon=True
+        ).start()
+
+    def _on_reanalyze_all(self) -> None:
+        """批次重新分析所有未手動編輯的 Issue。"""
+        if not self._conn:
+            return
+        if not self._patch_id and not self._scan_patch_ids:
+            return
+        conn = self._conn
+        patch_ids_list = (
+            list(self._scan_patch_ids.values()) if self._scan_patch_ids
+            else ([self._patch_id] if self._patch_id else [])
+        )
+        self._append_log("🔄 批次重新分析補充說明（跳過已人工編輯）…")
+
+        def work() -> int:
+            from hcp_cms.core.monthly_patch_engine import MonthlyPatchEngine
+            eng = MonthlyPatchEngine(conn)
+            total = 0
+            for pid in patch_ids_list:
+                if pid is not None:
+                    total += eng.fetch_supplements(
+                        pid,
+                        progress=lambda msg: self._import_log.emit(msg),
+                        skip_edited=True,
+                    )
+            return total
+
+        def on_done(count: int) -> None:
+            self._append_log(f"✅ 批次分析完成：{count} 筆已更新")
+            self._reload_supplement_editor()
+
+        import threading
+        threading.Thread(target=lambda: on_done(work()), daemon=True).start()
