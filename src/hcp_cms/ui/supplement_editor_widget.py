@@ -119,12 +119,13 @@ class SupplementEditorWidget(QWidget):
         self, issue_id: int, supplement: dict, edited: bool = False
     ) -> None:
         """外部（Mantis 分析完成後）更新指定 Issue 的清單圖示與右側欄位。"""
+        iss = next((x for x in self._issues if x.issue_id == issue_id), None)
         for i in range(self._list.count()):
             item = self._list.item(i)
             if item and item.data(Qt.ItemDataRole.UserRole) == issue_id:
-                if i < len(self._issues):
+                if iss is not None:
                     status = self.supplement_status(supplement, edited)
-                    item.setText(f"{self._status_icon(status)} {self._issues[i].issue_no}")
+                    item.setText(f"{self._status_icon(status)} {iss.issue_no}")
                     item.setForeground(self._status_color(status))
                 break
         if self._current_issue_id == issue_id:
@@ -166,6 +167,15 @@ class SupplementEditorWidget(QWidget):
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             )
             if reply == QMessageBox.StandardButton.No:
+                # 還原列表視覺選取，避免焦點與右側顯示內容不一致
+                prev_row = next(
+                    (i for i, iss in enumerate(self._issues)
+                     if iss.issue_id == self._current_issue_id),
+                    -1,
+                )
+                self._list.blockSignals(True)
+                self._list.setCurrentRow(prev_row)
+                self._list.blockSignals(False)
                 return
         iss = self._issues[row]
         self._current_issue_id = iss.issue_id
