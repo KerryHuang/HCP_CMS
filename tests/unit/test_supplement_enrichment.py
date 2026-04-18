@@ -94,6 +94,7 @@ def db_conn(tmp_path):
 def test_update_issue_supplement_auto(db_conn):
     """auto 模式（manual=False）儲存 supplement，supplement_edited 保持 False。"""
     import json
+
     from hcp_cms.data.models import PatchIssue, PatchRecord
     from hcp_cms.data.repositories import PatchRepository
     repo = PatchRepository(db_conn)
@@ -112,6 +113,7 @@ def test_update_issue_supplement_auto(db_conn):
 def test_update_issue_supplement_manual(db_conn):
     """manual=True 時 supplement_edited 旗標設為 True。"""
     import json
+
     from hcp_cms.data.models import PatchIssue, PatchRecord
     from hcp_cms.data.repositories import PatchRepository
     repo = PatchRepository(db_conn)
@@ -130,6 +132,7 @@ def test_update_issue_supplement_manual(db_conn):
 def test_update_issue_supplement_preserves_existing_fields(db_conn):
     """update_issue_supplement 保留既有 mantis_detail 其他欄位（如 form_files）。"""
     import json
+
     from hcp_cms.data.models import PatchIssue, PatchRecord
     from hcp_cms.data.repositories import PatchRepository
     repo = PatchRepository(db_conn)
