@@ -55,6 +55,7 @@ class MonthlyPatchEngine:
         source='manual': 讀 file_path（.json 或 .txt tab 分隔）
         source='mantis': 透過 PlaywrightMantisService（需另行呼叫）
         """
+        self._repo.delete_patches_by_month(month_str, "monthly")
         patch = PatchRecord(type="monthly", month_str=month_str)
         patch_id = self._repo.insert_patch(patch)
 
@@ -242,6 +243,7 @@ class MonthlyPatchEngine:
 
         base = Path(patch_dir)
         patch_ids: dict[str, int] = {}
+        self._repo.delete_patches_by_month(month_str, "monthly")
 
         if self._detect_structure(base) == "B":
             _log("🔄 偵測到平坦結構，自動整理為 11G/12C 子目錄…")

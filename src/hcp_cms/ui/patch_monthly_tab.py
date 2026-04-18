@@ -378,6 +378,7 @@ class MonthlyPatchTab(QWidget):
 
         self._enable_operation_buttons()
         self._set_step(3)
+        self._reload_supplement_editor()  # 同步補充說明 Tab
         # 自動觸發 S2T（只在真正匯入時，非還原）
         if not is_restore and self._scan_dir:
             self._on_s2t_clicked()

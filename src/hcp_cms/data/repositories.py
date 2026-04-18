@@ -1304,6 +1304,18 @@ class PatchRepository:
         self._conn.execute("DELETE FROM cs_patch_issues WHERE id=?", (issue_id,))
         self._conn.commit()
 
+    def delete_patches_by_month(self, month_str: str, patch_type: str = "monthly") -> int:
+        """刪除指定月份所有同類型 Patch 及其 Issue，回傳刪除數量。"""
+        patches = self.list_by_month(month_str, patch_type)
+        ids = [p.patch_id for p in patches if p.patch_id is not None]
+        if not ids:
+            return 0
+        placeholders = ",".join("?" * len(ids))
+        self._conn.execute(f"DELETE FROM cs_patch_issues WHERE patch_id IN ({placeholders})", ids)
+        self._conn.execute(f"DELETE FROM cs_patches WHERE id IN ({placeholders})", ids)
+        self._conn.commit()
+        return len(ids)
+
     def _row_to_issue(self, row: sqlite3.Row) -> PatchIssue:
         return PatchIssue(
             issue_id=row["id"], patch_id=row["patch_id"], issue_no=row["issue_no"],
