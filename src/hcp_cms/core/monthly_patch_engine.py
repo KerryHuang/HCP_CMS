@@ -332,9 +332,12 @@ class MonthlyPatchEngine:
     ) -> dict[str, str]:
         """呼叫 Mantis + Claude，回傳補充說明五欄位 dict。"""
         empty = {"修改原因": "", "原問題": "", "範例說明": "", "修正後": "", "注意事項": ""}
+        mantis_id = issue_no.lstrip("0") or "0"
         try:
-            issue = client.get_issue(issue_no)
+            issue = client.get_issue(mantis_id)
             if issue is None:
+                logging.warning("fetch_supplement: Mantis 找不到 issue_no=%s (id=%s): %s",
+                                issue_no, mantis_id, client.last_error)
                 return empty
             notes_text = "\n".join(n.text for n in (issue.notes_list or []))
             full_text = f"{issue.description}\n{notes_text}".strip()
