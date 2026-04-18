@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 import threading
 from datetime import date
@@ -40,12 +41,13 @@ _SOURCE_FOLDER = "掃描資料夾"
 
 
 class MonthlyPatchTab(QWidget):
-    _import_done    = Signal(object)
-    _import_log     = Signal(str)
-    _generate_done  = Signal(object)
-    _s2t_done       = Signal(object)
-    _verify_done    = Signal(object)
-    _supplement_done = Signal(int)
+    _import_done           = Signal(object)
+    _import_log            = Signal(str)
+    _generate_done         = Signal(object)
+    _s2t_done              = Signal(object)
+    _verify_done           = Signal(object)
+    _supplement_done       = Signal(int)
+    _reanalyze_single_done = Signal(int, object)  # (issue_id, supplement dict)
 
     def __init__(self, conn: sqlite3.Connection | None = None) -> None:
         super().__init__()
@@ -217,6 +219,7 @@ class MonthlyPatchTab(QWidget):
         self._supplement_editor.supplement_saved.connect(self._on_supplement_saved)
         self._supplement_editor.reanalyze_requested.connect(self._on_reanalyze_single)
         self._supplement_editor.reanalyze_all_requested.connect(self._on_reanalyze_all)
+        self._reanalyze_single_done.connect(self._on_reanalyze_single_done)
 
         self._on_issue_source_changed(0)
         self._set_step(0)
@@ -647,15 +650,16 @@ class MonthlyPatchTab(QWidget):
                 for f in stats["failed"]:
                     self._append_log(f"   → {f}")
         if all_ok and result:
-            self._set_step(7)
+            self._set_step(8)
 
     def _reload_supplement_editor(self) -> None:
         """從 DB 重新載入 Issue 清單至補充說明編輯器。"""
         if not self._conn:
             return
-        patch_ids = list(self._scan_patch_ids.values()) if self._scan_patch_ids else []
-        if self._patch_id:
-            patch_ids = [self._patch_id]
+        patch_ids = (
+            list(self._scan_patch_ids.values()) if self._scan_patch_ids
+            else ([self._patch_id] if self._patch_id else [])
+        )
         if not patch_ids:
             return
         from hcp_cms.data.repositories import PatchRepository
@@ -688,9 +692,6 @@ class MonthlyPatchTab(QWidget):
         if not self._conn:
             return
         conn = self._conn
-        # 檢查是否已人工編輯，若是則詢問確認
-        import json
-
         from hcp_cms.data.repositories import PatchRepository
         repo = PatchRepository(conn)
         iss = repo.get_issue_by_id(issue_id)
@@ -710,23 +711,19 @@ class MonthlyPatchTab(QWidget):
 
         self._append_log(f"🔄 重新分析 Issue（id={issue_id}）…")
 
-        def work() -> tuple[int, dict]:
+        def work() -> None:
             from hcp_cms.core.monthly_patch_engine import MonthlyPatchEngine
             eng = MonthlyPatchEngine(conn)
             supplement = eng.fetch_supplement_single(issue_id)
-            return issue_id, supplement
-
-        def on_done(result: tuple[int, dict]) -> None:
-            iid, supplement = result
             repo2 = PatchRepository(conn)
-            repo2.update_issue_supplement(iid, supplement, manual=False)
-            self._supplement_editor.update_issue_display(iid, supplement, edited=False)
-            self._append_log(f"✅ Issue（id={iid}）補充說明已重新分析")
+            repo2.update_issue_supplement(issue_id, supplement, manual=False)
+            self._reanalyze_single_done.emit(issue_id, supplement)
 
-        import threading
-        threading.Thread(
-            target=lambda: on_done(work()), daemon=True
-        ).start()
+        threading.Thread(target=work, daemon=True).start()
+
+    def _on_reanalyze_single_done(self, issue_id: int, supplement: object) -> None:
+        self._supplement_editor.update_issue_display(issue_id, supplement, edited=False)  # type: ignore[arg-type]
+        self._append_log(f"✅ Issue（id={issue_id}）補充說明已重新分析")
 
     def _on_reanalyze_all(self) -> None:
         """批次重新分析所有未手動編輯的 Issue。"""
@@ -754,9 +751,6 @@ class MonthlyPatchTab(QWidget):
                     )
             return total
 
-        def on_done(count: int) -> None:
-            self._append_log(f"✅ 批次分析完成：{count} 筆已更新")
-            self._reload_supplement_editor()
-
-        import threading
-        threading.Thread(target=lambda: on_done(work()), daemon=True).start()
+        threading.Thread(
+            target=lambda: self._supplement_done.emit(work()), daemon=True
+        ).start()
