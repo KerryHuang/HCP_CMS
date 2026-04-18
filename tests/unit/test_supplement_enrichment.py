@@ -1,8 +1,4 @@
 """tests/unit/test_supplement_enrichment.py — 補充說明強化功能測試。"""
-import json
-import pytest
-from unittest.mock import MagicMock
-
 
 # ── Task 1: ClaudeContentService ──────────────────────────────────────────
 

@@ -1,6 +1,6 @@
 """ClaudeContentService.extract_supplement 測試（mock Claude API）。"""
 from unittest.mock import MagicMock
-import pytest
+
 from hcp_cms.services.claude_content import ClaudeContentService
 
 
@@ -24,7 +24,7 @@ def test_extract_supplement_parses_json():
         "注意事項": "需重新跑月結",
     }
     svc = _make_service_with_mock(json.dumps(payload, ensure_ascii=False))
-    result = svc.extract_supplement("加班費計算有誤：輸入8小時卻計算7小時")
+    result = svc.extract_supplement(mantis_description="加班費計算有誤：輸入8小時卻計算7小時")
     assert result["修改原因"] == "原始計算邏輯有誤"
     assert result["修正後"] == "修正乘數為 1.5"
     assert set(result.keys()) == {"修改原因", "原問題", "範例說明", "修正後", "注意事項"}
@@ -32,14 +32,14 @@ def test_extract_supplement_parses_json():
 
 def test_extract_supplement_returns_empty_on_invalid_json():
     svc = _make_service_with_mock("這不是 JSON 格式")
-    result = svc.extract_supplement("任意說明文字")
+    result = svc.extract_supplement(mantis_description="任意說明文字")
     assert result == {"修改原因": "", "原問題": "", "範例說明": "", "修正後": "", "注意事項": ""}
 
 
 def test_extract_supplement_returns_empty_when_client_none():
     svc = ClaudeContentService.__new__(ClaudeContentService)
     svc._client = None
-    result = svc.extract_supplement("任意說明文字")
+    result = svc.extract_supplement(mantis_description="任意說明文字")
     assert result == {"修改原因": "", "原問題": "", "範例說明": "", "修正後": "", "注意事項": ""}
 
 
@@ -53,7 +53,7 @@ def test_extract_supplement_handles_null_values():
         "注意事項": None,
     }
     svc = _make_service_with_mock(json.dumps(payload, ensure_ascii=False))
-    result = svc.extract_supplement("測試說明")
+    result = svc.extract_supplement(mantis_description="測試說明")
     assert result["原問題"] == ""
     assert result["注意事項"] == ""
     assert result["修改原因"] == "原因說明"
