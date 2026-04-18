@@ -1,7 +1,8 @@
-"""SinglePatchTab 單元測試。"""
+"""SinglePatchTab 單元測試（5 步 .7z 流程）。"""
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -24,89 +25,130 @@ def test_single_patch_tab_instantiates(qtbot, db):
     from hcp_cms.ui.patch_single_tab import SinglePatchTab
     tab = SinglePatchTab(conn=db)
     qtbot.addWidget(tab)
-    assert tab._folder_edit is not None
+    assert tab._archive_edit is not None
+    assert tab._output_dir_edit is not None
+    assert tab._version_tag_edit is not None
     assert tab._issue_table is not None
     assert tab._log is not None
 
 
-def test_browse_sets_folder(qtbot, db, tmp_path, monkeypatch):
-    from PySide6.QtWidgets import QFileDialog
-
+def test_step_labels_are_5(qtbot, db):
     from hcp_cms.ui.patch_single_tab import SinglePatchTab
+    tab = SinglePatchTab(conn=db)
+    qtbot.addWidget(tab)
+    assert len(tab._step_labels) == 5
+
+
+def test_generate_buttons_disabled_initially(qtbot, db):
+    from hcp_cms.ui.patch_single_tab import SinglePatchTab
+    tab = SinglePatchTab(conn=db)
+    qtbot.addWidget(tab)
+    assert not tab._issue_list_btn.isEnabled()
+    assert not tab._release_notice_btn.isEnabled()
+    assert not tab._issue_split_btn.isEnabled()
+    assert not tab._test_scripts_btn.isEnabled()
+
+
+def test_archive_browse_sets_path_and_version_tag(qtbot, db, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QFileDialog
+    from hcp_cms.ui.patch_single_tab import SinglePatchTab
+
+    fake_archive = str(tmp_path / "IP_合併_20261101_HCP.7z")
+    monkeypatch.setattr(
+        QFileDialog, "getOpenFileName",
+        lambda *a, **kw: (fake_archive, ""),
+    )
+    tab = SinglePatchTab(conn=db)
+    qtbot.addWidget(tab)
+    tab._on_archive_browse_clicked()
+    assert tab._archive_edit.text() == fake_archive
+    assert tab._version_tag_edit.text() == "IP_合併_20261101"
+
+
+def test_output_dir_browse_sets_path(qtbot, db, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QFileDialog
+    from hcp_cms.ui.patch_single_tab import SinglePatchTab
+
     monkeypatch.setattr(
         QFileDialog, "getExistingDirectory",
         lambda *a, **kw: str(tmp_path),
     )
     tab = SinglePatchTab(conn=db)
     qtbot.addWidget(tab)
-    tab._on_browse_clicked()
-    assert tab._folder_edit.text() == str(tmp_path)
-    assert tab._patch_dir == str(tmp_path)
+    tab._on_output_dir_browse_clicked()
+    assert tab._output_dir_edit.text() == str(tmp_path)
 
 
-def test_start_disabled_without_folder(qtbot, db):
+def test_load_disabled_without_archive_or_output(qtbot, db):
     from hcp_cms.ui.patch_single_tab import SinglePatchTab
     tab = SinglePatchTab(conn=db)
     qtbot.addWidget(tab)
-    tab._on_start_clicked()  # 無資料夾，應直接 return，不 crash
+    tab._on_load_clicked()  # 無 archive/output，直接 return，不 crash
 
 
-def test_start_scan_creates_patch_record(qtbot, db, tmp_path):
-    from hcp_cms.ui.patch_single_tab import SinglePatchTab
-    with patch("hcp_cms.core.patch_engine.SinglePatchEngine.scan_patch_dir",
-               return_value={"form_files": [], "sql_files": [], "muti_files": [],
-                             "setup_bat": False, "release_note": None,
-                             "install_guide": None, "missing": []}), \
-         patch("hcp_cms.core.patch_engine.SinglePatchEngine.setup_new_patch",
-               return_value=1):
-        tab = SinglePatchTab(conn=db)
-        qtbot.addWidget(tab)
-        tab._patch_dir = str(tmp_path)
-        tab._folder_edit.setText(str(tmp_path))
-        with qtbot.waitSignal(tab._scan_done, timeout=3000):
-            tab._on_start_clicked()
-
-
-def test_generate_disabled_without_patch_id(qtbot, db):
+def test_load_result_enables_generate_buttons(qtbot, db):
     from hcp_cms.ui.patch_single_tab import SinglePatchTab
     tab = SinglePatchTab(conn=db)
     qtbot.addWidget(tab)
-    tab._on_generate_excel_clicked()  # patch_id=None，應 return，不 crash
+    result = {"patch_id": 1, "version_tag": "IP_合併_20261101",
+              "issue_count": 2, "error": None}
+    tab._on_load_result(result)
+    assert tab._patch_id == 1
+    assert tab._issue_list_btn.isEnabled()
+    assert tab._release_notice_btn.isEnabled()
+    assert tab._issue_split_btn.isEnabled()
+    assert tab._test_scripts_btn.isEnabled()
 
 
-def test_setup_new_patch_creates_record(db):
+def test_load_result_error_keeps_buttons_disabled(qtbot, db):
+    from hcp_cms.ui.patch_single_tab import SinglePatchTab
+    tab = SinglePatchTab(conn=db)
+    qtbot.addWidget(tab)
+    result = {"patch_id": None, "version_tag": "", "issue_count": 0,
+              "error": "解壓縮失敗"}
+    tab._on_load_result(result)
+    assert tab._patch_id is None
+    assert not tab._issue_list_btn.isEnabled()
+
+
+def test_load_done_signal_emitted(qtbot, db, tmp_path):
+    from hcp_cms.ui.patch_single_tab import SinglePatchTab
     from hcp_cms.core.patch_engine import SinglePatchEngine
-    engine = SinglePatchEngine(db)
-    pid = engine.setup_new_patch("/tmp/patch_test")
-    repo = PatchRepository(db)
-    record = repo.get_patch_by_id(pid)
-    assert record is not None
-    assert record.type == "single"
-    assert record.patch_dir == "/tmp/patch_test"
+
+    tab = SinglePatchTab(conn=db)
+    qtbot.addWidget(tab)
+    tab._archive_edit.setText(str(tmp_path / "fake.7z"))
+    tab._output_dir_edit.setText(str(tmp_path))
+
+    with patch.object(SinglePatchEngine, "load_from_archive",
+                      return_value=(1, "IP_合併_20261101", 0)):
+        with qtbot.waitSignal(tab._load_done, timeout=3000):
+            tab._on_load_clicked()
 
 
-def test_load_issues_from_release_doc_empty(db):
+def test_generate_result_appends_to_output_list(qtbot, db):
+    from hcp_cms.ui.patch_single_tab import SinglePatchTab
+    tab = SinglePatchTab(conn=db)
+    qtbot.addWidget(tab)
+    result = {"type": "issue_list",
+              "paths": ["/tmp/IP_合併_20261101_Issue清單整理.xlsx"],
+              "error": None}
+    tab._on_generate_result(result)
+    assert tab._output_list.count() == 1
+
+
+def test_generate_done_signal_emitted(qtbot, db, tmp_path):
+    from hcp_cms.ui.patch_single_tab import SinglePatchTab
     from hcp_cms.core.patch_engine import SinglePatchEngine
-    repo = PatchRepository(db)
-    pid = repo.insert_patch(PatchRecord(type="single"))
-    engine = SinglePatchEngine(db)
-    with patch.object(engine, "read_release_doc", return_value=[]):
-        count = engine.load_issues_from_release_doc(pid, "/fake/path.doc")
-    assert count == 0
 
+    tab = SinglePatchTab(conn=db)
+    qtbot.addWidget(tab)
+    tab._patch_id = 1
+    tab._version_tag = "IP_合併_20261101"
+    tab._output_dir_edit.setText(str(tmp_path))
 
-def test_load_issues_from_release_doc_inserts(db):
-    from hcp_cms.core.patch_engine import SinglePatchEngine
-    repo = PatchRepository(db)
-    pid = repo.insert_patch(PatchRecord(type="single"))
-    engine = SinglePatchEngine(db)
-    fake_issues = [
-        {"issue_no": "001", "description": "修正薪資", "issue_type": "BugFix",
-         "region": "TW", "program_code": "PA001", "program_name": "薪資計算"},
-        {"issue_no": "002", "description": "新增功能", "issue_type": "Enhancement",
-         "region": "共用"},
-    ]
-    with patch.object(engine, "read_release_doc", return_value=fake_issues):
-        count = engine.load_issues_from_release_doc(pid, "/fake/path.doc")
-    assert count == 2
-    assert len(repo.list_issues_by_patch(pid)) == 2
+    fake_path = str(tmp_path / "IP_合併_20261101_Issue清單整理.xlsx")
+    with patch.object(SinglePatchEngine, "generate_issue_list",
+                      return_value=fake_path):
+        with qtbot.waitSignal(tab._generate_done, timeout=3000):
+            tab._on_issue_list_clicked()
