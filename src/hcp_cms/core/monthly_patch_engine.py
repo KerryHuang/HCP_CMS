@@ -373,6 +373,7 @@ class MonthlyPatchEngine:
         self,
         patch_id: int,
         progress: Callable[[str], None] | None = None,
+        skip_edited: bool = False,
     ) -> int:
         """從 Mantis 取得各 Issue 說明，以 Claude 整理補充說明五欄位。
 
@@ -394,35 +395,66 @@ class MonthlyPatchEngine:
             return self._FETCH_NO_ISSUE
         count = 0
         for iss in issues:
+            if skip_edited:
+                existing = self._parse_scan_meta(iss)
+                if existing.get("supplement_edited", False):
+                    _log(f"  ⏭ Issue {iss.issue_no}：已人工編輯，略過")
+                    continue
             mantis_id = iss.issue_no.lstrip("0") or "0"
             _log(f"  🔍 查詢 Issue {iss.issue_no} (Mantis id={mantis_id})…")
-            supplement = self._fetch_supplement(iss.issue_no, client, svc)
+            supplement = self._fetch_supplement(iss, client, svc)
             if not any(supplement.values()):
                 _log(f"  ⚠️ Issue {iss.issue_no}：Mantis 無資料（{client.last_error or '補充欄位為空'}）")
                 continue
-            existing = self._parse_scan_meta(iss)
-            existing["supplement"] = supplement
-            self._repo.update_issue_mantis_detail(iss.issue_id, json.dumps(existing, ensure_ascii=False))
+            self._repo.update_issue_supplement(iss.issue_id, supplement, manual=False)
             _log(f"  ✅ Issue {iss.issue_no}：補充說明已更新")
             count += 1
         return count
 
+    def fetch_supplement_single(self, issue_id: int) -> dict[str, str]:
+        """取得單筆 Issue 的補充說明（不寫回 DB，供 UI 呼叫後自行儲存）。"""
+        empty = {"修改原因": "", "原問題": "", "範例說明": "", "修正後": "", "注意事項": ""}
+        iss = self._repo.get_issue_by_id(issue_id)
+        if iss is None:
+            return empty
+        client = self._build_mantis_client()
+        if client is None:
+            return empty
+        svc = ClaudeContentService()
+        return self._fetch_supplement(iss, client, svc)
+
     def _fetch_supplement(
-        self, issue_no: str, client: MantisSoapClient, svc: ClaudeContentService
+        self, iss: PatchIssue, client: MantisSoapClient, svc: ClaudeContentService
     ) -> dict[str, str]:
-        """呼叫 Mantis + Claude，回傳補充說明五欄位 dict。"""
+        """呼叫 Mantis + Claude（三來源），回傳補充說明五欄位 dict。"""
         empty = {"修改原因": "", "原問題": "", "範例說明": "", "修正後": "", "注意事項": ""}
         try:
-            issue = client.get_issue(issue_no.lstrip("0") or "0")
+            issue = client.get_issue(iss.issue_no.lstrip("0") or "0")
             if issue is None:
-                logging.warning("fetch_supplement: Mantis 找不到 issue_no=%s: %s",
-                                issue_no, client.last_error)
-                return empty
-            notes_text = "\n".join(n.text for n in (issue.notes_list or []))
-            full_text = f"{issue.description}\n{notes_text}".strip()
-            return svc.extract_supplement(full_text)
+                logging.warning(
+                    "fetch_supplement: Mantis 找不到 issue_no=%s: %s",
+                    iss.issue_no, client.last_error,
+                )
+                mantis_desc = ""
+                notes = []
+            else:
+                mantis_desc = issue.description or ""
+                notes = [
+                    {
+                        "reporter": n.reporter,
+                        "date": n.date_submitted[:10] if n.date_submitted else "",
+                        "text": n.text,
+                    }
+                    for n in (issue.notes_list or [])
+                ]
+            return svc.extract_supplement(
+                release_note_description=iss.description or "",
+                release_note_impact=iss.impact or "",
+                mantis_description=mantis_desc,
+                mantis_notes=notes,
+            )
         except Exception as e:
-            logging.warning("fetch_supplement 失敗 [%s]: %s", issue_no, e)
+            logging.warning("fetch_supplement 失敗 [%s]: %s", iss.issue_no, e)
             return empty
 
     def _build_mantis_client(self) -> MantisSoapClient | None:
