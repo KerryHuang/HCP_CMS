@@ -298,13 +298,24 @@ class MonthlyPatchEngine:
             logging.warning("opencc 轉換失敗 [%s]: %s", path.name, e)
             return False
 
+    _FETCH_NO_CONN  = -1   # Mantis 連線失敗
+    _FETCH_NO_ISSUE = -2   # 無 Issue 可處理
+
     def fetch_supplements(self, patch_id: int) -> int:
-        """從 Mantis 取得各 Issue 說明，以 Claude 整理補充說明五欄位，回傳成功筆數。"""
+        """從 Mantis 取得各 Issue 說明，以 Claude 整理補充說明五欄位。
+
+        回傳值：
+            >= 0  → 成功更新筆數
+            -1    → Mantis 連線失敗
+            -2    → 該 Patch 無 Issue
+        """
         client = self._build_mantis_client()
         if client is None:
-            return 0
+            return self._FETCH_NO_CONN
         svc = ClaudeContentService()
         issues = self._repo.list_issues_by_patch(patch_id)
+        if not issues:
+            return self._FETCH_NO_ISSUE
         count = 0
         for iss in issues:
             supplement = self._fetch_supplement(iss.issue_no, client, svc)

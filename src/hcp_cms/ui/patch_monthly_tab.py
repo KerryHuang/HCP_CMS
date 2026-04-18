@@ -520,10 +520,15 @@ class MonthlyPatchTab(QWidget):
         threading.Thread(target=lambda: self._supplement_done.emit(work()), daemon=True).start()
 
     def _on_supplement_result(self, count: int) -> None:
-        if count > 0:
+        from hcp_cms.core.monthly_patch_engine import MonthlyPatchEngine
+        if count == MonthlyPatchEngine._FETCH_NO_CONN:
+            self._append_log("⚠️ 補充說明：Mantis 連線失敗，請至系統設定確認帳密")
+        elif count == MonthlyPatchEngine._FETCH_NO_ISSUE:
+            self._append_log("ℹ️ 補充說明：尚無 Issue 資料（請先完成匯入）")
+        elif count > 0:
             self._append_log(f"✅ 補充說明已更新：{count} 筆")
         else:
-            self._append_log("⚠️ 補充說明：無 Mantis 連線或無資料")
+            self._append_log("ℹ️ 補充說明：Mantis 無對應資料或補充欄位為空")
 
     def _on_verify_clicked(self) -> None:
         if not self._scan_dir:
