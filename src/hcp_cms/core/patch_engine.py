@@ -297,7 +297,8 @@ class SinglePatchEngine:
                             ws3.cell(file_row, 2).value = f.name
                             file_row += 1
 
-        fname = f"{version_tag}_Issue清單整理.xlsx"
+        tag = version_tag or "未命名"
+        fname = f"{tag}_Issue清單整理.xlsx"
         path = str(out / fname)
         wb.save(path)
         return path
@@ -320,7 +321,8 @@ class SinglePatchEngine:
             ws.cell(row_i, 2).value = iss.issue_type
             ws.cell(row_i, 3).value = iss.description
 
-        fname = f"{version_tag}_發行通知.xlsx"
+        tag = version_tag or "未命名"
+        fname = f"{tag}_發行通知.xlsx"
         path = str(out / fname)
         wb.save(path)
         return path
@@ -378,7 +380,8 @@ class SinglePatchEngine:
             row_clr = self._CLR_ENH if iss.issue_type == "Enhancement" else self._CLR_BUG
             ws_hr.cell(row_i, 3).fill = PatternFill("solid", fgColor=row_clr)
 
-        fname = f"{version_tag}_Issue清單.xlsx"
+        tag = version_tag or "未命名"
+        fname = f"{tag}_Issue清單.xlsx"
         path = str(out / fname)
         wb.save(path)
         return path

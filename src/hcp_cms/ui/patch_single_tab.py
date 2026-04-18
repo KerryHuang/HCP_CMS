@@ -233,6 +233,9 @@ class SinglePatchTab(QWidget):
     def _start_generate(self, gen_type: str) -> None:
         if self._patch_id is None or not self._conn:
             return
+        for btn in [self._issue_list_btn, self._release_notice_btn,
+                    self._issue_split_btn, self._test_scripts_btn]:
+            btn.setEnabled(False)
         output_dir = self._output_dir_edit.text() or "."
         patch_id = self._patch_id
         version_tag = self._version_tag
@@ -265,6 +268,9 @@ class SinglePatchTab(QWidget):
         ).start()
 
     def _on_generate_result(self, result: dict) -> None:
+        for btn in [self._issue_list_btn, self._release_notice_btn,
+                    self._issue_split_btn, self._test_scripts_btn]:
+            btn.setEnabled(True)
         if result.get("error"):
             self._append_log(f"❌ 產出失敗：{result['error']}")
             return
