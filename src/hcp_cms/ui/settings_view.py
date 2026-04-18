@@ -297,6 +297,32 @@ class SettingsView(QWidget):
 
         layout.addWidget(mail_group)
 
+        # ── AI 設定 ────────────────────────────────────────────
+        ai_group = QGroupBox("🤖 AI 設定（Claude）")
+        ai_form = QFormLayout(ai_group)
+        ai_form.setContentsMargins(12, 12, 12, 12)
+        ai_form.setSpacing(8)
+
+        self._claude_key = QLineEdit()
+        self._claude_key.setPlaceholderText("sk-ant-api03-…")
+        self._claude_key.setEchoMode(QLineEdit.EchoMode.Password)
+        ai_form.addRow("Anthropic API Key：", self._claude_key)
+
+        ai_hint = QLabel("用於 Patch 補充說明自動分析。可至 console.anthropic.com 申請 API Key。")
+        ai_hint.setWordWrap(True)
+        ai_hint.setStyleSheet("color: #64748b; font-size: 11px;")
+        ai_form.addRow("", ai_hint)
+
+        ai_btn_row = QHBoxLayout()
+        ai_save_btn = QPushButton("💾 儲存 API Key")
+        ai_save_btn.clicked.connect(self._on_save_claude)
+        ai_btn_row.addWidget(ai_save_btn)
+        ai_btn_row.addStretch()
+        ai_form.addRow("", ai_btn_row)
+
+        layout.addWidget(ai_group)
+        self._load_claude_creds()
+
         # Save button
         save_btn = QPushButton("💾 儲存設定")
         layout.addWidget(save_btn)
@@ -361,6 +387,21 @@ class SettingsView(QWidget):
             QMessageBox.information(self, "清除完成", f"已刪除 {deleted} 筆案件，可重新收信建案。")
         except Exception as e:
             QMessageBox.critical(self, "清除失敗", f"發生錯誤：{e}")
+
+    # ── Claude AI 憑證 ─────────────────────────────────────────────────
+
+    def _load_claude_creds(self) -> None:
+        key = self._creds.retrieve("claude_api_key") or ""
+        if key:
+            self._claude_key.setText(key)
+
+    def _on_save_claude(self) -> None:
+        key = self._claude_key.text().strip()
+        if not key:
+            QMessageBox.warning(self, "AI 設定", "API Key 不可為空。")
+            return
+        self._creds.store("claude_api_key", key)
+        QMessageBox.information(self, "AI 設定", "Anthropic API Key 已儲存。")
 
     # ── Mantis 憑證 ────────────────────────────────────────────────────
 
