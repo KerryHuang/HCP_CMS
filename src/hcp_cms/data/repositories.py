@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re as _re
 import sqlite3
 from datetime import datetime
@@ -1253,6 +1254,26 @@ class PatchRepository:
             {"d": mantis_detail, "issue_id": issue_id},
         )
         self._conn.commit()
+
+    def update_issue_supplement(
+        self, issue_id: int, supplement: dict, manual: bool = False
+    ) -> None:
+        """更新 mantis_detail JSON 中的 supplement 欄位。
+
+        保留其他既有欄位（form_files、archive_name 等）。
+        manual=True 時一併設定 supplement_edited=True。
+        """
+        iss = self.get_issue_by_id(issue_id)
+        if iss is None:
+            return
+        try:
+            detail: dict = json.loads(iss.mantis_detail) if iss.mantis_detail else {}
+        except (json.JSONDecodeError, TypeError):
+            detail = {}
+        detail["supplement"] = supplement
+        if manual:
+            detail["supplement_edited"] = True
+        self.update_issue_mantis_detail(issue_id, json.dumps(detail, ensure_ascii=False))
 
     def update_issue(self, issue: PatchIssue) -> None:
         self._conn.execute(

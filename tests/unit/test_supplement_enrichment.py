@@ -1,5 +1,7 @@
 """tests/unit/test_supplement_enrichment.py — 補充說明強化功能測試。"""
 
+import pytest
+
 # ── Task 1: ClaudeContentService ──────────────────────────────────────────
 
 def test_extract_supplement_no_client():
@@ -76,3 +78,71 @@ def test_parse_notes_limit_10():
     notes, total = MantisSoapClient._parse_notes(xml, max_count=10)
     assert total == 12
     assert len(notes) == 10
+
+
+# ── Task 3: PatchRepository ────────────────────────────────────────────────
+
+@pytest.fixture
+def db_conn(tmp_path):
+    from hcp_cms.data.database import DatabaseManager
+    db = DatabaseManager(str(tmp_path / "test.db"))
+    db.initialize()
+    yield db._conn
+    db.close()
+
+
+def test_update_issue_supplement_auto(db_conn):
+    """auto 模式（manual=False）儲存 supplement，supplement_edited 保持 False。"""
+    import json
+    from hcp_cms.data.models import PatchIssue, PatchRecord
+    from hcp_cms.data.repositories import PatchRepository
+    repo = PatchRepository(db_conn)
+    patch_id = repo.insert_patch(PatchRecord(type="monthly", month_str="202604"))
+    issue_id = repo.insert_issue(PatchIssue(patch_id=patch_id, issue_no="0017023"))
+
+    supplement = {"修改原因": "自動填入", "原問題": "", "範例說明": "", "修正後": "", "注意事項": ""}
+    repo.update_issue_supplement(issue_id, supplement, manual=False)
+
+    updated = repo.get_issue_by_id(issue_id)
+    detail = json.loads(updated.mantis_detail)
+    assert detail["supplement"]["修改原因"] == "自動填入"
+    assert detail.get("supplement_edited", False) is False
+
+
+def test_update_issue_supplement_manual(db_conn):
+    """manual=True 時 supplement_edited 旗標設為 True。"""
+    import json
+    from hcp_cms.data.models import PatchIssue, PatchRecord
+    from hcp_cms.data.repositories import PatchRepository
+    repo = PatchRepository(db_conn)
+    patch_id = repo.insert_patch(PatchRecord(type="monthly", month_str="202604"))
+    issue_id = repo.insert_issue(PatchIssue(patch_id=patch_id, issue_no="0017023"))
+
+    supplement = {"修改原因": "人工修改", "原問題": "B", "範例說明": "C", "修正後": "D", "注意事項": "E"}
+    repo.update_issue_supplement(issue_id, supplement, manual=True)
+
+    updated = repo.get_issue_by_id(issue_id)
+    detail = json.loads(updated.mantis_detail)
+    assert detail["supplement"]["修改原因"] == "人工修改"
+    assert detail["supplement_edited"] is True
+
+
+def test_update_issue_supplement_preserves_existing_fields(db_conn):
+    """update_issue_supplement 保留既有 mantis_detail 其他欄位（如 form_files）。"""
+    import json
+    from hcp_cms.data.models import PatchIssue, PatchRecord
+    from hcp_cms.data.repositories import PatchRepository
+    repo = PatchRepository(db_conn)
+    patch_id = repo.insert_patch(PatchRecord(type="monthly", month_str="202604"))
+    existing_detail = json.dumps({"form_files": ["HRWF304"], "archive_name": "01.IP_11G.7z"})
+    issue_id = repo.insert_issue(PatchIssue(
+        patch_id=patch_id, issue_no="0017023", mantis_detail=existing_detail
+    ))
+
+    supplement = {"修改原因": "測試", "原問題": "", "範例說明": "", "修正後": "", "注意事項": ""}
+    repo.update_issue_supplement(issue_id, supplement, manual=False)
+
+    updated = repo.get_issue_by_id(issue_id)
+    detail = json.loads(updated.mantis_detail)
+    assert detail["form_files"] == ["HRWF304"]        # 原有欄位保留
+    assert detail["supplement"]["修改原因"] == "測試"  # 新欄位寫入
