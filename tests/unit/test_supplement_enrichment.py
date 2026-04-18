@@ -151,11 +151,32 @@ def test_update_issue_supplement_preserves_existing_fields(db_conn):
     assert detail["supplement"]["修改原因"] == "測試"  # 新欄位寫入
 
 
+def test_update_issue_supplement_ai_clears_edited_flag(db_conn):
+    """AI 覆蓋（manual=False）時應清除 supplement_edited 旗標。"""
+    import json
+
+    from hcp_cms.data.models import PatchIssue, PatchRecord
+    from hcp_cms.data.repositories import PatchRepository
+    repo = PatchRepository(db_conn)
+    patch_id = repo.insert_patch(PatchRecord(type="monthly", month_str="202604"))
+    issue_id = repo.insert_issue(PatchIssue(patch_id=patch_id, issue_no="0017023"))
+
+    # 先設為人工編輯
+    repo.update_issue_supplement(issue_id, {"修改原因": "人工"}, manual=True)
+    assert json.loads(repo.get_issue_by_id(issue_id).mantis_detail)["supplement_edited"] is True
+
+    # AI 重新分析覆蓋，旗標應清除
+    repo.update_issue_supplement(issue_id, {"修改原因": "AI 重分析"}, manual=False)
+    detail = json.loads(repo.get_issue_by_id(issue_id).mantis_detail)
+    assert "supplement_edited" not in detail
+
+
 # ── Task 4: MonthlyPatchEngine ─────────────────────────────────────────────
 
 def test_fetch_supplement_passes_release_note():
     """_fetch_supplement 應將 iss.description 與 iss.impact 傳給 Claude。"""
     from unittest.mock import MagicMock
+
     from hcp_cms.core.monthly_patch_engine import MonthlyPatchEngine
     from hcp_cms.data.models import PatchIssue
     from hcp_cms.services.mantis.base import MantisIssue, MantisNote
@@ -195,6 +216,7 @@ def test_fetch_supplements_skip_edited(db_conn):
     """fetch_supplements(skip_edited=True) 跳過 supplement_edited=True 的 Issue。"""
     import json
     from unittest.mock import MagicMock, patch
+
     from hcp_cms.core.monthly_patch_engine import MonthlyPatchEngine
     from hcp_cms.data.models import PatchIssue, PatchRecord
     from hcp_cms.data.repositories import PatchRepository

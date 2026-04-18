@@ -1273,6 +1273,8 @@ class PatchRepository:
         detail["supplement"] = supplement
         if manual:
             detail["supplement_edited"] = True
+        else:
+            detail.pop("supplement_edited", None)
         self.update_issue_mantis_detail(issue_id, json.dumps(detail, ensure_ascii=False))
 
     def update_issue(self, issue: PatchIssue) -> None:
