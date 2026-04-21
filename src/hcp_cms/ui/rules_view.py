@@ -213,6 +213,42 @@ class RulesView(QWidget):
         form_group.addRow(btn_layout)
         layout.addLayout(form_group)
 
+        # ── 待發關鍵字管理 ─────────────────────────────────────────────
+        kw_frame = QFrame()
+        kw_frame.setFrameShape(QFrame.Shape.StyledPanel)
+        kw_layout = QVBoxLayout(kw_frame)
+
+        kw_title = QLabel("📦 待發關鍵字")
+        kw_title.setStyleSheet("font-weight: bold; font-size: 13px;")
+        kw_layout.addWidget(kw_title)
+        kw_layout.addWidget(QLabel("同時包含「確認詞」和「出貨詞」的信件將自動加入待發清單。"))
+
+        self._kw_table = QTableWidget(0, 3)
+        self._kw_table.setHorizontalHeaderLabels(["ID", "關鍵字", "類型"])
+        self._kw_table.horizontalHeader().setStretchLastSection(True)
+        self._kw_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self._kw_table.setMaximumHeight(200)
+        kw_layout.addWidget(self._kw_table)
+
+        add_row = QHBoxLayout()
+        self._kw_input = QLineEdit()
+        self._kw_input.setPlaceholderText("輸入關鍵字")
+        self._kw_type_combo = QComboBox()
+        self._kw_type_combo.addItem("確認詞", "confirm")
+        self._kw_type_combo.addItem("出貨詞", "ship")
+        add_kw_btn = QPushButton("➕ 新增")
+        add_kw_btn.clicked.connect(self._on_add_keyword)
+        del_kw_btn = QPushButton("🗑 刪除選取")
+        del_kw_btn.clicked.connect(self._on_delete_keyword)
+        add_row.addWidget(self._kw_input)
+        add_row.addWidget(self._kw_type_combo)
+        add_row.addWidget(add_kw_btn)
+        add_row.addWidget(del_kw_btn)
+        kw_layout.addLayout(add_row)
+
+        layout.addWidget(kw_frame)
+        self._load_keywords()
+
         # 初始化說明卡片
         self._update_desc_card()
 
@@ -339,6 +375,43 @@ class RulesView(QWidget):
         palette = self._theme_mgr.current_palette() if self._theme_mgr else None
         dlg = RulesFormatDialog(self, palette=palette)
         dlg.exec()
+
+    def _load_keywords(self) -> None:
+        if not self._conn:
+            return
+        from hcp_cms.core.release_manager import ReleaseManager
+        kws = ReleaseManager(self._conn).list_keywords()
+        self._kw_table.setRowCount(0)
+        type_labels = {"confirm": "確認詞", "ship": "出貨詞"}
+        for kw in kws:
+            row = self._kw_table.rowCount()
+            self._kw_table.insertRow(row)
+            self._kw_table.setItem(row, 0, QTableWidgetItem(str(kw.id)))
+            self._kw_table.setItem(row, 1, QTableWidgetItem(kw.keyword))
+            self._kw_table.setItem(row, 2, QTableWidgetItem(type_labels.get(kw.ktype, kw.ktype)))
+
+    def _on_add_keyword(self) -> None:
+        if not self._conn:
+            return
+        keyword = self._kw_input.text().strip()
+        if not keyword:
+            return
+        ktype = self._kw_type_combo.currentData()
+        from hcp_cms.core.release_manager import ReleaseManager
+        ReleaseManager(self._conn).add_keyword(keyword, ktype)
+        self._kw_input.clear()
+        self._load_keywords()
+
+    def _on_delete_keyword(self) -> None:
+        if not self._conn:
+            return
+        rows = self._kw_table.selectionModel().selectedRows()
+        if not rows:
+            return
+        kid = int(self._kw_table.item(rows[0].row(), 0).text())
+        from hcp_cms.core.release_manager import ReleaseManager
+        ReleaseManager(self._conn).delete_keyword(kid)
+        self._load_keywords()
 
     def _apply_theme(self, p: ColorPalette) -> None:
         """套用主題色彩。"""
