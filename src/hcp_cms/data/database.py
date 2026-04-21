@@ -187,6 +187,26 @@ CREATE TABLE IF NOT EXISTS cs_patch_issues (
     sort_order     INTEGER DEFAULT 0,
     created_at     TEXT
 );
+
+CREATE TABLE IF NOT EXISTS cs_release_keywords (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    keyword   TEXT    NOT NULL,
+    ktype     TEXT    NOT NULL DEFAULT 'confirm',
+    created_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS cs_release_items (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    case_id           TEXT,
+    mantis_ticket_id  TEXT,
+    assignee          TEXT,
+    client_name       TEXT,
+    note              TEXT,
+    status            TEXT NOT NULL DEFAULT '待發',
+    month_str         TEXT,
+    patch_id          INTEGER,
+    created_at        TEXT
+);
 """
 
 
@@ -246,6 +266,27 @@ class DatabaseManager:
                 self._conn.execute(sql)
             except sqlite3.OperationalError:
                 pass  # 欄位已存在或不存在，略過
+
+        # 預設待發關鍵字種子資料（冪等）
+        default_keywords = [
+            ("測試ok",   "confirm"),
+            ("測試OK",   "confirm"),
+            ("test ok",  "confirm"),
+            ("安排出貨", "ship"),
+            ("請出貨",   "ship"),
+            ("可以出貨", "ship"),
+        ]
+        for kw, kt in default_keywords:
+            try:
+                self._conn.execute(
+                    "INSERT INTO cs_release_keywords (keyword, ktype, created_at)"
+                    " SELECT ?, ?, datetime('now')"
+                    " WHERE NOT EXISTS (SELECT 1 FROM cs_release_keywords WHERE keyword = ?)",
+                    (kw, kt, kw),
+                )
+            except sqlite3.OperationalError:
+                pass
+        self._conn.commit()
 
     def close(self) -> None:
         if self._conn:

@@ -208,3 +208,25 @@ class PatchIssue:
     sort_order: int = 0
     issue_id: int | None = None
     created_at: str | None = None
+
+
+@dataclass
+class ReleaseKeyword:
+    id: int | None
+    keyword: str
+    ktype: str  # 'confirm' | 'ship'
+    created_at: str | None = None
+
+
+@dataclass
+class ReleaseItem:
+    id: int | None
+    case_id: str | None
+    mantis_ticket_id: str | None
+    assignee: str | None
+    client_name: str | None
+    note: str | None
+    status: str = "待發"      # '待發' | '已發布'
+    month_str: str | None = None   # 'YYYYMM'
+    patch_id: int | None = None
+    created_at: str | None = None
