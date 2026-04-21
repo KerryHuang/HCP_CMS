@@ -9,7 +9,6 @@ from datetime import datetime
 from hcp_cms.data.models import ReleaseItem, ReleaseKeyword
 from hcp_cms.data.repositories import ReleaseItemRepository, ReleaseKeywordRepository
 
-
 _ASSIGNEE_RE = re.compile(r"分配給\s*[:：]\s*(\S+)", re.MULTILINE)
 
 

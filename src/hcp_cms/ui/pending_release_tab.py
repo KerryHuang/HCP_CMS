@@ -5,6 +5,7 @@ from __future__ import annotations
 import sqlite3
 from datetime import datetime
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QComboBox,
     QHBoxLayout,
@@ -17,7 +18,6 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from PySide6.QtCore import Qt
 
 from hcp_cms.core.release_manager import ReleaseManager
 
@@ -59,9 +59,7 @@ class PendingReleaseTab(QWidget):
 
         # 表格
         self._table = QTableWidget(0, 7)
-        self._table.setHorizontalHeaderLabels([
-            "ID", "案件編號", "Mantis 票號", "客戶", "指派人", "備注", "狀態"
-        ])
+        self._table.setHorizontalHeaderLabels(["ID", "案件編號", "Mantis 票號", "客戶", "指派人", "備注", "狀態"])
         self._table.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeMode.Stretch)
         self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -126,7 +124,4 @@ class PendingReleaseTab(QWidget):
         item = self._items[row]
         ReleaseManager(self._conn).mark_released(item.id)
         self.refresh()
-        QMessageBox.information(
-            self, "完成",
-            f"已將 {item.mantis_ticket_id or item.case_id or 'item'} 標記為已發布。"
-        )
+        QMessageBox.information(self, "完成", f"已將 {item.mantis_ticket_id or item.case_id or 'item'} 標記為已發布。")

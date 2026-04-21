@@ -183,8 +183,7 @@ class CaseManager:
                 # 待發清單偵測（信件含確認+出貨關鍵字時自動記錄）
                 try:
                     from hcp_cms.core.release_manager import ReleaseManager
-                    from datetime import datetime as _dt
-                    month_str = _dt.now().strftime("%Y%m")
+                    month_str = datetime.now().strftime("%Y%m")
                     comp = None
                     if existing and existing.company_id:
                         from hcp_cms.data.repositories import CompanyRepository
@@ -214,8 +213,7 @@ class CaseManager:
         # 待發清單偵測（信件含確認+出貨關鍵字時自動記錄）
         try:
             from hcp_cms.core.release_manager import ReleaseManager
-            from datetime import datetime as _dt
-            month_str = _dt.now().strftime("%Y%m")
+            month_str = datetime.now().strftime("%Y%m")
             comp = None
             if case and case.company_id:
                 from hcp_cms.data.repositories import CompanyRepository
