@@ -180,6 +180,25 @@ class CaseManager:
                     auto_ticket_id = classification.get("mantis_ticket_id")
                 if auto_ticket_id:
                     self._ensure_mantis_link(existing.case_id, auto_ticket_id)
+                # 待發清單偵測（信件含確認+出貨關鍵字時自動記錄）
+                try:
+                    from hcp_cms.core.release_manager import ReleaseManager
+                    from datetime import datetime as _dt
+                    month_str = _dt.now().strftime("%Y%m")
+                    comp = None
+                    if existing and existing.company_id:
+                        from hcp_cms.data.repositories import CompanyRepository
+                        comp = CompanyRepository(self._conn).get_by_id(existing.company_id)
+                    mantis_id = classification.get("mantis_ticket_id") if isinstance(classification, dict) else None
+                    ReleaseManager(self._conn).detect_and_record(
+                        body=body,
+                        case_id=existing.case_id if existing else None,
+                        mantis_ticket_id=mantis_id,
+                        client_name=comp.name if comp else None,
+                        month_str=month_str,
+                    )
+                except Exception:
+                    pass  # 偵測失敗不影響主流程
                 return existing, "merged"
 
         # 沒有 existing → 原有建案流程（不變）
@@ -192,6 +211,25 @@ class CaseManager:
             source_filename=source_filename,
             progress_note=progress_note,
         )
+        # 待發清單偵測（信件含確認+出貨關鍵字時自動記錄）
+        try:
+            from hcp_cms.core.release_manager import ReleaseManager
+            from datetime import datetime as _dt
+            month_str = _dt.now().strftime("%Y%m")
+            comp = None
+            if case and case.company_id:
+                from hcp_cms.data.repositories import CompanyRepository
+                comp = CompanyRepository(self._conn).get_by_id(case.company_id)
+            mantis_id = classification.get("mantis_ticket_id") if isinstance(classification, dict) else None
+            ReleaseManager(self._conn).detect_and_record(
+                body=body,
+                case_id=case.case_id if case else None,
+                mantis_ticket_id=mantis_id,
+                client_name=comp.name if comp else None,
+                month_str=month_str,
+            )
+        except Exception:
+            pass  # 偵測失敗不影響主流程
         return case, "created"
 
     def create_case(
@@ -387,6 +425,76 @@ class CaseManager:
             "reply_rate": round(reply_rate, 1),
             "avg_frt": round(avg_frt, 1) if avg_frt is not None else None,
         }
+
+    def relink_threads(self) -> dict[str, int]:
+        """重新掃描所有案件，依 company_id + subjects_match 建立 linked_case_id 關聯，
+        並同步串中最新案件的狀態至整串所有案件。
+
+        不刪除任何案件。
+        回傳 {"linked": 新建關聯數, "status_synced": 狀態同步案件數}
+        """
+        cases = self._case_repo.list_all()
+
+        # 按 company_id 分群
+        by_company: dict[str, list[Case]] = {}
+        for c in cases:
+            if c.company_id:
+                by_company.setdefault(c.company_id, []).append(c)
+
+        linked = 0
+        status_synced = 0
+        closed_statuses = {"已完成", "Closed"}
+
+        for company_cases in by_company.values():
+            sorted_cases = sorted(company_cases, key=lambda c: (c.sent_time or "", c.case_id))
+
+            # ── 步驟 1：建立 linked_case_id 關聯 ──
+            for i, child in enumerate(sorted_cases):
+                if child.linked_case_id:
+                    continue
+                for parent in sorted_cases[:i]:
+                    if parent.subject and child.subject:
+                        if ThreadTracker.subjects_match(parent.subject, child.subject):
+                            root = self._tracker._find_root(parent)
+                            if root.case_id != child.case_id:
+                                self._tracker.link_to_parent(child.case_id, root.case_id)
+                                linked += 1
+                            break
+
+            # ── 步驟 2：按主旨分群，同步最新案件狀態至整串 ──
+            # 重新載入以取得最新 linked_case_id
+            refreshed = {
+                c.case_id: self._case_repo.get_by_id(c.case_id)
+                for c in sorted_cases
+            }
+            refreshed_list = [v for v in refreshed.values() if v]
+
+            thread_groups: dict[str, list[Case]] = {}
+            for c in refreshed_list:
+                # 找同群主旨的代表 key（以最早案件的 case_id 為 key）
+                placed = False
+                for key_case_id, group in thread_groups.items():
+                    rep = group[0]
+                    if rep.subject and c.subject and ThreadTracker.subjects_match(rep.subject, c.subject):
+                        group.append(c)
+                        placed = True
+                        break
+                if not placed:
+                    thread_groups[c.case_id] = [c]
+
+            for group in thread_groups.values():
+                if len(group) < 2:
+                    continue
+                latest = max(group, key=lambda c: (c.sent_time or "", c.case_id))
+                if latest.status not in closed_statuses:
+                    continue
+                for c in group:
+                    if c.status not in closed_statuses:
+                        c.status = "已完成"
+                        self._case_repo.update(c)
+                        status_synced += 1
+
+        return {"linked": linked, "status_synced": status_synced}
 
     @staticmethod
     def _calc_frt(case: Case) -> float | None:
