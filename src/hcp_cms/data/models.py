@@ -212,9 +212,9 @@ class PatchIssue:
 
 @dataclass
 class ReleaseKeyword:
-    id: int | None = None
-    keyword: str = ""
+    keyword: str          # 必填
     ktype: str = "confirm"  # 'confirm' | 'ship'
+    id: int | None = None
     created_at: str | None = None
 
 
