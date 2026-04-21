@@ -19,6 +19,8 @@ from hcp_cms.data.models import (
     PatchRecord,
     ProcessedFile,
     QAKnowledge,
+    ReleaseItem,
+    ReleaseKeyword,
     Staff,
     Synonym,
 )
@@ -308,18 +310,13 @@ class CaseRepository:
     def next_case_id(self) -> str:
         year = datetime.now().strftime("%Y")
         prefix = f"CS-{year}-"
+        # CAST to INTEGER for numeric MAX, avoiding lexicographic pitfall (e.g. '999' > '1000')
         row = self._conn.execute(
-            "SELECT MAX(case_id) FROM cs_cases WHERE case_id LIKE ?",
-            (f"{prefix}%",),
+            "SELECT MAX(CAST(SUBSTR(case_id, ?) AS INTEGER)) FROM cs_cases WHERE case_id LIKE ?",
+            (len(prefix) + 1, f"{prefix}%"),
         ).fetchone()
-        max_id: str | None = row[0] if row else None
-        if max_id is None:
-            next_num = 1
-        else:
-            # Extract the numeric suffix
-            suffix = max_id[len(prefix) :]
-            next_num = int(suffix) + 1
-        return f"{prefix}{next_num:03d}"
+        max_num: int = row[0] if row and row[0] is not None else 0
+        return f"{prefix}{max_num + 1:03d}"
 
     def list_all(self) -> list[Case]:
         rows = self._conn.execute(self._build_select() + " ORDER BY sent_time DESC").fetchall()
@@ -1324,4 +1321,84 @@ class PatchRepository:
             description=row["description"], impact=row["impact"],
             test_direction=row["test_direction"], mantis_detail=row["mantis_detail"],
             source=row["source"], sort_order=row["sort_order"], created_at=row["created_at"],
+        )
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# ReleaseKeywordRepository
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+class ReleaseKeywordRepository:
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self._conn = conn
+
+    def list_all(self) -> list[ReleaseKeyword]:
+        rows = self._conn.execute(
+            "SELECT id, keyword, ktype, created_at FROM cs_release_keywords ORDER BY ktype, keyword"
+        ).fetchall()
+        return [ReleaseKeyword(keyword=r[1], ktype=r[2], id=r[0], created_at=r[3]) for r in rows]
+
+    def insert(self, kw: ReleaseKeyword) -> int:
+        cur = self._conn.execute(
+            "INSERT INTO cs_release_keywords (keyword, ktype, created_at) VALUES (?, ?, datetime('now'))",
+            (kw.keyword, kw.ktype),
+        )
+        self._conn.commit()
+        return cur.lastrowid
+
+    def delete(self, keyword_id: int) -> None:
+        self._conn.execute("DELETE FROM cs_release_keywords WHERE id = ?", (keyword_id,))
+        self._conn.commit()
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# ReleaseItemRepository
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+class ReleaseItemRepository:
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self._conn = conn
+
+    def insert(self, item: ReleaseItem) -> int:
+        cur = self._conn.execute(
+            """INSERT INTO cs_release_items
+               (case_id, mantis_ticket_id, assignee, client_name, note,
+                status, month_str, patch_id, created_at)
+               VALUES (?,?,?,?,?,?,?,?,?)""",
+            (item.case_id, item.mantis_ticket_id, item.assignee, item.client_name,
+             item.note, item.status, item.month_str, item.patch_id, _now()),
+        )
+        self._conn.commit()
+        return cur.lastrowid
+
+    def list_by_month(self, month_str: str) -> list[ReleaseItem]:
+        rows = self._conn.execute(
+            "SELECT id,case_id,mantis_ticket_id,assignee,client_name,note,"
+            "status,month_str,patch_id,created_at FROM cs_release_items"
+            " WHERE month_str=? ORDER BY created_at DESC",
+            (month_str,),
+        ).fetchall()
+        return [self._row(r) for r in rows]
+
+    def list_all(self) -> list[ReleaseItem]:
+        rows = self._conn.execute(
+            "SELECT id,case_id,mantis_ticket_id,assignee,client_name,note,"
+            "status,month_str,patch_id,created_at FROM cs_release_items"
+            " ORDER BY created_at DESC"
+        ).fetchall()
+        return [self._row(r) for r in rows]
+
+    def mark_released(self, item_id: int) -> None:
+        self._conn.execute(
+            "UPDATE cs_release_items SET status='已發布' WHERE id=?", (item_id,)
+        )
+        self._conn.commit()
+
+    def _row(self, r) -> ReleaseItem:
+        return ReleaseItem(
+            id=r[0], case_id=r[1], mantis_ticket_id=r[2], assignee=r[3],
+            client_name=r[4], note=r[5], status=r[6], month_str=r[7],
+            patch_id=r[8], created_at=r[9],
         )
