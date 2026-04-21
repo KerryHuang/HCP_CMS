@@ -1341,8 +1341,8 @@ class ReleaseKeywordRepository:
 
     def insert(self, kw: ReleaseKeyword) -> int:
         cur = self._conn.execute(
-            "INSERT INTO cs_release_keywords (keyword, ktype, created_at) VALUES (?, ?, datetime('now'))",
-            (kw.keyword, kw.ktype),
+            "INSERT INTO cs_release_keywords (keyword, ktype, created_at) VALUES (?, ?, ?)",
+            (kw.keyword, kw.ktype, _now()),
         )
         self._conn.commit()
         return cur.lastrowid
@@ -1396,7 +1396,7 @@ class ReleaseItemRepository:
         )
         self._conn.commit()
 
-    def _row(self, r) -> ReleaseItem:
+    def _row(self, r: tuple) -> ReleaseItem:
         return ReleaseItem(
             id=r[0], case_id=r[1], mantis_ticket_id=r[2], assignee=r[3],
             client_name=r[4], note=r[5], status=r[6], month_str=r[7],
