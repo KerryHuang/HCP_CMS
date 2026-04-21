@@ -8,6 +8,7 @@ from PySide6.QtWidgets import QLabel, QTabWidget, QVBoxLayout, QWidget
 
 from hcp_cms.ui.patch_monthly_tab import MonthlyPatchTab
 from hcp_cms.ui.patch_single_tab import SinglePatchTab
+from hcp_cms.ui.pending_release_tab import PendingReleaseTab
 from hcp_cms.ui.supplement_editor_widget import SupplementEditorWidget
 
 
@@ -39,6 +40,8 @@ class PatchView(QWidget):
         self._tabs.addTab(SinglePatchTab(conn=self._conn), "單次 Patch")
         self._tabs.addTab(monthly_tab, "每月大 PATCH")
         self._tabs.addTab(self._supplement_tab, "📋 補充說明")
+        self._release_tab = PendingReleaseTab(conn=self._conn)
+        self._tabs.addTab(self._release_tab, "📋 待發清單")
         layout.addWidget(self._tabs)
 
         # MonthlyPatchTab → SupplementEditorWidget
@@ -62,6 +65,8 @@ class PatchView(QWidget):
     def _on_tab_changed(self, index: int) -> None:
         if self._tabs.widget(index) is self._supplement_tab:
             self._supplement_tab.load_issues(self._monthly_tab._get_current_issues())
+        elif self._tabs.widget(index) is self._release_tab:
+            self._release_tab.refresh()
 
     def _on_supplement_display_updated(self, issue_id: int, supplement: object, edited: bool) -> None:
         self._supplement_tab.update_issue_display(issue_id, supplement, edited=edited)  # type: ignore[arg-type]
