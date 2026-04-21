@@ -286,7 +286,6 @@ class DatabaseManager:
                 )
             except sqlite3.OperationalError:
                 pass
-        self._conn.commit()
 
     def close(self) -> None:
         if self._conn:
