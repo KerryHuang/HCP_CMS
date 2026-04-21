@@ -29,55 +29,54 @@ class FTSManager:
     def _expand_with_synonyms(self, query: str) -> str:
         """Expand query terms with synonyms from synonyms table.
 
-        Tokenizes the query with jieba first, then looks up synonyms in three ways:
-        1. Direct: word == query term  → collect synonym values
-        2. Reverse: synonym == query term → collect word values
-        3. Group-based: find group_name for the term, collect all words/synonyms in that group
+        Tokenizes the query with jieba, then for each token builds an OR group
+        (original token + synonyms). OR groups are AND-joined (space in FTS5),
+        so all tokens must appear — preventing false positives from common words.
 
-        Multi-character tokens are also expanded into individual characters as OR alternatives
-        to handle cases where jieba splits the same phrase differently depending on context.
-
-        Returns 'term1 OR term2 OR ...' (de-duplicated, original term included).
+        Returns FTS5 query like '(A OR B) (C OR D)' or 'A B'.
         """
-        terms: set[str] = set()
-        # Tokenize query through jieba to align with how documents are indexed
         jieba_tokens = [t for t in jieba.cut(query, cut_all=False) if t.strip()]
-        for token in jieba_tokens:
-            terms.add(token)
-            # Also add individual characters to handle context-dependent segmentation
-            if len(token) > 1:
-                terms.update(list(token))
+        if not jieba_tokens:
+            return query
 
-        for token in list(terms.copy()):
-            # Direct synonyms: word = token → get synonym
+        groups: list[str] = []
+        for token in jieba_tokens:
+            alternatives: set[str] = {token}
+
+            # Direct synonyms: word = token
             rows = self._conn.execute(
                 "SELECT synonym, group_name FROM synonyms WHERE word = ?", (token,)
             ).fetchall()
             group_names: set[str] = set()
             for row in rows:
-                terms.add(row[0])
+                alternatives.add(row[0])
                 if row[1]:
                     group_names.add(row[1])
 
-            # Reverse synonyms: synonym = token → get word
+            # Reverse synonyms: synonym = token
             rows = self._conn.execute(
                 "SELECT word, group_name FROM synonyms WHERE synonym = ?", (token,)
             ).fetchall()
             for row in rows:
-                terms.add(row[0])
+                alternatives.add(row[0])
                 if row[1]:
                     group_names.add(row[1])
 
-            # Group-based: collect all terms in same group
+            # Group-based expansion
             for group in group_names:
                 group_rows = self._conn.execute(
                     "SELECT word, synonym FROM synonyms WHERE group_name = ?", (group,)
                 ).fetchall()
                 for row in group_rows:
-                    terms.add(row[0])
-                    terms.add(row[1])
+                    alternatives.add(row[0])
+                    alternatives.add(row[1])
 
-        return " OR ".join(terms)
+            if len(alternatives) == 1:
+                groups.append(token)
+            else:
+                groups.append("(" + " OR ".join(sorted(alternatives)) + ")")
+
+        return " ".join(groups)
 
     # ------------------------------------------------------------------
     # QA FTS

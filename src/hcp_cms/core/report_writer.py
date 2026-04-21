@@ -2,10 +2,23 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
 import openpyxl
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.worksheet.hyperlink import Hyperlink
+
+
+@dataclass
+class HyperlinkCell:
+    """Excel 內部超連結格子：顯示 text，點擊跳轉至同檔案的 target_sheet 工作表。"""
+
+    text: str
+    target_sheet: str
+
+    def __str__(self) -> str:
+        return self.text
 
 FONT_HEADER = Font(name="微軟正黑體", size=11, bold=True, color="FFFFFF")
 FILL_HEADER = PatternFill(start_color="1E3A5F", end_color="1E3A5F", fill_type="solid")
@@ -53,18 +66,33 @@ class ReportWriter:
 
             # Header row
             for col, value in enumerate(rows[0], 1):
-                cell = ws.cell(row=1, column=col, value=value)
-                cell.font = FONT_HEADER
-                cell.fill = FILL_HEADER
+                if isinstance(value, HyperlinkCell):
+                    cell = ws.cell(row=1, column=col, value=value.text)
+                    escaped = value.target_sheet.replace("'", "''")
+                    cell.hyperlink = Hyperlink(ref=cell.coordinate, location=f"'{escaped}'!A1")
+                    cell.font = Font(name="微軟正黑體", size=11, bold=True, color="0563C1", underline="single")
+                else:
+                    cell = ws.cell(row=1, column=col, value=value)
+                    cell.font = FONT_HEADER
+                    cell.fill = FILL_HEADER
                 cell.alignment = Alignment(horizontal="center")
                 cell.border = BORDER_THIN
 
             # Data rows
             for row_idx, row in enumerate(rows[1:], 2):
                 for col, value in enumerate(row, 1):
-                    cell = ws.cell(row=row_idx, column=col, value=value)
+                    if isinstance(value, HyperlinkCell):
+                        cell = ws.cell(row=row_idx, column=col, value=value.text)
+                        escaped = value.target_sheet.replace("'", "''")
+                        cell.hyperlink = Hyperlink(
+                            ref=cell.coordinate,
+                            location=f"'{escaped}'!A1",
+                        )
+                        cell.font = Font(name="微軟正黑體", size=10, color="0563C1", underline="single")
+                    else:
+                        cell = ws.cell(row=row_idx, column=col, value=value)
                     cell.border = BORDER_THIN
-                    if row_idx % 2 == 0:
+                    if row_idx % 2 == 0 and not isinstance(value, HyperlinkCell):
                         cell.fill = FILL_ALT_ROW
 
         # 自動調整欄寬（依內容最大長度，上限 50 字元）

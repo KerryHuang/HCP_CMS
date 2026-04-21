@@ -103,6 +103,11 @@ class CaseView(QWidget):
         refresh_btn.clicked.connect(self.refresh)
         header.addWidget(refresh_btn)
 
+        relink_btn = QPushButton("🔗 串接對話串")
+        relink_btn.setToolTip("重新掃描所有案件，自動補齊遺漏的回覆串關聯")
+        relink_btn.clicked.connect(self._on_relink_threads)
+        header.addWidget(relink_btn)
+
         new_btn = QPushButton("➕ 手動建案")
         new_btn.clicked.connect(self._on_new_case)
         header.addWidget(new_btn)
@@ -343,8 +348,31 @@ class CaseView(QWidget):
 
         return "".join(parts) if parts else "<i style='color:#6b7280'>（尚無對話記錄）</i>"
 
+    def _on_relink_threads(self) -> None:
+        if not self._conn:
+            return
+        reply = QMessageBox.question(
+            self, "串接對話串",
+            "將重新掃描所有案件，自動補齊遺漏的回覆串關聯（不刪除任何資料）。\n\n確定執行？",
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        result = CaseManager(self._conn).relink_threads()
+        self.refresh()
+        QMessageBox.information(
+            self, "完成",
+            f"建立對話串關聯：{result['linked']} 筆\n"
+            f"同步結案狀態：{result['status_synced']} 筆"
+        )
+
     def _on_new_case(self) -> None:
-        pass  # Will be implemented with dialog
+        if not self._conn:
+            return
+        from hcp_cms.ui.new_case_dialog import NewCaseDialog
+        dlg = NewCaseDialog(self._conn, parent=self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            self.refresh()
+            QMessageBox.information(self, "建案成功", f"案件 {dlg.created_case_id} 已建立。")
 
     def _on_import_csv(self) -> None:
         if not self._db_path:

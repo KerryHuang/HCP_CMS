@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from hcp_cms.core.mantis_classifier import MantisClassifier
-from hcp_cms.core.report_writer import ReportWriter
+from hcp_cms.core.report_writer import HyperlinkCell, ReportWriter
 from hcp_cms.data.repositories import (
     CaseMantisRepository,
     CaseRepository,
@@ -58,17 +58,31 @@ def _clean_row(row: list[Any]) -> list[Any]:
     return [_clean(v) for v in row]
 
 
-def _reply_hours(sent: str | None, replied: str | None) -> str:
-    """計算首次回覆時效（小時），無法計算時回傳空字串。"""
+def _reply_elapsed(sent: str | None, replied: str | None) -> str:
+    """計算首次回覆時效，回傳「X時Y分」格式；無法計算時回傳空字串。"""
     if not sent or not replied:
         return ""
-    fmt = "%Y/%m/%d %H:%M:%S"
-    try:
-        delta = datetime.strptime(replied, fmt) - datetime.strptime(sent, fmt)
-        hours = delta.total_seconds() / 3600
-        return f"{hours:.1f}"
-    except ValueError:
+    fmts = ["%Y/%m/%d %H:%M:%S", "%Y/%m/%d %H:%M"]
+    s = e = None
+    for fmt in fmts:
+        try:
+            s = datetime.strptime(sent.strip()[:19], fmt) if len(fmt) == 19 else datetime.strptime(sent.strip()[:16], fmt)
+            break
+        except ValueError:
+            continue
+    for fmt in fmts:
+        try:
+            e = datetime.strptime(replied.strip()[:19], fmt) if len(fmt) == 19 else datetime.strptime(replied.strip()[:16], fmt)
+            break
+        except ValueError:
+            continue
+    if s is None or e is None:
         return ""
+    total_minutes = max(0, int((e - s).total_seconds() / 60))
+    hours, minutes = divmod(total_minutes, 60)
+    if hours == 0:
+        return f"{minutes}分"
+    return f"{hours}時{minutes}分" if minutes else f"{hours}時"
 
 
 class ReportEngine:
@@ -136,21 +150,28 @@ class ReportEngine:
         result: dict[str, list[list]] = {}
 
         # ── Sheet 1: 客戶索引 ──────────────────────────────────────────
-        index_rows: list[list] = [["#", "公司名稱", "Email 域名", "聯絡方式", "案件數", "快速連結"]]
+        # 只計算父案件（linked_case_id IS NULL）作為獨立問題數，回覆信件不重複計算
+        index_rows: list[list] = [["#", "公司名稱", "Email 域名", "聯絡方式", "獨立案件數", "快速連結"]]
         for i, comp in enumerate(companies, 1):
-            count = sum(1 for c in cases if c.company_id == comp.company_id)
+            count = sum(
+                1 for c in cases
+                if c.company_id == comp.company_id and not c.linked_case_id
+            )
+            if not count:
+                continue
             if comp.company_id in company_sheet_names:
-                link_text = f"→ {comp.name}問題記錄"
+                sheet_name = company_sheet_names[comp.company_id]
+                link_cell = HyperlinkCell(f"→ {comp.name}問題記錄", sheet_name)
             else:
-                link_text = ""
-            index_rows.append(_clean_row([i, comp.name, comp.domain, comp.contact_info or "", count, link_text]))
+                link_cell = None
+            index_rows.append(_clean_row([i, comp.name, comp.domain, comp.contact_info or "", count, link_cell]))
         result["📋 客戶索引"] = index_rows
 
         # ── Sheet 2: 問題追蹤總表 ──────────────────────────────────────
         custom_cols = self._custom_col_mgr.list_columns()
         main_headers = [
-            "案件編號", "聯絡方式", "問題狀態", "優先等級",
-            "寄件時間", "首次回覆時效(hr)", "客戶", "客戶公司", "客戶聯絡電話",
+            "案件編號", "關聯案件", "聯絡方式", "問題狀態", "優先等級",
+            "寄件時間", "首次回覆時效", "客戶", "客戶公司", "客戶聯絡電話",
             "主旨", "系統／產品", "問題類型", "錯誤類型",
             "受影響員工人數", "影響期間", "處理進度", "負責人",
             "預計回覆時間", "實際回覆時間", "結案時間",
@@ -164,8 +185,9 @@ class ReportEngine:
             company_phone = comp.contact_info if comp else ""
             closed_at = case.updated_at if case.status in ("已完成", "Closed") else ""
             tracking_rows.append(_clean_row([
-                case.case_id, case.contact_method, case.status, case.priority,
-                case.sent_time, _reply_hours(case.sent_time, case.actual_reply),
+                case.case_id, case.linked_case_id or "",
+                case.contact_method, case.status, case.priority,
+                case.sent_time, _reply_elapsed(case.sent_time, case.actual_reply),
                 case.contact_person, company_name, company_phone or "",
                 case.subject, case.system_product, case.issue_type, case.error_type,
                 "", case.impact_period, case.progress, case.handler,
@@ -193,7 +215,7 @@ class ReportEngine:
         # ── 個別公司頁籤 ───────────────────────────────────────────────
         comp_case_headers = [
             "案件編號", "聯絡方式", "問題狀態", "優先等級",
-            "寄件時間", "主旨", "系統／產品", "問題類型", "錯誤類型",
+            "寄件時間", "首次回覆時效", "來回次數", "主旨", "系統／產品", "問題類型", "錯誤類型",
             "影響期間", "處理進度", "實際回覆時間", "結案時間", "備註",
         ] + [col.col_label for col in custom_cols]
 
@@ -201,19 +223,22 @@ class ReportEngine:
             comp_cases = company_cases.get(comp.company_id, [])
             if not comp_cases:
                 continue
+            # 只顯示父案件（不是其他案件的回覆），回覆信件已透過 reply_count 反映
+            parent_cases = [c for c in comp_cases if not c.linked_case_id]
+            if not parent_cases:
+                continue
             sheet_name = company_sheet_names[comp.company_id]
-            # Row 0：返回客戶索引（純文字）
-            # Row 1：表頭
-            # Row 2+：資料
             comp_rows: list[list] = [
-                ["↩ 返回客戶索引"],
+                [HyperlinkCell("↩ 返回客戶索引", "📋 客戶索引")],
                 comp_case_headers,
             ]
-            for case in comp_cases:
+            for case in parent_cases:
                 closed_at = case.updated_at if case.status in ("已完成", "Closed") else ""
                 comp_rows.append(_clean_row([
                     case.case_id, case.contact_method, case.status, case.priority,
-                    case.sent_time, case.subject, case.system_product,
+                    case.sent_time, _reply_elapsed(case.sent_time, case.actual_reply),
+                    case.reply_count,
+                    case.subject, case.system_product,
                     case.issue_type, case.error_type,
                     case.impact_period, case.progress, case.actual_reply,
                     closed_at, case.notes or "",
