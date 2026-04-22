@@ -10,6 +10,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
+    QDialogButtonBox,
     QFormLayout,
     QHBoxLayout,
     QLabel,
@@ -653,7 +654,7 @@ class CaseView(QWidget):
         question = case.subject or ""
 
         # 彈出確認視窗，讓使用者確認問題與回覆內容
-        from PySide6.QtWidgets import QDialog, QDialogButtonBox, QFormLayout, QTextEdit as _QTE
+        _QTE = QTextEdit  # 方法內的別名，保持與下方 layout.addRow 相容
         dlg = QDialog(self)
         dlg.setWindowTitle("加入知識庫")
         dlg.setMinimumWidth(520)
@@ -697,16 +698,20 @@ class CaseView(QWidget):
             return
 
         from hcp_cms.core.kms_engine import KMSEngine
-        qa = KMSEngine(self._conn).create_qa(
-            question=final_q,
-            answer=final_a,
-            system_product=case.system_product,
-            issue_type=case.issue_type,
-            error_type=case.error_type,
-            source="case",
-            source_case_id=case_id,
-            status="待審核",
-        )
+        try:
+            qa = KMSEngine(self._conn).create_qa(
+                question=final_q,
+                answer=final_a,
+                system_product=case.system_product,
+                issue_type=case.issue_type,
+                error_type=case.error_type,
+                source="case",
+                source_case_id=case_id,
+                status="待審核",
+            )
+        except Exception as e:
+            QMessageBox.critical(self, "建立失敗", f"建立知識庫條目時發生錯誤：\n{e}")
+            return
         QMessageBox.information(
             self, "完成",
             f"已建立知識庫條目 {qa.qa_id}（待審核）。\n"
