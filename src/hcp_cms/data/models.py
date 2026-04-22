@@ -227,7 +227,9 @@ class ReleaseItem:
     assignee: str | None = None
     client_name: str | None = None
     note: str | None = None
-    status: str = "待發"      # '待發' | '已發布'
+    status: str = "待發"      # '待發' | '待確認' | '已發布'
     month_str: str | None = None   # 'YYYYMM'
     patch_id: int | None = None
     created_at: str | None = None
+    modifier: str | None = None   # Mantis 活動記錄中的修改者（如 ventie）
+    sort_order: int | None = None  # 手動排序序號（越小越前，None 表示依建立時間）

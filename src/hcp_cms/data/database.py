@@ -261,6 +261,8 @@ class DatabaseManager:
             "ALTER TABLE companies ADD COLUMN sales_staff_id TEXT",
             "ALTER TABLE companies ADD COLUMN hcp_version TEXT",
             "ALTER TABLE cs_cases ADD COLUMN message_id TEXT",
+            "ALTER TABLE cs_release_items ADD COLUMN modifier TEXT",
+            "ALTER TABLE cs_release_items ADD COLUMN sort_order INTEGER",
         ]
         for sql in pending:
             try:

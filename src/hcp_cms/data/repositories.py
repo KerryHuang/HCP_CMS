@@ -1384,13 +1384,20 @@ class ReleaseItemRepository:
         self._conn = conn
 
     def insert(self, item: ReleaseItem) -> int:
+        # sort_order 預設為目前最大值 + 1（新項目排最後）
+        max_row = self._conn.execute(
+            "SELECT COALESCE(MAX(sort_order), 0) FROM cs_release_items WHERE month_str=?",
+            (item.month_str,),
+        ).fetchone()
+        next_order = (max_row[0] or 0) + 1
         cur = self._conn.execute(
             """INSERT INTO cs_release_items
                (case_id, mantis_ticket_id, assignee, client_name, note,
-                status, month_str, patch_id, created_at)
-               VALUES (?,?,?,?,?,?,?,?,?)""",
+                status, month_str, patch_id, created_at, modifier, sort_order)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
             (item.case_id, item.mantis_ticket_id, item.assignee, item.client_name,
-             item.note, item.status, item.month_str, item.patch_id, _now()),
+             item.note, item.status, item.month_str, item.patch_id, _now(),
+             item.modifier, item.sort_order if item.sort_order is not None else next_order),
         )
         self._conn.commit()
         return cur.lastrowid
@@ -1398,8 +1405,8 @@ class ReleaseItemRepository:
     def list_by_month(self, month_str: str) -> list[ReleaseItem]:
         rows = self._conn.execute(
             "SELECT id,case_id,mantis_ticket_id,assignee,client_name,note,"
-            "status,month_str,patch_id,created_at FROM cs_release_items"
-            " WHERE month_str=? ORDER BY created_at DESC",
+            "status,month_str,patch_id,created_at,modifier,sort_order FROM cs_release_items"
+            " WHERE month_str=? ORDER BY COALESCE(sort_order, 9999999) ASC, created_at ASC",
             (month_str,),
         ).fetchall()
         return [self._row(r) for r in rows]
@@ -1407,10 +1414,32 @@ class ReleaseItemRepository:
     def list_all(self) -> list[ReleaseItem]:
         rows = self._conn.execute(
             "SELECT id,case_id,mantis_ticket_id,assignee,client_name,note,"
-            "status,month_str,patch_id,created_at FROM cs_release_items"
-            " ORDER BY created_at DESC"
+            "status,month_str,patch_id,created_at,modifier,sort_order FROM cs_release_items"
+            " ORDER BY month_str DESC, COALESCE(sort_order, 9999999) ASC, created_at ASC"
         ).fetchall()
         return [self._row(r) for r in rows]
+
+    def update_sort_order(self, item_id: int, sort_order: int) -> None:
+        self._conn.execute(
+            "UPDATE cs_release_items SET sort_order=? WHERE id=?", (sort_order, item_id)
+        )
+        self._conn.commit()
+
+    def swap_sort_order(self, id_a: int, order_a: int, id_b: int, order_b: int) -> None:
+        """交換兩筆資料的 sort_order。"""
+        self._conn.execute(
+            "UPDATE cs_release_items SET sort_order=? WHERE id=?", (order_b, id_a)
+        )
+        self._conn.execute(
+            "UPDATE cs_release_items SET sort_order=? WHERE id=?", (order_a, id_b)
+        )
+        self._conn.commit()
+
+    def mark_pending_confirm(self, item_id: int) -> None:
+        self._conn.execute(
+            "UPDATE cs_release_items SET status='待確認' WHERE id=?", (item_id,)
+        )
+        self._conn.commit()
 
     def mark_released(self, item_id: int) -> None:
         self._conn.execute(
@@ -1430,13 +1459,21 @@ class ReleaseItemRepository:
         )
         self._conn.commit()
 
+    def update_note(self, item_id: int, note: str) -> None:
+        self._conn.execute(
+            "UPDATE cs_release_items SET note=? WHERE id=?", (note, item_id)
+        )
+        self._conn.commit()
+
     def delete(self, item_id: int) -> None:
         self._conn.execute("DELETE FROM cs_release_items WHERE id=?", (item_id,))
         self._conn.commit()
 
     def _row(self, r: tuple) -> ReleaseItem:
+        modifier = r[10] if len(r) > 10 else None
+        sort_order = r[11] if len(r) > 11 else None
         return ReleaseItem(
             id=r[0], case_id=r[1], mantis_ticket_id=r[2], assignee=r[3],
             client_name=r[4], note=r[5], status=r[6], month_str=r[7],
-            patch_id=r[8], created_at=r[9],
+            patch_id=r[8], created_at=r[9], modifier=modifier, sort_order=sort_order,
         )
