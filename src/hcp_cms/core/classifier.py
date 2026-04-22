@@ -18,6 +18,12 @@ _ISSUE_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Mantis 通知信主旨格式：[公司名 0017095]: [摘要...]
+# 擷取公司名稱（group 1）與票號（group 2）
+_MANTIS_NOTIFY_RE = re.compile(
+    r"^\[(.+?)\s+(\d{5,8})\]\s*:",
+)
+
 
 class Classifier:
     """Classifies emails by product, issue type, error type, priority, and company."""
@@ -53,6 +59,21 @@ class Classifier:
             raw_date = m_issue.group(1)   # "20260325"
             mantis_ticket_id = m_issue.group(2)  # "0017475"
             mantis_issue_date = f"{raw_date[:4]}/{raw_date[4:6]}/{raw_date[6:]}"
+
+        # Mantis 通知信主旨格式 fallback：[公司名 0017095]: ...
+        mantis_notify_company: str | None = None
+        if not mantis_ticket_id:
+            m_notify = _MANTIS_NOTIFY_RE.match(subject or "")
+            if m_notify:
+                mantis_notify_company = m_notify.group(1).strip()   # "Asus_華碩電腦"
+                mantis_ticket_id = m_notify.group(2)                 # "0017095"
+                # 若 company_id 仍未找到，嘗試以公司顯示名稱搜尋
+                if not company_id:
+                    all_companies = CompanyRepository(self._conn).list_all()
+                    for c in all_companies:
+                        if mantis_notify_company in (c.name or "") or (c.name or "") in mantis_notify_company:
+                            company_id = c.company_id
+                            break
 
         # handler 優先序：① 主旨 (RD_XXX) ② 寄件人 domain → 公司 → 客服 ③ 分類規則
         subject_handler = tags.get("handler")
@@ -96,6 +117,7 @@ class Classifier:
             "issue_number": tags.get("issue_number"),
             "mantis_ticket_id": mantis_ticket_id,
             "mantis_issue_date": mantis_issue_date,
+            "mantis_notify_company": mantis_notify_company,  # Mantis 通知信的公司顯示名稱
         }
 
         return result

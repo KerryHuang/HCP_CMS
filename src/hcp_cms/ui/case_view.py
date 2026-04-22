@@ -553,6 +553,8 @@ class CaseView(QWidget):
         target_month = month_combo.currentData()
 
         # 取得 Mantis 票號（取第一筆）與公司名稱
+        import re as _re
+
         from hcp_cms.data.repositories import CaseMantisRepository, CompanyRepository
 
         mantis_links = CaseMantisRepository(self._conn).list_by_case_id(case_id)
@@ -565,6 +567,15 @@ class CaseView(QWidget):
             if case.company_id:
                 comp = CompanyRepository(self._conn).get_by_id(case.company_id)
                 client_name = comp.name if comp else None
+
+        # fallback：若仍無資料，從主旨萃取 Mantis 通知格式 [公司名 XXXXXXX]:
+        if not mantis_ticket_id or not client_name:
+            _m = _re.match(r"^\[(.+?)\s+(\d{5,8})\]\s*:", case.subject or "") if case else None
+            if _m:
+                if not mantis_ticket_id:
+                    mantis_ticket_id = _m.group(2)
+                if not client_name:
+                    client_name = _m.group(1).strip()
 
         from hcp_cms.core.release_manager import ReleaseManager
 

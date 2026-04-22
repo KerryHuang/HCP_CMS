@@ -199,12 +199,16 @@ class CaseManager:
                 if existing.company_id:
                     from hcp_cms.data.repositories import CompanyRepository
                     comp = CompanyRepository(self._conn).get_by_id(existing.company_id)
-                mantis_id = classification.get("mantis_ticket_id") if isinstance(classification, dict) else None
+                mantis_id = (classification.get("mantis_ticket_id") if isinstance(classification, dict) else None)
+                # 若 DB 查不到公司名，用 Mantis 通知主旨萃取的公司顯示名稱
+                client_name = (comp.name if comp else None) or (
+                    classification.get("mantis_notify_company") if isinstance(classification, dict) else None
+                )
                 ReleaseManager(self._conn).detect_and_record(
                     body=body,
                     case_id=existing.case_id,
                     mantis_ticket_id=mantis_id,
-                    client_name=comp.name if comp else None,
+                    client_name=client_name,
                     month_str=month_str,
                 )
             except Exception:
@@ -231,11 +235,14 @@ class CaseManager:
                 from hcp_cms.data.repositories import CompanyRepository
                 comp = CompanyRepository(self._conn).get_by_id(case.company_id)
             mantis_id = classification.get("mantis_ticket_id") if isinstance(classification, dict) else None
+            client_name = (comp.name if comp else None) or (
+                classification.get("mantis_notify_company") if isinstance(classification, dict) else None
+            )
             ReleaseManager(self._conn).detect_and_record(
                 body=body,
                 case_id=case.case_id if case else None,
                 mantis_ticket_id=mantis_id,
-                client_name=comp.name if comp else None,
+                client_name=client_name,
                 month_str=month_str,
             )
         except Exception:
