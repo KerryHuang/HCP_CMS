@@ -695,7 +695,6 @@ class CaseView(QWidget):
             return
 
         # 找最後一筆 HCP 回覆作為 answer
-        from hcp_cms.data.repositories import CaseLogRepository
         logs = CaseLogRepository(self._conn).list_by_case(case_id)
         hcp_logs = [
             lg for lg in logs
