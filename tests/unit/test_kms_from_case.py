@@ -1,7 +1,6 @@
 # tests/unit/test_kms_from_case.py
 """測試從案件建立 KMS 條目與相似搜尋輔助函式。"""
 import pytest
-import sqlite3
 from hcp_cms.data.database import DatabaseManager
 from hcp_cms.data.models import Case, CaseLog
 from hcp_cms.data.repositories import CaseRepository, CaseLogRepository
@@ -44,8 +43,9 @@ def case_with_logs(db):
         content="您好，離職申請請至人事管理 → 離職申請，填寫離職日期後送出即可。",
         logged_at="2026/04/01 10:00:00",
     )
-    CaseLogRepository(db).insert(log_customer)
-    CaseLogRepository(db).insert(log_hcp)
+    log_repo = CaseLogRepository(db)
+    log_repo.insert(log_customer)
+    log_repo.insert(log_hcp)
     return case
 
 
@@ -92,14 +92,14 @@ def test_search_similar_returns_empty_for_pending(db, case_with_logs):
     assert results == [], "待審核 QA 不應出現在搜尋結果"
 
 
-def test_search_similar_returns_approved(db, case_with_logs):
+def test_search_similar_returns_approved(db):
     """已完成的 QA 應可被搜尋到。"""
     engine = KMSEngine(db)
     qa = engine.create_qa(
         question="離職申請流程如何操作？",
         answer="人事管理 → 離職申請，填寫離職日期後送出。",
         source="case",
-        source_case_id="CS-TEST-001",
+        source_case_id=None,
         status="已完成",
     )
     results = engine.search("離職申請")
