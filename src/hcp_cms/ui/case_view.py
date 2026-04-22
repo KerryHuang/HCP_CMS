@@ -348,9 +348,6 @@ class CaseView(QWidget):
         for log in logs:
             color = direction_color.get(log.direction, "#94a3b8")
             preview = (log.content or "").strip()
-            # 取前 300 字顯示，超過加省略
-            if len(preview) > 300:
-                preview = preview[:300] + "…"
             parts.append(
                 f"<div style='background:#1e293b;border-left:3px solid {color};"
                 f"padding:6px 8px;margin-bottom:6px;border-radius:3px;'>"
