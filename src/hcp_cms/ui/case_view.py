@@ -274,6 +274,11 @@ class CaseView(QWidget):
         except Exception:
             pass
 
+        # refresh 後若目前選取的案件不在新清單中，清空詳情面板
+        current_id = self._detail_id.text()
+        if current_id and not any(c.case_id == current_id for c in self._cases):
+            self._clear_detail()
+
     def _clear_detail(self) -> None:
         """清空下方詳細資訊面板。"""
         self._delete_selected_btn.setEnabled(False)
