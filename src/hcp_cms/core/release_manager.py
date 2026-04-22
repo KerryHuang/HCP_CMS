@@ -48,13 +48,35 @@ class ReleaseDetector:
             if m2:
                 assignee = m2.group(1).strip()
 
-        note = ""
-        for line in body.splitlines():
-            if any(k.lower() in line.lower() for k in confirm_kws + ship_kws):
-                note = line.strip()[:200]
-                break
+        note = self._extract_note(body, confirm_kws + ship_kws)
 
         return {"assignee": assignee, "note": note}
+
+    @staticmethod
+    def _extract_note(body: str, trigger_kws: list[str]) -> str:
+        """擷取含觸發關鍵字的段落作為備注。
+
+        策略：
+        1. 若命中行的上方緊鄰 Mantis 留言人行（格式：(票號) 姓名 (角色) - 日期），
+           則將留言人行 + 命中行合併，提供完整脈絡。
+        2. 否則只回傳命中行。
+        最多 400 字。
+        """
+        lines = body.splitlines()
+        for i, line in enumerate(lines):
+            if any(kw.lower() in line.lower() for kw in trigger_kws):
+                # 嘗試往上找 Mantis 留言人行（跳過空行和 URL 行）
+                context_lines: list[str] = []
+                for j in range(i - 1, max(i - 5, -1), -1):
+                    prev = lines[j].strip()
+                    if not prev or prev.startswith("http"):
+                        continue
+                    if _MANTIS_COMMENTER_RE.match(prev):
+                        context_lines.insert(0, prev)
+                    break
+                context_lines.append(line.strip())
+                return "\n".join(context_lines)[:400]
+        return ""
 
 
 class ReleaseManager:

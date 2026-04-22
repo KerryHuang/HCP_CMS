@@ -58,6 +58,20 @@ class TestReleaseDetector:
         result = det.detect(body)
         assert result["assignee"] == "jill"
 
+    def test_note_includes_mantis_commenter_context(self, conn):
+        """Mantis 留言格式時，note 應包含留言人行以提供完整脈絡。"""
+        det = ReleaseDetector(conn)
+        body = (
+            "----------------------------------------------------------------------\n"
+            "(0039843) joywu (開發者) - 2026-04-21 17:07\n"
+            "https://172.18.2.1/mantis/view.php?id=17095#c39843\n"
+            "客戶回覆測試ok，請安排出貨，謝謝。\n"
+        )
+        result = det.detect(body)
+        assert result is not None
+        assert "(0039843) joywu (開發者)" in result["note"]
+        assert "客戶回覆測試ok" in result["note"]
+
 
 class TestReleaseManager:
     def test_detect_and_record_creates_item(self, conn):
