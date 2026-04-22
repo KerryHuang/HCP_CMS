@@ -33,6 +33,7 @@ class Case:
     reply_count: int = 0
     linked_case_id: str | None = None
     source: str = "email"
+    message_id: str | None = None
     created_at: str | None = None
     updated_at: str | None = None
     extra_fields: dict[str, str | None] = field(default_factory=dict)

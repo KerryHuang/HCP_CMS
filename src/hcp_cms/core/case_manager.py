@@ -121,6 +121,7 @@ class CaseManager:
         sent_time: str | None = None,
         source_filename: str | None = None,
         progress_note: str | None = None,
+        message_id: str | None = None,
     ) -> tuple[Case | None, str]:
         """匯入信件並建案（Find-or-Create）。
 
@@ -209,6 +210,7 @@ class CaseManager:
             sent_time=sent_time,
             source_filename=source_filename,
             progress_note=progress_note,
+            message_id=message_id,
         )
         # 待發清單偵測（信件含確認+出貨關鍵字時自動記錄）
         try:
@@ -241,6 +243,7 @@ class CaseManager:
         handler: str | None = None,
         source_filename: str | None = None,
         progress_note: str | None = None,
+        message_id: str | None = None,
     ) -> Case:
         """Create a new case from email data, with auto-classification and thread detection."""
         # Classify
@@ -286,6 +289,7 @@ class CaseManager:
             progress=final_progress,
             notes=notes,
             source="email",
+            message_id=message_id,
             reply_count=1,  # 第一封信本身算一次往返
         )
 

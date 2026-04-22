@@ -218,7 +218,7 @@ class CaseRepository:
             "case_id, company_id, subject, status, priority, sent_time, "
             "contact_person, contact_method, system_product, issue_type, error_type, "
             "impact_period, progress, handler, actual_reply, reply_time, notes, "
-            "rd_assignee, reply_count, linked_case_id, source, created_at, updated_at"
+            "rd_assignee, reply_count, linked_case_id, source, message_id, created_at, updated_at"
         )
         if not self._custom_cols:
             return f"SELECT {static} FROM cs_cases"
@@ -252,13 +252,13 @@ class CaseRepository:
                 case_id, contact_method, status, priority, sent_time,
                 company_id, contact_person, subject, system_product, issue_type,
                 error_type, impact_period, progress, actual_reply, reply_time, notes,
-                rd_assignee, handler, reply_count, linked_case_id, source,
+                rd_assignee, handler, reply_count, linked_case_id, source, message_id,
                 created_at, updated_at
             ) VALUES (
                 :case_id, :contact_method, :status, :priority, :sent_time,
                 :company_id, :contact_person, :subject, :system_product, :issue_type,
                 :error_type, :impact_period, :progress, :actual_reply, :reply_time, :notes,
-                :rd_assignee, :handler, :reply_count, :linked_case_id, :source,
+                :rd_assignee, :handler, :reply_count, :linked_case_id, :source, :message_id,
                 :created_at, :updated_at
             )
             """,
@@ -284,6 +284,7 @@ class CaseRepository:
                 "reply_count": case.reply_count,
                 "linked_case_id": case.linked_case_id,
                 "source": case.source,
+                "message_id": case.message_id,
                 "created_at": case.created_at,
                 "updated_at": case.updated_at,
             },

@@ -807,6 +807,7 @@ class EmailView(QWidget):
                         sent_time=str(email.date) if email.date else None,
                         source_filename=email.source_file,
                         progress_note=email.progress_note,
+                        message_id=email.message_id,
                     )
                     label = label_map.get(action, "已匯入")
                     self._table.setItem(row, 4, QTableWidgetItem(label))
