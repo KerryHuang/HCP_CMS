@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
 )
 
 from hcp_cms.core.case_manager import CaseManager
+from hcp_cms.core.kms_engine import KMSEngine
 from hcp_cms.data.fts import FTSManager
 from hcp_cms.data.repositories import CaseLogRepository, CaseRepository, CompanyRepository
 from hcp_cms.ui.theme import ColorPalette, ThemeManager
@@ -402,7 +403,6 @@ class CaseView(QWidget):
             self._kms_panel.setHtml("<i style='color:#6b7280'>（無主旨，無法搜尋）</i>")
             return
         try:
-            from hcp_cms.core.kms_engine import KMSEngine
             results = KMSEngine(self._conn).search(subject.strip())[:3]
         except Exception:
             self._kms_panel.setHtml("<i style='color:#6b7280'>（搜尋失敗）</i>")
@@ -416,15 +416,18 @@ class CaseView(QWidget):
 
         parts: list[str] = []
         for qa in results:
-            q = _html_escape((qa.question or "")[:80])
-            a = _html_escape((qa.answer or "")[:120])
+            q_raw = (qa.question or "")
+            a_raw = (qa.answer or "")
+            q = _html_escape(q_raw[:80])
+            a = _html_escape(a_raw[:120])
+            a_suffix = "…" if len(a_raw) > 120 else ""
             qid = _html_escape(qa.qa_id)
             parts.append(
                 f"<div style='border-left:3px solid #3b82f6;padding:4px 6px;"
                 f"margin-bottom:4px;background:#1e293b;border-radius:2px;'>"
                 f"<span style='color:#60a5fa;font-size:11px;font-weight:bold;'>{qid}</span><br>"
                 f"<span style='color:#e2e8f0;font-size:11px;'>Q: {q}</span><br>"
-                f"<span style='color:#94a3b8;font-size:11px;'>A: {a}…</span>"
+                f"<span style='color:#94a3b8;font-size:11px;'>A: {a}{a_suffix}</span>"
                 f"</div>"
             )
         self._kms_panel.setHtml("".join(parts))
@@ -754,7 +757,6 @@ class CaseView(QWidget):
             QMessageBox.warning(self, "欄位不完整", "問題與回覆均不可為空。")
             return
 
-        from hcp_cms.core.kms_engine import KMSEngine
         try:
             qa = KMSEngine(self._conn).create_qa(
                 question=final_q,
