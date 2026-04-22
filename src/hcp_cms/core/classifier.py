@@ -69,8 +69,7 @@ class Classifier:
                 mantis_ticket_id = m_notify.group(2)                 # "0017095"
                 # 若 company_id 仍未找到，嘗試以公司顯示名稱搜尋
                 if not company_id:
-                    all_companies = CompanyRepository(self._conn).list_all()
-                    for c in all_companies:
+                    for c in self._company_repo.list_all():
                         if mantis_notify_company in (c.name or "") or (c.name or "") in mantis_notify_company:
                             company_id = c.company_id
                             break
