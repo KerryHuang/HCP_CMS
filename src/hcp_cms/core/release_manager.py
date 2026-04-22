@@ -125,6 +125,9 @@ class ReleaseManager:
     def mark_released(self, item_id: int) -> None:
         self._repo.mark_released(item_id)
 
+    def update_month(self, item_id: int, month_str: str) -> None:
+        self._repo.update_month(item_id, month_str)
+
     def list_keywords(self) -> list[ReleaseKeyword]:
         return self._kw_repo.list_all()
 

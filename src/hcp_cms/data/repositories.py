@@ -1396,6 +1396,12 @@ class ReleaseItemRepository:
         )
         self._conn.commit()
 
+    def update_month(self, item_id: int, month_str: str) -> None:
+        self._conn.execute(
+            "UPDATE cs_release_items SET month_str=? WHERE id=?", (month_str, item_id)
+        )
+        self._conn.commit()
+
     def _row(self, r: tuple) -> ReleaseItem:
         return ReleaseItem(
             id=r[0], case_id=r[1], mantis_ticket_id=r[2], assignee=r[3],
