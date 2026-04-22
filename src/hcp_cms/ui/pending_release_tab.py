@@ -67,14 +67,23 @@ class PendingReleaseTab(QWidget):
         layout.addWidget(self._table)
 
     def _populate_months(self) -> None:
+        """填入近 12 個月（含未來 3 個月），從最新至最舊排列。"""
         now = datetime.now()
-        for i in range(12):
+        future_months = 3
+        past_months = 12
+        months = []
+        for i in range(-future_months, past_months):
             m = now.month - i
             y = now.year
             while m <= 0:
                 m += 12
                 y -= 1
+            while m > 12:
+                m -= 12
+                y += 1
             ms = f"{y}{m:02d}"
+            months.append(ms)
+        for ms in months:
             self._month_combo.addItem(f"{ms[:4]}/{ms[4:]}", ms)
 
     def refresh(self) -> None:
