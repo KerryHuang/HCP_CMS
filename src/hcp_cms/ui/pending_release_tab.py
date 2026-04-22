@@ -71,6 +71,16 @@ class PendingReleaseTab(QWidget):
         self._release_btn.clicked.connect(self._on_mark_released)
         action_row.addWidget(self._release_btn)
 
+        self._undo_btn = QPushButton("↩ 取消發布")
+        self._undo_btn.setEnabled(False)
+        self._undo_btn.clicked.connect(self._on_mark_pending)
+        action_row.addWidget(self._undo_btn)
+
+        self._delete_btn = QPushButton("🗑 刪除")
+        self._delete_btn.setEnabled(False)
+        self._delete_btn.clicked.connect(self._on_delete_item)
+        action_row.addWidget(self._delete_btn)
+
         action_row.addSpacing(20)
         action_row.addWidget(QLabel("移至月份："))
         self._move_month_combo = QComboBox()
@@ -153,12 +163,16 @@ class PendingReleaseTab(QWidget):
         rows = self._table.selectionModel().selectedRows()
         if not rows:
             self._release_btn.setEnabled(False)
+            self._undo_btn.setEnabled(False)
+            self._delete_btn.setEnabled(False)
             self._move_btn.setEnabled(False)
             return
         row = rows[0].row()
         if 0 <= row < len(self._items):
             is_pending = self._items[row].status == "待發"
             self._release_btn.setEnabled(is_pending)
+            self._undo_btn.setEnabled(not is_pending)
+            self._delete_btn.setEnabled(True)
             self._move_btn.setEnabled(True)
 
     def _selected_item(self):
@@ -178,6 +192,34 @@ class PendingReleaseTab(QWidget):
         self.refresh()
         label = item.mantis_ticket_id or item.case_id or f"#{item.id}"
         QMessageBox.information(self, "完成", f"已將 {label} 標記為已發布。")
+
+    def _on_mark_pending(self) -> None:
+        item = self._selected_item()
+        if not item or not self._conn:
+            return
+        label = item.mantis_ticket_id or item.case_id or f"#{item.id}"
+        reply = QMessageBox.question(
+            self, "確認取消發布",
+            f"將「{label}」狀態改回「待發」？",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            ReleaseManager(self._conn).mark_pending(item.id)
+            self.refresh()
+
+    def _on_delete_item(self) -> None:
+        item = self._selected_item()
+        if not item or not self._conn:
+            return
+        label = item.mantis_ticket_id or item.case_id or f"#{item.id}"
+        reply = QMessageBox.question(
+            self, "確認刪除",
+            f"確定刪除「{label}」？此操作無法復原。",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            ReleaseManager(self._conn).delete_item(item.id)
+            self.refresh()
 
     def _on_move_month(self) -> None:
         item = self._selected_item()

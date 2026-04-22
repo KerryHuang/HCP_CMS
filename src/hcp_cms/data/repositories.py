@@ -1402,6 +1402,16 @@ class ReleaseItemRepository:
         )
         self._conn.commit()
 
+    def mark_pending(self, item_id: int) -> None:
+        self._conn.execute(
+            "UPDATE cs_release_items SET status='待發' WHERE id=?", (item_id,)
+        )
+        self._conn.commit()
+
+    def delete(self, item_id: int) -> None:
+        self._conn.execute("DELETE FROM cs_release_items WHERE id=?", (item_id,))
+        self._conn.commit()
+
     def _row(self, r: tuple) -> ReleaseItem:
         return ReleaseItem(
             id=r[0], case_id=r[1], mantis_ticket_id=r[2], assignee=r[3],
