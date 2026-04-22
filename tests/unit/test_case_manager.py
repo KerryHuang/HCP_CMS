@@ -57,23 +57,24 @@ class TestCaseManager:
     def test_mark_replied_increments_reply_count(self, seeded_db):
         """CS 標記已回覆時，reply_count 應 +1（參考舊版 _link_and_update_case）。"""
         mgr = CaseManager(seeded_db.connection)
+        # create_case 初始 reply_count=1（第一封信已計入）
         case = mgr.create_case(subject="Test", body="body")
-        assert case.reply_count == 0
+        assert case.reply_count == 1
         mgr.mark_replied(case.case_id)
 
         updated = CaseRepository(seeded_db.connection).get_by_id(case.case_id)
-        assert updated.reply_count == 1
+        assert updated.reply_count == 2
 
     def test_reopen_case(self, seeded_db):
         mgr = CaseManager(seeded_db.connection)
         case = mgr.create_case(subject="Test", body="body")
-        mgr.mark_replied(case.case_id)   # reply_count → 1
+        mgr.mark_replied(case.case_id)   # reply_count: 1 → 2
         mgr.reopen_case(case.case_id, "客戶再次來信")
 
         updated = CaseRepository(seeded_db.connection).get_by_id(case.case_id)
         assert updated.status == "處理中"
         # reopen 本身不應再 +1（舊版 _reopen_existing_case 不修改 reply_count）
-        assert updated.reply_count == 1
+        assert updated.reply_count == 2
         assert "重開" in updated.notes
 
     def test_reply_count_no_double_count_on_reopen(self, seeded_db):
@@ -81,21 +82,21 @@ class TestCaseManager:
         mgr = CaseManager(seeded_db.connection)
         repo = CaseRepository(seeded_db.connection)
 
-        # 建立根案件並回覆
+        # 建立根案件並回覆（create_case → reply_count=1，mark_replied → 2）
         root = mgr.create_case(
             subject="薪資問題", body="原始來信",
             sender_email="user@aseglobal.com",
         )
-        mgr.mark_replied(root.case_id)  # reply_count → 1
+        mgr.mark_replied(root.case_id)  # reply_count: 1 → 2
 
-        # 客戶再次來信（觸發 thread detection → link + reopen）
+        # 客戶再次來信（觸發 thread detection → link + reopen → root reply_count +1）
         child = mgr.create_case(
             subject="RE: 薪資問題", body="再次詢問",
             sender_email="user@aseglobal.com",
         )
         root_updated = repo.get_by_id(root.case_id)
-        # link_to_parent 再 +1 → 共 2；不應因 reopen 又變 3
-        assert root_updated.reply_count == 2
+        # mark_replied(+1) + link_to_parent(+1) = 3；不應因 reopen 又變 4
+        assert root_updated.reply_count == 3
         assert child.linked_case_id == root.case_id
 
     def test_close_case(self, seeded_db):
@@ -349,10 +350,10 @@ class TestImportEmail:
         from hcp_cms.data.repositories import CaseLogRepository, CaseRepository
         # 案件總數仍為 1（不另建案）
         assert len(CaseRepository(seeded_db.connection).list_all()) == 1
-        # CaseLog 應已新增，direction 為 HCP 回覆
+        # CaseLog 應已新增（初始1筆 + 合併1筆 = 2筆），最後一筆 direction 為 HCP 信件回覆
         logs = CaseLogRepository(seeded_db.connection).list_by_case(parent.case_id)
-        assert len(logs) == 1
-        assert logs[0].direction == "HCP 回覆"
+        assert len(logs) == 2
+        assert logs[-1].direction == "HCP 信件回覆"
 
     def test_our_reply_increments_reply_count(self, mgr, seeded_db):
         """我方每次回覆建案都應讓父案件 reply_count +1（由 link_to_parent 計算）。"""
@@ -381,7 +382,8 @@ class TestImportEmail:
 
         from hcp_cms.data.repositories import CaseRepository
         updated = CaseRepository(seeded_db.connection).get_by_id(parent.case_id)
-        assert updated.reply_count == 2
+        # 初始1 + 第一次回覆+1 + 第二次回覆+1 = 3
+        assert updated.reply_count == 3
 
     def test_our_reply_no_parent_still_creates_case(self, mgr):
         """我方回覆找不到父案件 → 仍建案（action='created'），不略過。"""
@@ -437,10 +439,10 @@ class TestImportEmail:
         all_cases = CaseRepository(seeded_db.connection).list_all()
         assert len(all_cases) == 1
 
-        # 確認 CaseLog 已新增
+        # 確認 CaseLog 已新增（初始1筆 + 合併1筆 = 2筆）
         logs = CaseLogRepository(seeded_db.connection).list_by_case(original_case_id)
-        assert len(logs) == 1
-        assert logs[0].content == "第二封內容"
+        assert len(logs) == 2
+        assert logs[-1].content == "第二封內容"
 
     def test_import_email_no_match_creates_case(self, seeded_db):
         """無匹配案件時建立新案件（action='created'）。"""
@@ -482,9 +484,10 @@ class TestImportEmail:
             sender_email="staff@ares.com.tw",
             to_recipients=["user@aseglobal.com"],
         )
+        # 初始1筆（客戶來信）+ 合併1筆（HCP 信件回覆）= 2筆
         logs = CaseLogRepository(seeded_db.connection).list_by_case(first.case_id)
-        assert len(logs) == 1
-        assert logs[0].direction == "HCP 回覆"
+        assert len(logs) == 2
+        assert logs[-1].direction == "HCP 信件回覆"
 
     def test_import_email_direction_client(self, seeded_db):
         """外部寄件者且無 RE: 前綴時，direction 應為 '客戶來信'。"""
@@ -501,9 +504,10 @@ class TestImportEmail:
             body="第二封客戶來信",
             sender_email="another@aseglobal.com",
         )
+        # 初始1筆（客戶來信）+ 合併1筆（客戶來信）= 2筆
         logs = CaseLogRepository(seeded_db.connection).list_by_case(first.case_id)
-        assert len(logs) == 1
-        assert logs[0].direction == "客戶來信"
+        assert len(logs) == 2
+        assert logs[-1].direction == "客戶來信"
 
     def test_import_email_merged_log_time_format_with_seconds(self, seeded_db):
         """sent_time 已有秒數時，logged_at 不應再拼接 :00。"""
@@ -523,7 +527,8 @@ class TestImportEmail:
             sent_time="2026/03/02 10:30:45",  # has seconds
         )
         assert action == "merged"
+        # 初始1筆 + 合併1筆 = 2筆；最後一筆時間格式應有秒數
         logs = CaseLogRepository(seeded_db.connection).list_by_case(first.case_id)
-        assert len(logs) == 1
+        assert len(logs) == 2
         # Should be "2026/03/02 10:30:45" NOT "2026/03/02 10:30:45:00"
-        assert logs[0].logged_at == "2026/03/02 10:30:45"
+        assert logs[-1].logged_at == "2026/03/02 10:30:45"

@@ -307,15 +307,27 @@ class CaseView(QWidget):
         reply_display = str(case.reply_count) if case.reply_count else "0"
         self._detail_reply_count.setText(reply_display)
         self._detail_linked_case.setText(case.linked_case_id or "")
-        self._detail_progress.setHtml(self._build_log_html(case.case_id, case.progress))
+        self._detail_progress.setHtml(self._build_log_html(case))
 
-    def _build_log_html(self, case_id: str, progress: str | None) -> str:
+    def _build_log_html(self, case) -> str:
         """從 case_logs 建立 HTML 格式的對話時間軸。"""
+        case_id: str = case.case_id
+        progress: str | None = case.progress
         if not self._conn:
             return progress or ""
         logs = CaseLogRepository(self._conn).list_by_case(case_id)
+
+        # 若完全無記錄：顯示建案基本資訊讓使用者知道脈絡
         if not logs and not progress:
-            return "<i style='color:#6b7280'>（尚無對話記錄）</i>"
+            sent = case.sent_time or case.created_at or ""
+            subj = _html_escape(case.subject or "")
+            return (
+                f"<div style='background:#1e293b;border-left:3px solid #475569;"
+                f"padding:6px 8px;margin-bottom:6px;border-radius:3px;'>"
+                f"<span style='color:#94a3b8;font-size:11px;'>📨 建案（尚無後續對話記錄）</span>"
+                f"<span style='color:#64748b;font-size:11px;margin-left:8px;'>{_html_escape(sent)}</span><br>"
+                f"<span style='color:#e2e8f0;font-size:12px;white-space:pre-wrap;'>{subj}</span></div>"
+            )
 
         direction_color = {
             "客戶來信": "#f59e0b",

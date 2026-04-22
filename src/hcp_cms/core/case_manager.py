@@ -138,68 +138,78 @@ class CaseManager:
         classification = self._classifier.classify(subject, body, sender_email, recipients)
         company_id = classification.get("company_id")
 
+        # company_id 無法分類時，嘗試以 Mantis 票號找既有案件
+        existing: Case | None = None
         if company_id:
             clean = ThreadTracker.clean_subject(subject)
             existing = self._case_repo.find_by_company_and_subject(company_id, clean)
-            if existing:
-                direction = _detect_direction(sender_email, subject)
-                _base = _normalize_sent_time(sent_time)
-                if _base:
-                    log_time = _base if len(_base) >= 19 else f"{_base}:00"
-                else:
-                    log_time = datetime.now().strftime("%Y/%m/%d %H:%M:%S")
-                # 計算回應時長：找最近一筆客戶來信的時間點作為起點
-                elapsed: str | None = None
-                if direction == "HCP 信件回覆":
-                    prior_logs = self._log_repo.list_by_case(existing.case_id)
-                    customer_times = [
-                        lg.logged_at for lg in prior_logs
-                        if lg.direction == "客戶來信" and lg.logged_at
-                    ]
-                    start_time = max(customer_times) if customer_times else existing.sent_time
-                    elapsed = _calc_elapsed_str(start_time, log_time)
-                log = CaseLog(
-                    log_id=self._log_repo.next_log_id(),
+        if not existing:
+            # fallback：從主旨抽取 Mantis 票號並查詢既有關聯案件
+            _ticket_id = classification.get("mantis_ticket_id")
+            if _ticket_id:
+                _case_ids = self._case_mantis_repo.get_cases_for_ticket(_ticket_id)
+                if _case_ids:
+                    existing = self._case_repo.get_by_id(_case_ids[0])
+
+        if existing:
+            direction = _detect_direction(sender_email, subject)
+            _base = _normalize_sent_time(sent_time)
+            if _base:
+                log_time = _base if len(_base) >= 19 else f"{_base}:00"
+            else:
+                log_time = datetime.now().strftime("%Y/%m/%d %H:%M:%S")
+            # 計算回應時長：找最近一筆客戶來信的時間點作為起點
+            elapsed: str | None = None
+            if direction == "HCP 信件回覆":
+                prior_logs = self._log_repo.list_by_case(existing.case_id)
+                customer_times = [
+                    lg.logged_at for lg in prior_logs
+                    if lg.direction == "客戶來信" and lg.logged_at
+                ]
+                start_time = max(customer_times) if customer_times else existing.sent_time
+                elapsed = _calc_elapsed_str(start_time, log_time)
+            log = CaseLog(
+                log_id=self._log_repo.next_log_id(),
+                case_id=existing.case_id,
+                direction=direction,
+                content=body,
+                logged_at=log_time,
+                reply_time=elapsed,
+            )
+            self._log_repo.insert(log)
+            existing.reply_count += 1
+            if progress_note and progress_note.strip():
+                existing.progress = progress_note.strip()
+            self._case_repo.update(existing)
+            # 重新匯入時也補建 Mantis 關聯（若尚未連結）
+            auto_ticket_id: str | None = None
+            if source_filename:
+                stem = Path(source_filename).stem
+                fn_tags = self._classifier.parse_tags(stem)
+                auto_ticket_id = fn_tags.get("issue_number") or classification.get("mantis_ticket_id")
+            if not auto_ticket_id:
+                auto_ticket_id = classification.get("mantis_ticket_id")
+            if auto_ticket_id:
+                self._ensure_mantis_link(existing.case_id, auto_ticket_id)
+            # 待發清單偵測（信件含確認+出貨關鍵字時自動記錄）
+            try:
+                from hcp_cms.core.release_manager import ReleaseManager
+                month_str = datetime.now().strftime("%Y%m")
+                comp = None
+                if existing.company_id:
+                    from hcp_cms.data.repositories import CompanyRepository
+                    comp = CompanyRepository(self._conn).get_by_id(existing.company_id)
+                mantis_id = classification.get("mantis_ticket_id") if isinstance(classification, dict) else None
+                ReleaseManager(self._conn).detect_and_record(
+                    body=body,
                     case_id=existing.case_id,
-                    direction=direction,
-                    content=body,
-                    logged_at=log_time,
-                    reply_time=elapsed,
+                    mantis_ticket_id=mantis_id,
+                    client_name=comp.name if comp else None,
+                    month_str=month_str,
                 )
-                self._log_repo.insert(log)
-                existing.reply_count += 1
-                if progress_note and progress_note.strip():
-                    existing.progress = progress_note.strip()
-                self._case_repo.update(existing)
-                # 重新匯入時也補建 Mantis 關聯（若尚未連結）
-                auto_ticket_id: str | None = None
-                if source_filename:
-                    stem = Path(source_filename).stem
-                    fn_tags = self._classifier.parse_tags(stem)
-                    auto_ticket_id = fn_tags.get("issue_number") or classification.get("mantis_ticket_id")
-                if not auto_ticket_id:
-                    auto_ticket_id = classification.get("mantis_ticket_id")
-                if auto_ticket_id:
-                    self._ensure_mantis_link(existing.case_id, auto_ticket_id)
-                # 待發清單偵測（信件含確認+出貨關鍵字時自動記錄）
-                try:
-                    from hcp_cms.core.release_manager import ReleaseManager
-                    month_str = datetime.now().strftime("%Y%m")
-                    comp = None
-                    if existing and existing.company_id:
-                        from hcp_cms.data.repositories import CompanyRepository
-                        comp = CompanyRepository(self._conn).get_by_id(existing.company_id)
-                    mantis_id = classification.get("mantis_ticket_id") if isinstance(classification, dict) else None
-                    ReleaseManager(self._conn).detect_and_record(
-                        body=body,
-                        case_id=existing.case_id if existing else None,
-                        mantis_ticket_id=mantis_id,
-                        client_name=comp.name if comp else None,
-                        month_str=month_str,
-                    )
-                except Exception:
-                    pass  # 偵測失敗不影響主流程
-                return existing, "merged"
+            except Exception:
+                pass  # 偵測失敗不影響主流程
+            return existing, "merged"
 
         # 沒有 existing → 原有建案流程（不變）
         case = self.create_case(
