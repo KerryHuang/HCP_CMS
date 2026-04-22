@@ -9,7 +9,10 @@ from datetime import datetime
 from hcp_cms.data.models import ReleaseItem, ReleaseKeyword
 from hcp_cms.data.repositories import ReleaseItemRepository, ReleaseKeywordRepository
 
+# 格式 1：分配給: JILL（HCP 內部指派格式）
 _ASSIGNEE_RE = re.compile(r"分配給\s*[:：]\s*(\S+)", re.MULTILINE)
+# 格式 2：(0039843) joywu (開發者)（Mantis 留言通知格式）
+_MANTIS_COMMENTER_RE = re.compile(r"\(\d+\)\s+(\S+)\s+\([^)]+\)", re.MULTILINE)
 
 
 class ReleaseDetector:
@@ -37,7 +40,13 @@ class ReleaseDetector:
         assignee: str | None = None
         m = _ASSIGNEE_RE.search(body)
         if m:
+            # 優先採用「分配給: XXX」格式
             assignee = m.group(1).strip()
+        else:
+            # 次選：Mantis 留言格式「(票號) 姓名 (角色)」
+            m2 = _MANTIS_COMMENTER_RE.search(body)
+            if m2:
+                assignee = m2.group(1).strip()
 
         note = ""
         for line in body.splitlines():

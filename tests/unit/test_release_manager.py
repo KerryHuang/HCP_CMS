@@ -44,6 +44,20 @@ class TestReleaseDetector:
         result = det.detect(body)
         assert result["assignee"] == "jill"
 
+    def test_mantis_commenter_as_assignee(self, conn):
+        det = ReleaseDetector(conn)
+        body = "(0039843) joywu (開發者) - 2026-04-21 17:07\n客戶回覆測試ok，請安排出貨，謝謝。"
+        result = det.detect(body)
+        assert result is not None
+        assert result["assignee"] == "joywu"
+
+    def test_assignee_format_priority(self, conn):
+        """分配給格式優先於 Mantis 留言格式。"""
+        det = ReleaseDetector(conn)
+        body = "(0039843) joywu (開發者) - 2026-04-21 17:07\n分配給: jill\n測試ok，安排出貨。"
+        result = det.detect(body)
+        assert result["assignee"] == "jill"
+
 
 class TestReleaseManager:
     def test_detect_and_record_creates_item(self, conn):
