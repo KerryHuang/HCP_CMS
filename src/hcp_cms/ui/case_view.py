@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QFormLayout,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -199,6 +200,24 @@ class CaseView(QWidget):
         btn_layout.addWidget(self._btn_add_kms)
 
         detail_layout.addRow(btn_layout)
+
+        # 相似知識庫面板
+        kms_group = QGroupBox("🔍 相似知識庫")
+        kms_group.setStyleSheet(
+            "QGroupBox { color: #94a3b8; font-size: 11px; border: 1px solid #334155;"
+            " border-radius:4px; margin-top:6px; padding-top:8px; }"
+            "QGroupBox::title { subcontrol-origin: margin; left: 8px; }"
+        )
+        kms_inner = QVBoxLayout(kms_group)
+        kms_inner.setContentsMargins(4, 4, 4, 4)
+        self._kms_panel = QTextEdit()
+        self._kms_panel.setReadOnly(True)
+        self._kms_panel.setMinimumHeight(80)
+        self._kms_panel.setMaximumHeight(160)
+        self._kms_panel.setHtml("<i style='color:#6b7280'>（選取案件後自動搜尋）</i>")
+        kms_inner.addWidget(self._kms_panel)
+        detail_layout.addRow(kms_group)
+
         splitter.addWidget(detail)
 
         layout.addWidget(splitter)
@@ -298,6 +317,8 @@ class CaseView(QWidget):
         self._detail_reply_count.clear()
         self._detail_linked_case.clear()
         self._detail_progress.clear()
+        if hasattr(self, "_kms_panel"):
+            self._kms_panel.setHtml("<i style='color:#6b7280'>（選取案件後自動搜尋）</i>")
 
     def _on_selection_changed(self) -> None:
         rows = self._table.selectionModel().selectedRows()
@@ -319,6 +340,7 @@ class CaseView(QWidget):
         self._detail_reply_count.setText(reply_display)
         self._detail_linked_case.setText(case.linked_case_id or "")
         self._detail_progress.setHtml(self._build_log_html(case))
+        self._refresh_kms_panel(case.subject or "")
 
     def _build_log_html(self, case) -> str:
         """從 case_logs 建立 HTML 格式的對話時間軸。"""
@@ -371,6 +393,41 @@ class CaseView(QWidget):
             )
 
         return "".join(parts) if parts else "<i style='color:#6b7280'>（尚無對話記錄）</i>"
+
+    def _refresh_kms_panel(self, subject: str) -> None:
+        """以案件主旨搜尋相似 KMS 條目，更新面板顯示（最多 3 筆）。"""
+        if not hasattr(self, "_kms_panel"):
+            return
+        if not self._conn or not subject.strip():
+            self._kms_panel.setHtml("<i style='color:#6b7280'>（無主旨，無法搜尋）</i>")
+            return
+        try:
+            from hcp_cms.core.kms_engine import KMSEngine
+            results = KMSEngine(self._conn).search(subject.strip())[:3]
+        except Exception:
+            self._kms_panel.setHtml("<i style='color:#6b7280'>（搜尋失敗）</i>")
+            return
+
+        if not results:
+            self._kms_panel.setHtml(
+                "<i style='color:#6b7280'>（無相似知識庫條目）</i>"
+            )
+            return
+
+        parts: list[str] = []
+        for qa in results:
+            q = _html_escape((qa.question or "")[:80])
+            a = _html_escape((qa.answer or "")[:120])
+            qid = _html_escape(qa.qa_id)
+            parts.append(
+                f"<div style='border-left:3px solid #3b82f6;padding:4px 6px;"
+                f"margin-bottom:4px;background:#1e293b;border-radius:2px;'>"
+                f"<span style='color:#60a5fa;font-size:11px;font-weight:bold;'>{qid}</span><br>"
+                f"<span style='color:#e2e8f0;font-size:11px;'>Q: {q}</span><br>"
+                f"<span style='color:#94a3b8;font-size:11px;'>A: {a}…</span>"
+                f"</div>"
+            )
+        self._kms_panel.setHtml("".join(parts))
 
     def _on_relink_threads(self) -> None:
         if not self._conn:
