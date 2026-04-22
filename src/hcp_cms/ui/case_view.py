@@ -192,6 +192,11 @@ class CaseView(QWidget):
         self._btn_add_release.clicked.connect(self._on_add_to_release)
         btn_layout.addWidget(self._btn_add_release)
 
+        self._btn_add_kms = QPushButton("📚 加入知識庫")
+        self._btn_add_kms.setToolTip("將此案件的客戶問題與 HCP 回覆加入知識庫（建為待審核）")
+        self._btn_add_kms.clicked.connect(self._on_add_to_kms)
+        btn_layout.addWidget(self._btn_add_kms)
+
         detail_layout.addRow(btn_layout)
         splitter.addWidget(detail)
 
@@ -582,18 +587,130 @@ class CaseView(QWidget):
                 if not client_name:
                     client_name = _m.group(1).strip()
 
-        from hcp_cms.core.release_manager import ReleaseManager
+        from hcp_cms.core.release_manager import ReleaseDetector, ReleaseManager
+        from hcp_cms.data.repositories import CaseLogRepository
+
+        # 從對話記錄中嘗試萃取備注與修改者（優先最新的含觸發關鍵字的記錄）
+        note = ""
+        modifier: str | None = None
+        try:
+            logs = CaseLogRepository(self._conn).list_by_case(case_id)
+            detector = ReleaseDetector(self._conn)
+            for log in reversed(logs):
+                result = detector.detect(log.content or "")
+                if result:
+                    if result.get("note"):
+                        note = result["note"]
+                    if result.get("modifier"):
+                        modifier = result["modifier"]
+                    break
+        except Exception:
+            pass
 
         ReleaseManager(self._conn).add_item(
             case_id=case_id,
             mantis_ticket_id=mantis_ticket_id,
             client_name=client_name,
             assignee=assignee,
+            note=note,
+            modifier=modifier,
             month_str=target_month,
         )
         label = mantis_ticket_id or case_id
         QMessageBox.information(
             self, "完成", f"已將 {label} 加入 {month_combo.currentText()} 待發清單。"
+        )
+
+    def _on_add_to_kms(self) -> None:
+        """從目前案件的 HCP 回覆建立 KMS 待審核條目。"""
+        if not self._conn or not self._detail_id.text():
+            return
+        case_id = self._detail_id.text()
+        case = next(
+            (c for c in self._cases if c.case_id == case_id),
+            None,
+        ) if hasattr(self, "_cases") else None
+        if not case:
+            return
+
+        # 找最後一筆 HCP 回覆作為 answer
+        from hcp_cms.data.repositories import CaseLogRepository
+        logs = CaseLogRepository(self._conn).list_by_case(case_id)
+        hcp_logs = [
+            lg for lg in logs
+            if lg.direction in ("HCP 信件回覆", "HCP 線上回覆")
+        ]
+
+        if not hcp_logs:
+            QMessageBox.warning(
+                self, "無回覆記錄",
+                "此案件尚無 HCP 回覆記錄，無法自動建立知識庫條目。\n"
+                "請先回覆案件，或至 KMS 知識庫手動新增。"
+            )
+            return
+
+        answer = hcp_logs[-1].content or ""
+        question = case.subject or ""
+
+        # 彈出確認視窗，讓使用者確認問題與回覆內容
+        from PySide6.QtWidgets import QDialog, QDialogButtonBox, QFormLayout, QTextEdit as _QTE
+        dlg = QDialog(self)
+        dlg.setWindowTitle("加入知識庫")
+        dlg.setMinimumWidth(520)
+        layout = QFormLayout(dlg)
+
+        q_edit = _QTE()
+        q_edit.setPlainText(question)
+        q_edit.setMinimumHeight(60)
+        layout.addRow("問題（Q）：", q_edit)
+
+        a_edit = _QTE()
+        a_edit.setPlainText(answer)
+        a_edit.setMinimumHeight(120)
+        layout.addRow("回覆（A）：", a_edit)
+
+        info = QLabel(f"系統產品：{case.system_product or ''}　"
+                      f"問題類型：{case.issue_type or ''}　"
+                      f"功能模組：{case.error_type or ''}")
+        info.setStyleSheet("color: #94a3b8; font-size: 11px;")
+        layout.addRow("", info)
+
+        hint = QLabel("⚠ 建立後狀態為「待審核」，請至 KMS 知識庫確認完成後才會納入搜尋。")
+        hint.setWordWrap(True)
+        hint.setStyleSheet("color: #f59e0b; font-size: 11px;")
+        layout.addRow("", hint)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(dlg.accept)
+        buttons.rejected.connect(dlg.reject)
+        layout.addRow(buttons)
+
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        final_q = q_edit.toPlainText().strip()
+        final_a = a_edit.toPlainText().strip()
+        if not final_q or not final_a:
+            QMessageBox.warning(self, "欄位不完整", "問題與回覆均不可為空。")
+            return
+
+        from hcp_cms.core.kms_engine import KMSEngine
+        qa = KMSEngine(self._conn).create_qa(
+            question=final_q,
+            answer=final_a,
+            system_product=case.system_product,
+            issue_type=case.issue_type,
+            error_type=case.error_type,
+            source="case",
+            source_case_id=case_id,
+            status="待審核",
+        )
+        QMessageBox.information(
+            self, "完成",
+            f"已建立知識庫條目 {qa.qa_id}（待審核）。\n"
+            "請至「KMS 知識庫 → 待審核」確認後發布。"
         )
 
     def _on_row_double_clicked(self, item) -> None:
