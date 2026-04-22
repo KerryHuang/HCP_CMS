@@ -134,6 +134,30 @@ class ReleaseManager:
     def delete_item(self, item_id: int) -> None:
         self._repo.delete(item_id)
 
+    def add_item(
+        self,
+        case_id: str | None = None,
+        mantis_ticket_id: str | None = None,
+        client_name: str | None = None,
+        assignee: str | None = None,
+        note: str = "",
+        month_str: str | None = None,
+    ) -> ReleaseItem:
+        """手動建立 ReleaseItem 並回傳。"""
+        if month_str is None:
+            month_str = datetime.now().strftime("%Y%m")
+        item = ReleaseItem(
+            case_id=case_id,
+            mantis_ticket_id=mantis_ticket_id,
+            client_name=client_name,
+            assignee=assignee,
+            note=note,
+            month_str=month_str,
+        )
+        new_id = self._repo.insert(item)
+        item.id = new_id
+        return item
+
     def list_keywords(self) -> list[ReleaseKeyword]:
         return self._kw_repo.list_all()
 

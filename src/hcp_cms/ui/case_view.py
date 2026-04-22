@@ -188,6 +188,10 @@ class CaseView(QWidget):
         self._btn_close.clicked.connect(self._on_close_case)
         btn_layout.addWidget(self._btn_close)
 
+        self._btn_add_release = QPushButton("📋 加入待發清單")
+        self._btn_add_release.clicked.connect(self._on_add_to_release)
+        btn_layout.addWidget(self._btn_add_release)
+
         detail_layout.addRow(btn_layout)
         splitter.addWidget(detail)
 
@@ -490,6 +494,82 @@ class CaseView(QWidget):
             return
         CaseManager(self._conn).close_case(self._detail_id.text())
         self.refresh()
+
+    def _on_add_to_release(self) -> None:
+        """手動將目前案件加入待發清單。"""
+        if not self._conn or not self._detail_id.text():
+            return
+        case_id = self._detail_id.text()
+
+        # 從已載入的案件清單找到對應案件
+        case = next(
+            (c for c in self._cases if c.case_id == case_id),
+            None,
+        ) if hasattr(self, "_cases") else None
+
+        # 讓使用者選擇目標月份
+        from datetime import datetime
+
+        from PySide6.QtWidgets import QComboBox, QDialog, QDialogButtonBox, QFormLayout
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle("加入待發清單")
+        layout = QFormLayout(dlg)
+
+        month_combo = QComboBox()
+        now = datetime.now()
+        for i in range(-3, 13):
+            m = now.month - i
+            y = now.year
+            while m <= 0:
+                m += 12
+                y -= 1
+            while m > 12:
+                m -= 12
+                y += 1
+            ms = f"{y}{m:02d}"
+            month_combo.addItem(f"{ms[:4]}/{ms[4:]}", ms)
+        layout.addRow("目標月份：", month_combo)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(dlg.accept)
+        buttons.rejected.connect(dlg.reject)
+        layout.addRow(buttons)
+
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        target_month = month_combo.currentData()
+
+        # 取得 Mantis 票號（取第一筆）與公司名稱
+        from hcp_cms.data.repositories import CaseMantisRepository, CompanyRepository
+
+        mantis_links = CaseMantisRepository(self._conn).list_by_case_id(case_id)
+        mantis_ticket_id = mantis_links[0].ticket_id if mantis_links else None
+
+        client_name: str | None = None
+        assignee: str | None = None
+        if case:
+            assignee = case.rd_assignee
+            if case.company_id:
+                comp = CompanyRepository(self._conn).get_by_id(case.company_id)
+                client_name = comp.name if comp else None
+
+        from hcp_cms.core.release_manager import ReleaseManager
+
+        ReleaseManager(self._conn).add_item(
+            case_id=case_id,
+            mantis_ticket_id=mantis_ticket_id,
+            client_name=client_name,
+            assignee=assignee,
+            month_str=target_month,
+        )
+        label = mantis_ticket_id or case_id
+        QMessageBox.information(
+            self, "完成", f"已將 {label} 加入 {month_combo.currentText()} 待發清單。"
+        )
 
     def _on_row_double_clicked(self, item) -> None:
         if not self._conn or not hasattr(self, '_cases'):

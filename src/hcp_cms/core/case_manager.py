@@ -299,6 +299,20 @@ class CaseManager:
         self._case_repo.insert(case)
         self._fts.index_case(case_id, subject, None, None)
 
+        # 建立初始對話記錄（信件本文）
+        log_time = _normalize_sent_time(sent_time) or now
+        if len(log_time) == 16:  # "YYYY/MM/DD HH:MM" → 補秒
+            log_time = f"{log_time}:00"
+        direction = _detect_direction(sender_email, subject)
+        init_log = CaseLog(
+            log_id=self._log_repo.next_log_id(),
+            case_id=case_id,
+            direction=direction,
+            content=body,
+            logged_at=log_time,
+        )
+        self._log_repo.insert(init_log)
+
         # 自動建立 Mantis 關聯（若檔名/主旨解析到 ticket ID）
         auto_ticket_id = classification.get("mantis_ticket_id")
         if auto_ticket_id:
