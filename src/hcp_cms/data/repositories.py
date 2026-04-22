@@ -523,6 +523,14 @@ class CaseRepository:
             "UPDATE cs_cases SET linked_case_id = NULL WHERE linked_case_id = :id",
             {"id": case_id},
         )
+        # 清除去重記錄，讓同一封信日後可重新匯入
+        row = self._conn.execute(
+            "SELECT message_id FROM cs_cases WHERE case_id = :id", {"id": case_id}
+        ).fetchone()
+        if row and row[0]:
+            import hashlib
+            h = hashlib.sha256(row[0].encode()).hexdigest()
+            self._conn.execute("DELETE FROM processed_files WHERE file_hash = ?", (h,))
         self._conn.execute("DELETE FROM cs_cases WHERE case_id = :id", {"id": case_id})
         self._conn.commit()
 
@@ -956,6 +964,19 @@ class ProcessedFileRepository:
 
         h = hashlib.sha256(message_id.encode()).hexdigest()
         return self.exists(h)
+
+    def delete_by_message_id(self, message_id: str) -> None:
+        """刪除指定 message_id 的去重記錄，使該信件可重新匯入。"""
+        import hashlib
+
+        h = hashlib.sha256(message_id.encode()).hexdigest()
+        self._conn.execute("DELETE FROM processed_files WHERE file_hash = ?", (h,))
+        self._conn.commit()
+
+    def delete_by_hash(self, file_hash: str) -> None:
+        """以 file_hash 刪除去重記錄。"""
+        self._conn.execute("DELETE FROM processed_files WHERE file_hash = ?", (file_hash,))
+        self._conn.commit()
 
 
 # ---------------------------------------------------------------------------

@@ -259,6 +259,10 @@ class EmailView(QWidget):
         self._import_all_btn = QPushButton("📥 全部匯入")
         self._import_all_btn.clicked.connect(self._on_import_all)
         action_layout.addWidget(self._import_all_btn)
+        self._force_reimport_btn = QPushButton("🔄 強制重新匯入")
+        self._force_reimport_btn.setToolTip("清除已匯入記錄，重新匯入勾選的信件（含狀態為「已匯入」者）")
+        self._force_reimport_btn.clicked.connect(self._on_force_reimport)
+        action_layout.addWidget(self._force_reimport_btn)
         inbox_layout.addLayout(action_layout)
 
         # Progress
@@ -732,6 +736,33 @@ class EmailView(QWidget):
 
     def _on_import_all(self) -> None:
         self._do_import_rows(list(range(self._table.rowCount())))
+
+    def _on_force_reimport(self) -> None:
+        """清除已匯入記錄，強制重新匯入所有勾選的信件（含已匯入狀態）。"""
+        rows = [
+            r
+            for r in range(self._table.rowCount())
+            if self._table.item(r, 0) is not None
+            and self._table.item(r, 0).checkState() == Qt.CheckState.Checked
+        ]
+        if not rows:
+            self._log.append("請先勾選要重新匯入的信件")
+            return
+        if not self._conn:
+            return
+        from hcp_cms.data.repositories import ProcessedFileRepository
+        pf_repo = ProcessedFileRepository(self._conn)
+        cleared = 0
+        for row in rows:
+            if row < len(self._emails) and self._emails[row]:
+                email = self._emails[row]
+                if email.message_id:
+                    pf_repo.delete_by_message_id(email.message_id)
+                    cleared += 1
+                # 重置欄位狀態為待匯入
+                self._table.setItem(row, 4, QTableWidgetItem("待匯入"))
+        self._log.append(f"🔄 已清除 {cleared} 封信件的已匯入記錄，開始重新匯入…")
+        self._do_import_rows(rows)
 
     def _do_import_rows(self, rows: list[int]) -> None:
         if not rows:
