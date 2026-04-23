@@ -221,6 +221,11 @@ class CaseView(QWidget):
 
         splitter.addWidget(detail)
 
+        # 調整上下比例：表格區佔較大比重，詳細面板佔較小比重
+        splitter.setStretchFactor(0, 3)
+        splitter.setStretchFactor(1, 2)
+        splitter.setSizes([600, 400])
+
         layout.addWidget(splitter)
 
     def refresh(self) -> None:
