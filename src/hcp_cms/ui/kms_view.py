@@ -294,6 +294,11 @@ class KMSView(QWidget):
             self._apply_theme(theme_mgr.current_palette())
             theme_mgr.theme_changed.connect(self._apply_theme)
 
+    def showEvent(self, event) -> None:
+        """每次切換至 KMS 頁面時自動刷新待審核清單。"""
+        super().showEvent(event)
+        self._refresh_pending()
+
     def _make_field_widget(self, label: str, attr_name: str) -> tuple[QWidget, QTextEdit]:
         """建立標題列 + 展開按鈕 + QTextEdit 的組合 widget。"""
         wrapper = QWidget()
