@@ -4,6 +4,9 @@
 - A（6 項）：薪資/GL/調薪/福利/所得稅
 - B（12 項）：行事曆、差勤、排班、刷卡、保險、組織、人事資料、HCP 錯誤等
 - C（15 項 + fallback）：報表、合約、教育訓練、ESS、客製、其餘
+
+注意：_LEVEL_C 集合為已知 C 級模組清單（便於維護與文件參考），
+classify() 不會檢查此集合 — 任何未匹配 A/B 的 error_type 一律歸為 C。
 """
 
 from __future__ import annotations
