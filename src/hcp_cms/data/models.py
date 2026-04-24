@@ -36,6 +36,10 @@ class Case:
     message_id: str | None = None
     created_at: str | None = None
     updated_at: str | None = None
+    problem_level: str | None = None    # "A" | "B" | "C"
+    problem: str | None = None
+    cause: str | None = None
+    solution: str | None = None
     extra_fields: dict[str, str | None] = field(default_factory=dict)
 
     @property

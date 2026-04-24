@@ -218,7 +218,8 @@ class CaseRepository:
             "case_id, company_id, subject, status, priority, sent_time, "
             "contact_person, contact_method, system_product, issue_type, error_type, "
             "impact_period, progress, handler, actual_reply, reply_time, notes, "
-            "rd_assignee, reply_count, linked_case_id, source, message_id, created_at, updated_at"
+            "rd_assignee, reply_count, linked_case_id, source, message_id, created_at, updated_at, "
+            "problem_level, problem, cause, solution"
         )
         if not self._custom_cols:
             return f"SELECT {static} FROM cs_cases"
@@ -253,13 +254,15 @@ class CaseRepository:
                 company_id, contact_person, subject, system_product, issue_type,
                 error_type, impact_period, progress, actual_reply, reply_time, notes,
                 rd_assignee, handler, reply_count, linked_case_id, source, message_id,
-                created_at, updated_at
+                created_at, updated_at,
+                problem_level, problem, cause, solution
             ) VALUES (
                 :case_id, :contact_method, :status, :priority, :sent_time,
                 :company_id, :contact_person, :subject, :system_product, :issue_type,
                 :error_type, :impact_period, :progress, :actual_reply, :reply_time, :notes,
                 :rd_assignee, :handler, :reply_count, :linked_case_id, :source, :message_id,
-                :created_at, :updated_at
+                :created_at, :updated_at,
+                :problem_level, :problem, :cause, :solution
             )
             """,
             {
@@ -287,6 +290,10 @@ class CaseRepository:
                 "message_id": case.message_id,
                 "created_at": case.created_at,
                 "updated_at": case.updated_at,
+                "problem_level": case.problem_level,
+                "problem": case.problem,
+                "cause": case.cause,
+                "solution": case.solution,
             },
         )
         self._conn.commit()
@@ -413,7 +420,11 @@ class CaseRepository:
                 reply_count = :reply_count,
                 linked_case_id = :linked_case_id,
                 source = :source,
-                updated_at = :updated_at
+                updated_at = :updated_at,
+                problem_level = :problem_level,
+                problem = :problem,
+                cause = :cause,
+                solution = :solution
             WHERE case_id = :case_id
             """,
             {
@@ -439,6 +450,10 @@ class CaseRepository:
                 "linked_case_id": case.linked_case_id,
                 "source": case.source,
                 "updated_at": case.updated_at,
+                "problem_level": case.problem_level,
+                "problem": case.problem,
+                "cause": case.cause,
+                "solution": case.solution,
             },
         )
         # 同步 FTS5 索引（subject / progress / notes 為可搜尋欄位）

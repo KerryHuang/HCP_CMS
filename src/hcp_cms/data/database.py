@@ -41,7 +41,11 @@ CREATE TABLE IF NOT EXISTS cs_cases (
     linked_case_id TEXT REFERENCES cs_cases(case_id),
     source TEXT DEFAULT 'email',
     created_at TEXT,
-    updated_at TEXT
+    updated_at TEXT,
+    problem_level TEXT,
+    problem TEXT,
+    cause TEXT,
+    solution TEXT
 );
 
 CREATE TABLE IF NOT EXISTS qa_knowledge (
@@ -263,6 +267,10 @@ class DatabaseManager:
             "ALTER TABLE cs_cases ADD COLUMN message_id TEXT",
             "ALTER TABLE cs_release_items ADD COLUMN modifier TEXT",
             "ALTER TABLE cs_release_items ADD COLUMN sort_order INTEGER",
+            "ALTER TABLE cs_cases ADD COLUMN problem_level TEXT",
+            "ALTER TABLE cs_cases ADD COLUMN problem TEXT",
+            "ALTER TABLE cs_cases ADD COLUMN cause TEXT",
+            "ALTER TABLE cs_cases ADD COLUMN solution TEXT",
         ]
         for sql in pending:
             try:
