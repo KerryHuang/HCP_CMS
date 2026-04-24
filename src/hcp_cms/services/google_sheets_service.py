@@ -15,8 +15,9 @@ Upsert 邏輯：以 id_column_index（0-based）作為 key 比對既有 row：
 from __future__ import annotations
 
 import json
+import logging
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 import gspread
 from google.auth.transport.requests import Request
@@ -76,12 +77,17 @@ class GoogleSheetsService:
         self._open_worksheet()
 
     def _open_worksheet(self) -> None:
-        assert self._creds is not None
+        if self._creds is None:
+            raise RuntimeError("authenticate() 尚未執行")
         gc = gspread.authorize(self._creds)
         sh = gc.open_by_url(self._spreadsheet_url)
         try:
             self._ws = sh.worksheet(self._worksheet_name)
         except gspread.WorksheetNotFound:
+            logging.getLogger(__name__).warning(
+                "分頁 %r 不存在，自動建立（rows=1000, cols=20）",
+                self._worksheet_name,
+            )
             self._ws = sh.add_worksheet(self._worksheet_name, rows=1000, cols=20)
 
     # ------------------------------------------------------------------
@@ -98,7 +104,8 @@ class GoogleSheetsService:
         - 既有 sheet 為空 → 先 append header，再逐筆 append_row
         - 既有 sheet 有資料 → 依 id 判斷 update 既有 row 或 append 新 row
         """
-        assert self._ws is not None, "authenticate() first"
+        if self._ws is None:
+            raise RuntimeError("請先呼叫 authenticate() 完成授權")
         existing = self._ws.get_all_values()
 
         if not existing:
@@ -114,6 +121,6 @@ class GoogleSheetsService:
         for case_id, values in rows:
             if case_id in id_to_row:
                 r = id_to_row[case_id]
-                self._ws.update(f"A{r}", [values])
+                self._ws.update([values], range_name=f"A{r}")
             else:
                 self._ws.append_row(values)

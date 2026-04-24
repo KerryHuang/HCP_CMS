@@ -28,6 +28,11 @@ def test_upsert_appends_new_rows_by_case_id():
     fake_ws.update.assert_called()
     fake_ws.append_row.assert_called_with(["2026/04/03", "BETA", "CS-002"])
 
+    # 驗證 gspread 6.x 具名引數呼叫
+    call_args = fake_ws.update.call_args
+    assert call_args.kwargs.get("range_name") == "A2"  # CS-001 在第 2 列
+    assert call_args.args[0] == [["2026/04/02", "ACME-UPD", "CS-001"]]
+
 
 def test_upsert_writes_header_when_sheet_empty():
     fake_ws = MagicMock()
