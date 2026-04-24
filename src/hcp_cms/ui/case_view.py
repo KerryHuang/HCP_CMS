@@ -142,6 +142,12 @@ class CaseView(QWidget):
 
         # Splitter: table + detail
         splitter = QSplitter(Qt.Orientation.Vertical)
+        splitter.setHandleWidth(6)
+        splitter.setChildrenCollapsible(False)
+        splitter.setStyleSheet(
+            "QSplitter::handle:vertical { background-color: #334155; margin: 2px 0; }"
+            "QSplitter::handle:vertical:hover { background-color: #3b82f6; }"
+        )
 
         # Case table
         self._table = QTableWidget(0, _FIXED_COL_COUNT)
@@ -153,6 +159,7 @@ class CaseView(QWidget):
         self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self._table.itemSelectionChanged.connect(self._on_selection_changed)
         self._table.itemDoubleClicked.connect(self._on_row_double_clicked)
+        self._table.setMinimumHeight(250)
         self._setup_context_menu()
         splitter.addWidget(self._table)
 
@@ -169,7 +176,7 @@ class CaseView(QWidget):
         self._detail_linked_case = QLabel()
         self._detail_progress = QTextEdit()
         self._detail_progress.setReadOnly(True)
-        self._detail_progress.setMinimumHeight(200)
+        self._detail_progress.setMinimumHeight(80)
 
         detail_layout.addRow("案件編號:", self._detail_id)
         detail_layout.addRow("主旨:", self._detail_subject)
@@ -213,7 +220,7 @@ class CaseView(QWidget):
         kms_inner.setContentsMargins(4, 4, 4, 4)
         self._kms_panel = QTextEdit()
         self._kms_panel.setReadOnly(True)
-        self._kms_panel.setMinimumHeight(80)
+        self._kms_panel.setMinimumHeight(50)
         self._kms_panel.setMaximumHeight(160)
         self._kms_panel.setHtml("<i style='color:#6b7280'>（選取案件後自動搜尋）</i>")
         kms_inner.addWidget(self._kms_panel)
