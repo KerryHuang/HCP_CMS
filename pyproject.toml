@@ -24,6 +24,8 @@ dependencies = [
     "playwright>=1.43",
     "py7zr>=0.20",
     "pywin32>=306",
+    "gspread>=6.0",
+    "google-auth-oauthlib>=1.2",
 ]
 
 [project.optional-dependencies]
