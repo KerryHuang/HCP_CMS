@@ -14,7 +14,7 @@ def conn(tmp_path):
     dbm = DatabaseManager(tmp_path / "t.db")
     dbm.initialize()
     yield dbm.connection
-    dbm.connection.close()
+    dbm.close()
 
 
 def test_case_has_report_columns(conn):
