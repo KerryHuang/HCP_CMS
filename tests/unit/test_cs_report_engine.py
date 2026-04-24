@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from hcp_cms.core.cs_report_engine import CSReportEngine
+from hcp_cms.core.cs_report_engine import CSReportEngine, ReportRow
 from hcp_cms.data.database import DatabaseManager
 from hcp_cms.data.models import Case, Company
 from hcp_cms.data.repositories import CaseRepository, CompanyRepository
@@ -91,3 +91,35 @@ def test_to_sheet_values_returns_10_cells_per_row(conn):
     assert len(values[0]) == 10
     assert values[0][0] == "日期"
     assert len(values[1]) == 10
+
+
+def test_summarize_at_boundary():
+    assert CSReportEngine._summarize("x" * 40) == "x" * 40
+
+
+def test_summarize_truncates_over_limit():
+    result = CSReportEngine._summarize("x" * 41)
+    assert result.endswith("...")
+    assert len(result) == 40  # 總長度 <= limit
+
+
+def test_summarize_collapses_newlines():
+    out = CSReportEngine._summarize("第一行\n第二行")
+    assert "\n" not in out
+    assert out == "第一行 第二行"
+
+
+def test_suggested_reply_falls_back_to_actual_reply(conn):
+    _seed_case(conn, solution=None, actual_reply="以 actual_reply 為備援")
+    engine = CSReportEngine(conn)
+    rows = engine.build_rows()
+    assert rows[0].suggested_reply == "以 actual_reply 為備援"
+
+
+def test_problem_raw_falls_back_to_subject(conn):
+    _seed_case(conn, problem=None, subject="以 subject 為備援")
+    engine = CSReportEngine(conn)
+    rows = engine.build_rows()
+    assert rows[0].problem_raw == "以 subject 為備援"
+    # ReportRow 為公開型別，確保可匯入並實例化
+    assert isinstance(rows[0], ReportRow)

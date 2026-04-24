@@ -71,7 +71,6 @@ class CSReportEngine:
     """組成客服問題彙整報表 10 欄 row。"""
 
     def __init__(self, conn: sqlite3.Connection) -> None:
-        self._conn = conn
         self._cases = CaseRepository(conn)
         self._companies = CompanyRepository(conn)
         self._levels = ProblemLevelClassifier()
@@ -118,7 +117,8 @@ class CSReportEngine:
 
     @staticmethod
     def _summarize(text: str, limit: int = 40) -> str:
+        """將文字壓縮為單行；超過 limit 時截斷並加 '...'（總長度 <= limit）。"""
         s = (text or "").strip().replace("\n", " ")
         if len(s) <= limit:
             return s
-        return s[:limit] + "..."
+        return s[: max(0, limit - 3)] + "..."
