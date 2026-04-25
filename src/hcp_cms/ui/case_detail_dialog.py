@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QFrame,
     QGridLayout,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -204,6 +205,42 @@ class CaseDetailDialog(QDialog):
         self._extra_form = pf
         self._extra_field_widgets: dict[str, QLineEdit] = {}
         content_layout.addLayout(pf)
+
+        # ── 問題整理群組 ──────────────────────────────────────────────
+        problem_group = QGroupBox("問題整理")
+        problem_group.setStyleSheet(
+            "QGroupBox { color: #94a3b8; font-size: 11px; border: 1px solid #334155;"
+            " border-radius:4px; margin-top:8px; padding-top:10px; }"
+            "QGroupBox::title { subcontrol-origin: margin; left: 8px; }"
+        )
+        problem_form = QFormLayout(problem_group)
+        problem_form.setVerticalSpacing(6)
+
+        self._f_problem_level = QComboBox()
+        self._f_problem_level.setObjectName("problemLevelCombo")
+        self._f_problem_level.addItems(["", "A", "B", "C"])
+
+        self._f_problem = QTextEdit()
+        self._f_problem.setObjectName("problemEdit")
+        self._f_problem.setPlaceholderText("問題（人工整理後的問題描述）")
+        self._f_problem.setMaximumHeight(80)
+
+        self._f_cause = QTextEdit()
+        self._f_cause.setObjectName("causeEdit")
+        self._f_cause.setPlaceholderText("原因")
+        self._f_cause.setMaximumHeight(80)
+
+        self._f_solution = QTextEdit()
+        self._f_solution.setObjectName("solutionEdit")
+        self._f_solution.setPlaceholderText("解法")
+        self._f_solution.setMaximumHeight(80)
+
+        problem_form.addRow("問題等級：", self._f_problem_level)
+        problem_form.addRow("問題：", self._f_problem)
+        problem_form.addRow("原因：", self._f_cause)
+        problem_form.addRow("解法：", self._f_solution)
+        content_layout.addWidget(problem_group)
+
         content_layout.addStretch()
 
         scroll.setWidget(content)
@@ -668,6 +705,11 @@ class CaseDetailDialog(QDialog):
         self._f_progress.setPlainText(case.progress or "")
         self._f_notes.setPlainText(case.notes or "")
         self._f_actual_reply.setPlainText(case.actual_reply or "")
+        # 問題整理欄位
+        self._f_problem_level.setCurrentText(case.problem_level or "")
+        self._f_problem.setPlainText(case.problem or "")
+        self._f_cause.setPlainText(case.cause or "")
+        self._f_solution.setPlainText(case.solution or "")
         self._refresh_extra_fields()
 
     def _refresh_extra_fields(self) -> None:
@@ -723,6 +765,11 @@ class CaseDetailDialog(QDialog):
         case.progress = self._f_progress.toPlainText() or None
         case.notes = self._f_notes.toPlainText() or None
         case.actual_reply = self._f_actual_reply.toPlainText() or None
+        # 問題整理欄位
+        case.problem_level = self._f_problem_level.currentText() or None
+        case.problem = self._f_problem.toPlainText().strip() or None
+        case.cause = self._f_cause.toPlainText().strip() or None
+        case.solution = self._f_solution.toPlainText().strip() or None
         return case
 
     # ------------------------------------------------------------------

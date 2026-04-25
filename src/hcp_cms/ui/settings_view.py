@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 import sqlite3
+from pathlib import Path
 
-from PySide6.QtCore import QSettings
+from PySide6.QtCore import QSettings, Qt
+from PySide6.QtGui import QCursor
 from PySide6.QtWidgets import (
+    QApplication,
     QButtonGroup,
     QCheckBox,
     QComboBox,
@@ -432,6 +436,7 @@ class SettingsView(QWidget):
             return
         try:
             from hcp_cms.core.case_manager import CaseManager
+
             deleted = CaseManager(self._conn).delete_all_cases()
             QMessageBox.information(self, "清除完成", f"已刪除 {deleted} 筆案件，可重新收信建案。")
         except Exception as e:
@@ -632,8 +637,7 @@ class SettingsView(QWidget):
 
     def _on_reauth_google(self) -> None:
         """強制重新進行 Google OAuth 授權流程。"""
-        from pathlib import Path
-
+        # GoogleSheetsService 為惰性匯入：避免缺少 gspread 時整個 SettingsView 無法載入
         from hcp_cms.services.google_sheets_service import GoogleSheetsService
 
         url = self._google_url_edit.text().strip()
@@ -641,15 +645,19 @@ class SettingsView(QWidget):
         if not url or not secret:
             QMessageBox.warning(self, "資料不完整", "請先填寫 Sheet URL 與 client_secret.json 路徑。")
             return
+        # OAuth 瀏覽器流程會阻塞 UI 執行緒；先給使用者視覺回饋
+        self._reauth_btn.setEnabled(False)
+        QApplication.setOverrideCursor(QCursor(Qt.WaitCursor))
         try:
             svc = GoogleSheetsService(client_secret_path=Path(secret), spreadsheet_url=url)
             svc.authenticate(force_reauth=True)
             QMessageBox.information(self, "授權成功", "Google 授權已更新。")
         except Exception as exc:
-            import logging
-
             logging.getLogger(__name__).exception("Google 授權失敗")
             QMessageBox.critical(self, "授權失敗", str(exc))
+        finally:
+            QApplication.restoreOverrideCursor()
+            self._reauth_btn.setEnabled(True)
 
     def _on_theme_changed(self, button_id: int) -> None:
         """使用者切換主題模式。"""
