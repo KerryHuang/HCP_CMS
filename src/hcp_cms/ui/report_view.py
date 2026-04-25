@@ -56,8 +56,8 @@ class ReportView(QWidget):
 
         ctrl.addWidget(QLabel("報表類型:"))
         self._type_combo = QComboBox()
-        self._type_combo.addItems(["追蹤表", "月報"])
-        self._type_combo.setFixedWidth(100)
+        self._type_combo.addItems(["追蹤表", "月報", "客服問題彙整"])
+        self._type_combo.setFixedWidth(130)
         self._type_combo.currentIndexChanged.connect(self._on_params_changed)
         ctrl.addWidget(self._type_combo)
 
@@ -95,6 +95,10 @@ class ReportView(QWidget):
         self._download_btn.clicked.connect(self._on_download)
         ctrl.addWidget(self._download_btn)
 
+        self._sync_sheets_btn = QPushButton("☁️ 同步至 Google Sheets")
+        self._sync_sheets_btn.clicked.connect(self._on_sync_to_sheets)
+        ctrl.addWidget(self._sync_sheets_btn)
+
         ctrl.addStretch()
         layout.addLayout(ctrl)
 
@@ -127,6 +131,10 @@ class ReportView(QWidget):
         self._status.setText("⏳ 正在載入報表，請稍候...")
         self._status.repaint()
 
+        if self._type_combo.currentText() == "客服問題彙整":
+            self._fill_cs_report_preview()
+            return
+
         try:
             engine = ReportEngine(self._conn)
             report_type = self._type_combo.currentText()
@@ -140,16 +148,18 @@ class ReportView(QWidget):
                     _headers = ["#", "票號", "摘要", "狀態", "優先", "未處理天數", "最後更新", "負責人"]
                     _mantis_preview: list[list] = [_headers]
                     for _i, _r in enumerate(mantis_dict_rows, 1):
-                        _mantis_preview.append([
-                            _i,
-                            _r["ticket_id"],
-                            _r["summary"],
-                            _r["status"],
-                            _r["priority"],
-                            _r["unresolved_days"],
-                            _r["last_updated"],
-                            _r["handler"],
-                        ])
+                        _mantis_preview.append(
+                            [
+                                _i,
+                                _r["ticket_id"],
+                                _r["summary"],
+                                _r["status"],
+                                _r["priority"],
+                                _r["unresolved_days"],
+                                _r["last_updated"],
+                                _r["handler"],
+                            ]
+                        )
                     data["📌 Mantis 追蹤"] = _mantis_preview
 
             has_data = any(len(rows) > 1 for rows in data.values())
@@ -313,10 +323,79 @@ class ReportView(QWidget):
         """從報表中心開啟案件詳情對話框。"""
         try:
             from hcp_cms.ui.case_detail_dialog import CaseDetailDialog
+
             dlg = CaseDetailDialog(self._conn, case_id, parent=self.window())
             dlg.exec()
         except Exception as e:
             QMessageBox.critical(self, "開啟案件失敗", str(e))
+
+    def _fill_cs_report_preview(self) -> None:
+        """產生「客服問題彙整」報表並填入 QTabWidget 預覽。"""
+        from hcp_cms.core.cs_report_engine import HEADER, CSReportEngine
+
+        try:
+            engine = CSReportEngine(self._conn)
+            rows = engine.build_rows()
+
+            # 轉成 _fill_preview 所需的 dict[str, list[list]] 格式
+            header_row = list(HEADER)
+            data_rows = [row.as_list() for row in rows]
+            preview_data: dict[str, list[list]] = {
+                "客服問題彙整": [header_row] + data_rows,
+            }
+
+            self._preview_data = preview_data
+            self._fill_preview(preview_data)
+            self._download_btn.setEnabled(False)  # 客服問題彙整目前不支援 xlsx 下載
+
+            if rows:
+                self._status.setText(f"✅ 預覽完成，共 {len(rows)} 筆")
+            else:
+                self._status.setText("⚠️ 目前無案件資料")
+
+        except Exception as e:
+            self._status.setText(f"❌ 載入失敗：{e}")
+            QMessageBox.critical(self, "載入失敗", str(e))
+
+    def _on_sync_to_sheets(self) -> None:
+        """將客服問題彙整報表同步至 Google Sheets。"""
+        from pathlib import Path
+
+        from PySide6.QtCore import QSettings
+
+        from hcp_cms.core.cs_report_engine import HEADER, CSReportEngine
+        from hcp_cms.services.google_sheets_service import GoogleSheetsService
+
+        if self._type_combo.currentText() != "客服問題彙整":
+            QMessageBox.warning(self, "不適用", "此功能僅適用於「客服問題彙整」報表。")
+            return
+
+        settings = QSettings("HCP", "CMS")
+        sheet_url = settings.value("google/sheet_url", "", type=str)
+        client_secret = settings.value("google/client_secret_path", "", type=str)
+        if not sheet_url or not client_secret:
+            QMessageBox.warning(
+                self,
+                "未設定 Google Sheets",
+                "請先於「設定」→「Google Sheets 同步」填寫 Sheet URL 與 client_secret 路徑。",
+            )
+            return
+
+        try:
+            svc = GoogleSheetsService(
+                client_secret_path=Path(client_secret),
+                spreadsheet_url=sheet_url,
+            )
+            svc.authenticate()
+            engine = CSReportEngine(self._conn)
+            rows = engine.build_rows()
+            # 附加 case_id 作為 upsert 的識別欄位（第 11 欄，index=10）
+            header_with_id = list(HEADER) + ["case_id"]
+            data = [(r.case_id, r.as_list() + [r.case_id]) for r in rows]
+            svc.upsert(header_with_id, data, id_column_index=10)
+            QMessageBox.information(self, "同步完成", f"已同步 {len(rows)} 筆案件至 Google Sheets。")
+        except Exception as exc:
+            QMessageBox.critical(self, "同步失敗", str(exc))
 
     def _on_download(self) -> None:
         if not self._preview_data:
@@ -336,9 +415,7 @@ class ReportView(QWidget):
             desktop = Path.home()
         default_path = str(desktop / default_name)
 
-        path, _ = QFileDialog.getSaveFileName(
-            self, "儲存報表", default_path, "Excel 檔案 (*.xlsx)"
-        )
+        path, _ = QFileDialog.getSaveFileName(self, "儲存報表", default_path, "Excel 檔案 (*.xlsx)")
         if not path:
             return
 
