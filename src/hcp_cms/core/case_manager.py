@@ -418,6 +418,27 @@ class CaseManager:
                 case.notes = f"{existing}\n[重開] {reason}".strip()
             self._case_repo.update(case)
 
+    def update_problem_fields(
+        self,
+        case_id: str,
+        problem_level: str | None,
+        problem: str | None,
+        cause: str | None,
+        solution: str | None,
+    ) -> None:
+        """更新案件的問題整理欄位（問題等級、問題、原因、解法）。
+
+        若 case_id 不存在則靜默回傳，不拋出例外。
+        """
+        case = self._case_repo.get_by_id(case_id)
+        if case is None:
+            return
+        case.problem_level = problem_level
+        case.problem = problem
+        case.cause = cause
+        case.solution = solution
+        self._case_repo.update(case)
+
     def close_case(self, case_id: str) -> None:
         """Mark case as completed."""
         self._case_repo.update_status(case_id, "已完成")

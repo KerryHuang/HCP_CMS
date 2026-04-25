@@ -630,18 +630,14 @@ class CaseView(QWidget):
         if not self._conn or not self._detail_id.text():
             return
         case_id = self._detail_id.text()
-        # 從快取清單中取得 case 物件，再更新 4 個欄位後存回 DB
-        case = next(
-            (c for c in self._cases if c.case_id == case_id),
-            None,
-        ) if hasattr(self, "_cases") else None
-        if case is None:
-            return
-        case.problem_level = self._level_combo.currentText() or None
-        case.problem = self._problem_edit.toPlainText().strip() or None
-        case.cause = self._cause_edit.toPlainText().strip() or None
-        case.solution = self._solution_edit.toPlainText().strip() or None
-        CaseRepository(self._conn).update(case)
+        CaseManager(self._conn).update_problem_fields(
+            case_id=case_id,
+            problem_level=self._level_combo.currentText() or None,
+            problem=self._problem_edit.toPlainText().strip() or None,
+            cause=self._cause_edit.toPlainText().strip() or None,
+            solution=self._solution_edit.toPlainText().strip() or None,
+        )
+        self.refresh()
         self.cases_changed.emit()
         QMessageBox.information(self, "儲存成功", f"案件 {case_id} 問題整理欄位已儲存。")
 

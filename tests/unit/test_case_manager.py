@@ -4,7 +4,7 @@ import pytest
 
 from hcp_cms.core.case_manager import CaseManager
 from hcp_cms.data.database import DatabaseManager
-from hcp_cms.data.models import ClassificationRule, Company
+from hcp_cms.data.models import Case, ClassificationRule, Company
 from hcp_cms.data.repositories import CaseRepository, CompanyRepository, RuleRepository
 
 
@@ -302,6 +302,42 @@ class TestCaseManager:
         c3_after = repo.get_by_id(c3.case_id)
         # c3 已有 linked_case_id，不應被覆蓋
         assert c3_after.linked_case_id == c2.case_id
+
+    def test_update_problem_fields_updates_case(self, db):
+        """update_problem_fields 應正確更新問題整理 4 欄位。"""
+        CompanyRepository(db.connection).insert(
+            Company(company_id="acme", name="ACME", domain="acme.com")
+        )
+        repo = CaseRepository(db.connection)
+        repo.insert(Case(case_id="CS-PF-001", subject="x", company_id="acme"))
+
+        mgr = CaseManager(db.connection)
+        mgr.update_problem_fields(
+            case_id="CS-PF-001",
+            problem_level="A",
+            problem="加班費少算",
+            cause="公式錯",
+            solution="改公式",
+        )
+
+        case = repo.get_by_id("CS-PF-001")
+        assert case is not None
+        assert case.problem_level == "A"
+        assert case.problem == "加班費少算"
+        assert case.cause == "公式錯"
+        assert case.solution == "改公式"
+
+    def test_update_problem_fields_no_op_for_missing_case(self, db):
+        """case_id 不存在時不應拋出例外，靜默回傳。"""
+        mgr = CaseManager(db.connection)
+        # 不應拋出例外，靜默處理
+        mgr.update_problem_fields(
+            case_id="CS-NOT-EXIST",
+            problem_level="A",
+            problem=None,
+            cause=None,
+            solution=None,
+        )
 
 
 class TestImportEmail:
