@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 
+from PySide6.QtCore import QSettings
 from PySide6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
@@ -323,6 +324,54 @@ class SettingsView(QWidget):
         layout.addWidget(ai_group)
         self._load_claude_creds()
 
+        # ── Google Sheets 同步設定 ─────────────────────────────────────────
+        google_group = QGroupBox("Google Sheets 同步")
+        google_form = QFormLayout(google_group)
+        google_form.setContentsMargins(12, 12, 12, 12)
+        google_form.setSpacing(8)
+
+        self._google_url_edit = QLineEdit()
+        self._google_url_edit.setObjectName("googleSheetUrlEdit")
+        self._google_url_edit.setPlaceholderText("https://docs.google.com/spreadsheets/d/.../edit")
+        google_form.addRow("Sheet URL：", self._google_url_edit)
+
+        self._client_secret_edit = QLineEdit()
+        self._client_secret_edit.setObjectName("googleClientSecretEdit")
+        self._client_secret_edit.setPlaceholderText("client_secret.json 路徑")
+
+        self._browse_btn = QPushButton("瀏覽…")
+        self._browse_btn.setObjectName("googleBrowseClientSecretBtn")
+        self._browse_btn.clicked.connect(self._on_browse_client_secret)
+
+        client_row = QHBoxLayout()
+        client_row.addWidget(self._client_secret_edit)
+        client_row.addWidget(self._browse_btn)
+        google_form.addRow("client_secret.json：", client_row)
+
+        self._reauth_btn = QPushButton("重新授權 Google")
+        self._reauth_btn.setObjectName("googleReauthBtn")
+        self._reauth_btn.clicked.connect(self._on_reauth_google)
+        google_form.addRow(self._reauth_btn)
+
+        self._schedule_checkbox = QCheckBox("啟用排程同步")
+        self._schedule_checkbox.setObjectName("googleScheduleEnabledCheckbox")
+        google_form.addRow(self._schedule_checkbox)
+
+        self._schedule_interval = QComboBox()
+        self._schedule_interval.setObjectName("googleScheduleIntervalCombo")
+        self._schedule_interval.addItems(["每日 00:00", "每週一 00:00"])
+        google_form.addRow("排程頻率：", self._schedule_interval)
+
+        google_save_row = QHBoxLayout()
+        google_save_btn = QPushButton("💾 儲存 Google 設定")
+        google_save_btn.clicked.connect(self._on_save_google)
+        google_save_row.addWidget(google_save_btn)
+        google_save_row.addStretch()
+        google_form.addRow(google_save_row)
+
+        layout.addWidget(google_group)
+        self._load_google_settings()
+
         # Save button
         save_btn = QPushButton("💾 儲存設定")
         layout.addWidget(save_btn)
@@ -547,6 +596,60 @@ class SettingsView(QWidget):
                 QMessageBox.warning(self, "連線失敗", "❌ 無法連線至 Mantis，請確認 URL 與帳密是否正確。")
         except Exception as e:
             QMessageBox.critical(self, "連線錯誤", f"❌ 發生例外：\n{e}")
+
+    # ── Google Sheets 同步設定 ────────────────────────────────────────────
+
+    def _load_google_settings(self) -> None:
+        """從 QSettings 載入 Google Sheets 同步設定。"""
+        s = QSettings("HCP", "CMS")
+        self._google_url_edit.setText(s.value("google/sheet_url", "", type=str))
+        self._client_secret_edit.setText(s.value("google/client_secret_path", "", type=str))
+        self._schedule_checkbox.setChecked(s.value("google/schedule_enabled", False, type=bool))
+        interval = s.value("google/schedule_interval", "每日 00:00", type=str)
+        idx = self._schedule_interval.findText(interval)
+        if idx >= 0:
+            self._schedule_interval.setCurrentIndex(idx)
+
+    def _on_save_google(self) -> None:
+        """將 Google Sheets 同步設定儲存至 QSettings。"""
+        s = QSettings("HCP", "CMS")
+        s.setValue("google/sheet_url", self._google_url_edit.text().strip())
+        s.setValue("google/client_secret_path", self._client_secret_edit.text().strip())
+        s.setValue("google/schedule_enabled", self._schedule_checkbox.isChecked())
+        s.setValue("google/schedule_interval", self._schedule_interval.currentText())
+        QMessageBox.information(self, "已儲存", "Google Sheets 同步設定已儲存。")
+
+    def _on_browse_client_secret(self) -> None:
+        """開啟檔案選擇器，讓使用者選擇 client_secret.json。"""
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "選擇 client_secret.json",
+            "",
+            "JSON 檔 (*.json);;所有檔案 (*)",
+        )
+        if path:
+            self._client_secret_edit.setText(path)
+
+    def _on_reauth_google(self) -> None:
+        """強制重新進行 Google OAuth 授權流程。"""
+        from pathlib import Path
+
+        from hcp_cms.services.google_sheets_service import GoogleSheetsService
+
+        url = self._google_url_edit.text().strip()
+        secret = self._client_secret_edit.text().strip()
+        if not url or not secret:
+            QMessageBox.warning(self, "資料不完整", "請先填寫 Sheet URL 與 client_secret.json 路徑。")
+            return
+        try:
+            svc = GoogleSheetsService(client_secret_path=Path(secret), spreadsheet_url=url)
+            svc.authenticate(force_reauth=True)
+            QMessageBox.information(self, "授權成功", "Google 授權已更新。")
+        except Exception as exc:
+            import logging
+
+            logging.getLogger(__name__).exception("Google 授權失敗")
+            QMessageBox.critical(self, "授權失敗", str(exc))
 
     def _on_theme_changed(self, button_id: int) -> None:
         """使用者切換主題模式。"""
