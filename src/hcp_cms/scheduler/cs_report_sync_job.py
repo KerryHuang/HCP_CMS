@@ -55,7 +55,7 @@ def run_cs_report_sync(
         rows = engine.build_rows()
         header_with_id = list(HEADER) + ["case_id"]
         data = [(r.case_id, r.as_list() + [r.case_id]) for r in rows]
-        svc.upsert(header_with_id, data, id_column_index=10)
+        svc.upsert(header_with_id, data, id_column_index=len(HEADER))
         log.info("cs_report_sync 同步 %d 筆", len(rows))
     except Exception as exc:
         log.exception("cs_report_sync 失敗：%s", exc)
@@ -75,6 +75,8 @@ class CSReportSyncScheduler:
         self._conn = conn
         self._timer: threading.Timer | None = None
         self._stopped = False
+        # 保護 _stopped / _timer 之間的 TOCTOU；stop() 與 _schedule_next() 可能交錯
+        self._lock = threading.Lock()
 
     def start(self) -> None:
         s = QSettings("HCP", "CMS")
@@ -89,21 +91,23 @@ class CSReportSyncScheduler:
         self._schedule_next(url, Path(secret), interval)
 
     def stop(self) -> None:
-        self._stopped = True
-        if self._timer:
-            self._timer.cancel()
-            self._timer = None
+        with self._lock:
+            self._stopped = True
+            if self._timer:
+                self._timer.cancel()
+                self._timer = None
 
     def _schedule_next(self, url: str, secret: Path, interval: str) -> None:
-        if self._stopped:
-            return
         delay = seconds_until_next(interval)
-        log.info("cs_report_sync 下次同步 %.0f 秒後", delay)
+        with self._lock:
+            if self._stopped:
+                return
+            log.info("cs_report_sync 下次同步 %.0f 秒後", delay)
 
-        def _run() -> None:
-            run_cs_report_sync(self._conn, url, secret)
-            self._schedule_next(url, secret, interval)
+            def _run() -> None:
+                run_cs_report_sync(self._conn, url, secret)
+                self._schedule_next(url, secret, interval)
 
-        self._timer = threading.Timer(delay, _run)
-        self._timer.daemon = True
-        self._timer.start()
+            self._timer = threading.Timer(delay, _run)
+            self._timer.daemon = True
+            self._timer.start()

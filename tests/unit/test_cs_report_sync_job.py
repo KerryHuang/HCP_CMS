@@ -11,6 +11,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from hcp_cms.scheduler.cs_report_sync_job import (
+    CSReportSyncScheduler,
     run_cs_report_sync,
     seconds_until_next,
 )
@@ -97,5 +98,95 @@ class TestRunCsReportSync:
                     )
 
                 assert any("cs_report_sync 失敗" in rec.message for rec in caplog.records)
+        finally:
+            conn.close()
+
+
+class TestCSReportSyncSchedulerLifecycle:
+    """驗證 start() / stop() 與 QSettings 讀取分支。"""
+
+    def _make_qsettings_mock(self, values: dict[str, object]) -> MagicMock:
+        mock = MagicMock()
+
+        def _value(key: str, default: object = None, type: type | None = None) -> object:  # noqa: A002
+            return values.get(key, default)
+
+        mock.value.side_effect = _value
+        return mock
+
+    def test_start_skips_when_disabled(self) -> None:
+        conn = sqlite3.connect(":memory:")
+        try:
+            qs = self._make_qsettings_mock({"google/schedule_enabled": False})
+            with (
+                patch("hcp_cms.scheduler.cs_report_sync_job.QSettings", return_value=qs),
+                patch("hcp_cms.scheduler.cs_report_sync_job.threading.Timer") as mock_timer,
+            ):
+                CSReportSyncScheduler(conn).start()
+                mock_timer.assert_not_called()
+        finally:
+            conn.close()
+
+    def test_start_skips_when_url_or_secret_missing(self, caplog: pytest.LogCaptureFixture) -> None:
+        conn = sqlite3.connect(":memory:")
+        try:
+            qs = self._make_qsettings_mock(
+                {
+                    "google/schedule_enabled": True,
+                    "google/sheet_url": "",
+                    "google/client_secret_path": "",
+                    "google/schedule_interval": "每日 00:00",
+                }
+            )
+            with (
+                patch("hcp_cms.scheduler.cs_report_sync_job.QSettings", return_value=qs),
+                patch("hcp_cms.scheduler.cs_report_sync_job.threading.Timer") as mock_timer,
+                caplog.at_level(logging.WARNING),
+            ):
+                CSReportSyncScheduler(conn).start()
+                mock_timer.assert_not_called()
+                assert any("URL/secret 未設定" in rec.message for rec in caplog.records)
+        finally:
+            conn.close()
+
+    def test_start_schedules_timer_when_enabled(self) -> None:
+        conn = sqlite3.connect(":memory:")
+        try:
+            qs = self._make_qsettings_mock(
+                {
+                    "google/schedule_enabled": True,
+                    "google/sheet_url": "https://docs.google.com/spreadsheets/d/abc",
+                    "google/client_secret_path": "C:/fake/secret.json",
+                    "google/schedule_interval": "每日 00:00",
+                }
+            )
+            fake_timer = MagicMock()
+            with (
+                patch("hcp_cms.scheduler.cs_report_sync_job.QSettings", return_value=qs),
+                patch(
+                    "hcp_cms.scheduler.cs_report_sync_job.threading.Timer",
+                    return_value=fake_timer,
+                ) as mock_timer_cls,
+            ):
+                CSReportSyncScheduler(conn).start()
+                mock_timer_cls.assert_called_once()
+                fake_timer.start.assert_called_once()
+                assert fake_timer.daemon is True
+        finally:
+            conn.close()
+
+    def test_stop_cancels_timer_and_blocks_reschedule(self) -> None:
+        conn = sqlite3.connect(":memory:")
+        try:
+            sched = CSReportSyncScheduler(conn)
+            fake_timer = MagicMock()
+            sched._timer = fake_timer
+            sched.stop()
+            fake_timer.cancel.assert_called_once()
+            assert sched._timer is None
+            # stop 後再呼叫 _schedule_next 不應建立新 Timer
+            with patch("hcp_cms.scheduler.cs_report_sync_job.threading.Timer") as mock_timer_cls:
+                sched._schedule_next("u", Path("p"), "每日 00:00")
+                mock_timer_cls.assert_not_called()
         finally:
             conn.close()
