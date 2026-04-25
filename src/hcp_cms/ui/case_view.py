@@ -188,6 +188,41 @@ class CaseView(QWidget):
         detail_layout.addRow("關聯案件:", self._detail_linked_case)
         detail_layout.addRow("對話記錄:", self._detail_progress)
 
+        # ── 問題整理群組（可編輯，需點儲存）────────────────────────────
+        problem_group = QGroupBox("問題整理")
+        problem_group.setStyleSheet(
+            "QGroupBox { color: #94a3b8; font-size: 11px; border: 1px solid #334155;"
+            " border-radius:4px; margin-top:6px; padding-top:8px; }"
+            "QGroupBox::title { subcontrol-origin: margin; left: 8px; }"
+        )
+        problem_form = QFormLayout(problem_group)
+        problem_form.setVerticalSpacing(4)
+
+        self._level_combo = QComboBox()
+        self._level_combo.setObjectName("problemLevelCombo")
+        self._level_combo.addItems(["", "A", "B", "C"])
+
+        self._problem_edit = QTextEdit()
+        self._problem_edit.setObjectName("problemEdit")
+        self._problem_edit.setPlaceholderText("問題（人工整理後的問題描述）")
+        self._problem_edit.setMaximumHeight(80)
+
+        self._cause_edit = QTextEdit()
+        self._cause_edit.setObjectName("causeEdit")
+        self._cause_edit.setPlaceholderText("原因")
+        self._cause_edit.setMaximumHeight(80)
+
+        self._solution_edit = QTextEdit()
+        self._solution_edit.setObjectName("solutionEdit")
+        self._solution_edit.setPlaceholderText("解法")
+        self._solution_edit.setMaximumHeight(80)
+
+        problem_form.addRow("問題等級：", self._level_combo)
+        problem_form.addRow("問題：", self._problem_edit)
+        problem_form.addRow("原因：", self._cause_edit)
+        problem_form.addRow("解法：", self._solution_edit)
+        detail_layout.addRow(problem_group)
+
         # Action buttons
         btn_layout = QHBoxLayout()
         self._btn_reply = QPushButton("✅ 標記已回覆")
@@ -197,6 +232,11 @@ class CaseView(QWidget):
         self._btn_close = QPushButton("🔒 結案")
         self._btn_close.clicked.connect(self._on_close_case)
         btn_layout.addWidget(self._btn_close)
+
+        self._btn_save_problem = QPushButton("💾 儲存問題整理")
+        self._btn_save_problem.setToolTip("儲存問題等級、問題、原因、解法欄位")
+        self._btn_save_problem.clicked.connect(self._on_save_problem_fields)
+        btn_layout.addWidget(self._btn_save_problem)
 
         self._btn_add_release = QPushButton("📋 加入待發清單")
         self._btn_add_release.clicked.connect(self._on_add_to_release)
@@ -330,6 +370,11 @@ class CaseView(QWidget):
         self._detail_reply_count.clear()
         self._detail_linked_case.clear()
         self._detail_progress.clear()
+        # 問題整理欄位
+        self._level_combo.setCurrentIndex(0)
+        self._problem_edit.clear()
+        self._cause_edit.clear()
+        self._solution_edit.clear()
         if hasattr(self, "_kms_panel"):
             self._kms_panel.setHtml("<i style='color:#6b7280'>（選取案件後自動搜尋）</i>")
 
@@ -353,6 +398,11 @@ class CaseView(QWidget):
         self._detail_reply_count.setText(reply_display)
         self._detail_linked_case.setText(case.linked_case_id or "")
         self._detail_progress.setHtml(self._build_log_html(case))
+        # 問題整理欄位
+        self._level_combo.setCurrentText(case.problem_level or "")
+        self._problem_edit.setPlainText(case.problem or "")
+        self._cause_edit.setPlainText(case.cause or "")
+        self._solution_edit.setPlainText(case.solution or "")
         self._refresh_kms_panel(case.subject or "")
 
     def _build_log_html(self, case) -> str:
@@ -574,6 +624,26 @@ class CaseView(QWidget):
         if dlg.exec() == QDialog.DialogCode.Accepted:
             self.refresh()
             self.cases_changed.emit()
+
+    def _on_save_problem_fields(self) -> None:
+        """儲存問題整理 4 欄位（問題等級、問題、原因、解法）。"""
+        if not self._conn or not self._detail_id.text():
+            return
+        case_id = self._detail_id.text()
+        # 從快取清單中取得 case 物件，再更新 4 個欄位後存回 DB
+        case = next(
+            (c for c in self._cases if c.case_id == case_id),
+            None,
+        ) if hasattr(self, "_cases") else None
+        if case is None:
+            return
+        case.problem_level = self._level_combo.currentText() or None
+        case.problem = self._problem_edit.toPlainText().strip() or None
+        case.cause = self._cause_edit.toPlainText().strip() or None
+        case.solution = self._solution_edit.toPlainText().strip() or None
+        CaseRepository(self._conn).update(case)
+        self.cases_changed.emit()
+        QMessageBox.information(self, "儲存成功", f"案件 {case_id} 問題整理欄位已儲存。")
 
     def _on_mark_replied(self) -> None:
         if not self._conn or not self._detail_id.text():
