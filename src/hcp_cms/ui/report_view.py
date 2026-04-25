@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 from pathlib import Path
 
@@ -98,6 +99,7 @@ class ReportView(QWidget):
         self._sync_sheets_btn = QPushButton("☁️ 同步至 Google Sheets")
         self._sync_sheets_btn.clicked.connect(self._on_sync_to_sheets)
         ctrl.addWidget(self._sync_sheets_btn)
+        self._sync_sheets_btn.setVisible(False)
 
         ctrl.addStretch()
         layout.addLayout(ctrl)
@@ -116,6 +118,8 @@ class ReportView(QWidget):
         self._tab_widget.clear()
         self._download_btn.setEnabled(False)
         self._status.setText("就緒")
+        is_cs = self._type_combo.currentText() == "客服問題彙整"
+        self._sync_sheets_btn.setVisible(is_cs)
 
     def _on_preview(self) -> None:
         if not self._conn:
@@ -359,16 +363,10 @@ class ReportView(QWidget):
 
     def _on_sync_to_sheets(self) -> None:
         """將客服問題彙整報表同步至 Google Sheets。"""
-        from pathlib import Path
-
         from PySide6.QtCore import QSettings
 
         from hcp_cms.core.cs_report_engine import HEADER, CSReportEngine
         from hcp_cms.services.google_sheets_service import GoogleSheetsService
-
-        if self._type_combo.currentText() != "客服問題彙整":
-            QMessageBox.warning(self, "不適用", "此功能僅適用於「客服問題彙整」報表。")
-            return
 
         settings = QSettings("HCP", "CMS")
         sheet_url = settings.value("google/sheet_url", "", type=str)
@@ -380,6 +378,9 @@ class ReportView(QWidget):
                 "請先於「設定」→「Google Sheets 同步」填寫 Sheet URL 與 client_secret 路徑。",
             )
             return
+
+        self._status.setText("⏳ 正在同步至 Google Sheets，請稍候（瀏覽器可能會彈出授權視窗）...")
+        self._status.repaint()
 
         try:
             svc = GoogleSheetsService(
@@ -394,7 +395,10 @@ class ReportView(QWidget):
             data = [(r.case_id, r.as_list() + [r.case_id]) for r in rows]
             svc.upsert(header_with_id, data, id_column_index=10)
             QMessageBox.information(self, "同步完成", f"已同步 {len(rows)} 筆案件至 Google Sheets。")
+            self._status.setText(f"✅ 已同步 {len(rows)} 筆")
         except Exception as exc:
+            logging.getLogger(__name__).exception("Google Sheets 同步失敗")
+            self._status.setText("❌ 同步失敗")
             QMessageBox.critical(self, "同步失敗", str(exc))
 
     def _on_download(self) -> None:
