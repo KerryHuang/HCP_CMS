@@ -99,9 +99,22 @@ class Classifier:
             else:
                 domain_handler = self._resolve_handler_from_domain(sender_email)
 
+        # 主旨關鍵字 → 公司（company_by_subject 規則，value = company_id）
+        if not company_id:
+            matched_company_id = self._match_rules("company_by_subject", subject or "", "")
+            if matched_company_id:
+                company_id = matched_company_id
+
+        # Mantis 通知信：覆寫 issue_type，並嘗試帶入 MANTIS 系統公司
+        is_mantis_notify = bool(mantis_ticket_id)
+        if is_mantis_notify and not company_id:
+            mantis_company = self._find_mantis_company()
+            if mantis_company:
+                company_id = mantis_company
+
         result = {
             "system_product": self._match_rules("product", text, "HCP"),
-            "issue_type": self._match_rules("issue", text, "OTH"),
+            "issue_type": "Mantis通知" if is_mantis_notify else self._match_rules("issue", text, "OTH"),
             "error_type": self._match_rules("error", text, "人事資料管理"),
             "priority": self._match_rules("priority", text, "中"),
             "company_id": company_id,          # FK 安全值（已知公司 ID 或 None）
@@ -120,6 +133,13 @@ class Classifier:
         }
 
         return result
+
+    def _find_mantis_company(self) -> str | None:
+        """尋找名稱含 'MANTIS' 的系統公司，回傳其 company_id。"""
+        for c in self._company_repo.list_all():
+            if c.name and "MANTIS" in c.name.upper():
+                return c.company_id
+        return None
 
     def parse_tags(self, text: str) -> dict:
         """解析主旨或檔名中的標記（公開介面，供同層 Core 類別呼叫）。"""

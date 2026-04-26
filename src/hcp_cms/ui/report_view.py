@@ -7,6 +7,7 @@ import sqlite3
 from pathlib import Path
 
 from PySide6.QtCore import QDate, Qt
+from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QComboBox,
     QDateEdit,
@@ -16,6 +17,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QSizePolicy,
     QTableWidget,
     QTableWidgetItem,
@@ -144,6 +146,14 @@ class ReportView(QWidget):
             report_type = self._type_combo.currentText()
             if report_type == "追蹤表":
                 data = engine.build_tracking_table(start, end)
+                stats = engine.build_tracking_stats(start, end)
+                self._fill_preview(data)
+                self._add_stats_chart_tab(stats, start, end)
+                has_data = any(len(rows) > 1 for rows in data.values())
+                self._preview_data = data
+                self._download_btn.setEnabled(has_data)
+                self._status.setText("✅ 預覽完成" if has_data else "⚠️ 查詢範圍內無資料")
+                return
             else:
                 data = engine.build_monthly_report(start, end)
                 # 加入 Mantis 預覽分頁
@@ -444,6 +454,174 @@ class ReportView(QWidget):
         except Exception as e:
             self._status.setText(f"❌ 下載失敗：{e}")
             QMessageBox.critical(self, "下載失敗", str(e))
+
+    def _add_stats_chart_tab(self, stats: dict, start: str, end: str) -> None:
+        """產生統計圖表分頁並插入 QTabWidget 第一頁。"""
+        try:
+            import io
+            import matplotlib
+            matplotlib.use("Agg")
+            import matplotlib.pyplot as plt
+            import matplotlib.font_manager as fm
+
+            # 找可顯示中文的字型
+            _CJK_CANDIDATES = ["Microsoft JhengHei", "Microsoft YaHei", "SimHei", "PingFang TC", "Noto Sans CJK TC"]
+            _available = {f.name for f in fm.fontManager.ttflist}
+            _font = next((f for f in _CJK_CANDIDATES if f in _available), None)
+            if _font:
+                plt.rcParams["font.family"] = _font
+            plt.rcParams["axes.unicode_minus"] = False
+
+            BG = "#111827"
+            GRID = "#1e293b"
+            TEXT = "#e2e8f0"
+            COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#8b5cf6", "#ef4444", "#06b6d4"]
+
+            cs_stats = stats["cs_stats"]
+            issue_counts = stats["issue_type_counts"]
+            monthly = stats["monthly_counts"]
+            customer_counts = stats.get("customer_counts", {})
+            reply_dist = stats.get("reply_dist", {})
+
+            names = [s["name"] for s in cs_stats]
+            totals = [s["total"] for s in cs_stats]
+            actives = [s["active"] for s in cs_stats]
+            dones = [s["done"] for s in cs_stats]
+            companies = [s["companies"] for s in cs_stats]
+
+            fig = plt.figure(figsize=(12, 14), facecolor=BG)
+            fig.suptitle(
+                f"客服統計儀表板  {start} ～ {end}",
+                color=TEXT, fontsize=12, fontweight="bold", y=0.99
+            )
+
+            def _style(ax):
+                ax.set_facecolor(GRID)
+                ax.tick_params(colors=TEXT)
+                for sp in ax.spines.values():
+                    sp.set_edgecolor("#334155")
+                ax.grid(axis="y", color="#334155", linestyle="--", alpha=0.5, zorder=0)
+
+            # ── 左上：客服案件長條圖 ────────────────────────────────────
+            ax1 = fig.add_subplot(3, 2, 1)
+            _style(ax1)
+            x = range(len(names))
+            w = 0.28
+            ax1.bar([i - w for i in x], totals, width=w, label="總案件", color=COLORS[0], zorder=3)
+            ax1.bar([i for i in x], actives, width=w, label="處理中", color=COLORS[2], zorder=3)
+            ax1.bar([i + w for i in x], dones, width=w, label="已完成", color=COLORS[1], zorder=3)
+            ax1.set_xticks(list(x))
+            ax1.set_xticklabels(names, color=TEXT)
+            ax1.set_title("各客服案件數", color=TEXT, fontsize=10)
+            ax1.legend(facecolor=BG, labelcolor=TEXT, fontsize=7)
+            for i, v in enumerate(totals):
+                ax1.text(i - w, v + 0.1, str(v), ha="center", color=TEXT, fontsize=8)
+
+            # ── 右上：各客服負責客戶數 ─────────────────────────────────
+            ax2 = fig.add_subplot(3, 2, 2)
+            _style(ax2)
+            bars2 = ax2.bar(names, companies, color=COLORS[:len(names)], zorder=3)
+            ax2.set_title("各客服負責客戶數", color=TEXT, fontsize=10)
+            for bar, v in zip(bars2, companies):
+                ax2.text(bar.get_x() + bar.get_width() / 2, v + 0.1, str(v),
+                         ha="center", color=TEXT, fontsize=9)
+
+            # ── 左中：問題類型圓餅圖 ───────────────────────────────────
+            ax3 = fig.add_subplot(3, 2, 3)
+            ax3.set_facecolor(BG)
+            if issue_counts:
+                sorted_issues = sorted(issue_counts.items(), key=lambda x: -x[1])
+                top_n = sorted_issues[:6]
+                other_sum = sum(v for _, v in sorted_issues[6:])
+                if other_sum:
+                    top_n.append(("其他", other_sum))
+                labels_p = [k for k, _ in top_n]
+                sizes_p = [v for _, v in top_n]
+                _, _, autotexts = ax3.pie(
+                    sizes_p, labels=labels_p, autopct="%1.1f%%",
+                    colors=COLORS[:len(labels_p)], startangle=140,
+                    textprops={"color": TEXT, "fontsize": 7},
+                )
+                for at in autotexts:
+                    at.set_color(BG)
+                    at.set_fontsize(7)
+            ax3.set_title("問題類型分佈", color=TEXT, fontsize=10)
+
+            # ── 右中：月份趨勢折線圖 ───────────────────────────────────
+            ax4 = fig.add_subplot(3, 2, 4)
+            _style(ax4)
+            ax4.grid(axis="both", color="#334155", linestyle="--", alpha=0.5, zorder=0)
+            if monthly:
+                months = list(monthly.keys())
+                mcounts = list(monthly.values())
+                ax4.plot(months, mcounts, color=COLORS[0], marker="o", linewidth=2, markersize=5, zorder=3)
+                ax4.fill_between(months, mcounts, alpha=0.15, color=COLORS[0])
+                ax4.set_xticks(range(len(months)))
+                ax4.set_xticklabels(months, rotation=45, ha="right", color=TEXT, fontsize=7)
+                for i, v in enumerate(mcounts):
+                    ax4.text(i, v + 0.2, str(v), ha="center", color=TEXT, fontsize=7)
+            ax4.set_title("月份案件量趨勢", color=TEXT, fontsize=10)
+
+            # ── 左下：各客戶案件數 Top 15 ─────────────────────────────
+            ax5 = fig.add_subplot(3, 2, 5)
+            ax5.set_facecolor(GRID)
+            ax5.tick_params(colors=TEXT)
+            for sp in ax5.spines.values():
+                sp.set_edgecolor("#334155")
+            ax5.grid(axis="x", color="#334155", linestyle="--", alpha=0.5, zorder=0)
+            if customer_counts:
+                cnames = list(customer_counts.keys())
+                ccounts = list(customer_counts.values())
+                y_pos = range(len(cnames))
+                ax5.barh(list(y_pos), ccounts, color=COLORS[0], zorder=3)
+                ax5.set_yticks(list(y_pos))
+                ax5.set_yticklabels(cnames, color=TEXT, fontsize=7)
+                for i, v in enumerate(ccounts):
+                    ax5.text(v + 0.1, i, str(v), va="center", color=TEXT, fontsize=7)
+            ax5.set_title("各客戶案件數 Top 15", color=TEXT, fontsize=10)
+            ax5.invert_yaxis()
+
+            # ── 右下：案件回覆次數分佈 ─────────────────────────────────
+            ax6 = fig.add_subplot(3, 2, 6)
+            _style(ax6)
+            if reply_dist:
+                r_labels = list(reply_dist.keys())
+                r_vals = list(reply_dist.values())
+                bars6 = ax6.bar(r_labels, r_vals, color=COLORS[3], zorder=3)
+                ax6.set_xticks(range(len(r_labels)))
+                ax6.set_xticklabels(r_labels, color=TEXT, fontsize=8)
+                for bar, v in zip(bars6, r_vals):
+                    ax6.text(bar.get_x() + bar.get_width() / 2, v + 0.1, str(v),
+                             ha="center", color=TEXT, fontsize=8)
+            ax6.set_title("案件回覆次數分佈", color=TEXT, fontsize=10)
+
+            fig.tight_layout(rect=[0, 0, 1, 0.98])
+
+            buf = io.BytesIO()
+            fig.savefig(buf, format="png", dpi=95, facecolor=BG, bbox_inches="tight")
+            plt.close(fig)
+            buf.seek(0)
+
+            pixmap = QPixmap()
+            pixmap.loadFromData(buf.read())
+
+            # 建立捲動圖表分頁
+            scroll = QScrollArea()
+            scroll.setWidgetResizable(True)
+            scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+            img_label = QLabel()
+            img_label.setPixmap(pixmap)
+            img_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            scroll.setWidget(img_label)
+
+            # 插入為第一個分頁
+            self._tab_widget.insertTab(0, scroll, "📊 統計圖表")
+            self._tab_widget.setCurrentIndex(0)
+
+        except Exception as e:
+            err_tab = QWidget()
+            QVBoxLayout(err_tab).addWidget(QLabel(f"圖表產生失敗：{e}"))
+            self._tab_widget.insertTab(0, err_tab, "📊 統計圖表")
 
     def _apply_theme(self, p: ColorPalette) -> None:
         """套用主題色彩。"""

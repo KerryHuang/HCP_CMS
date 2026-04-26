@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QMenu,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QSplitter,
     QTableWidget,
     QTableWidgetItem,
@@ -266,7 +267,12 @@ class CaseView(QWidget):
         kms_inner.addWidget(self._kms_panel)
         detail_layout.addRow(kms_group)
 
-        splitter.addWidget(detail)
+        scroll = QScrollArea()
+        scroll.setWidget(detail)
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        splitter.addWidget(scroll)
 
         # 調整上下比例：表格區佔較大比重，詳細面板佔較小比重
         splitter.setStretchFactor(0, 3)
@@ -650,8 +656,17 @@ class CaseView(QWidget):
     def _on_close_case(self) -> None:
         if not self._conn or not self._detail_id.text():
             return
-        CaseManager(self._conn).close_case(self._detail_id.text())
+        case_id = self._detail_id.text()
+        CaseManager(self._conn).close_case(case_id)
         self.refresh()
+        reply = QMessageBox.question(
+            self, "加入知識庫？",
+            f"案件 {case_id} 已結案。\n\n是否將此案件的問題與回覆加入知識庫？",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            self._on_add_to_kms()
 
     def _on_add_to_release(self) -> None:
         """手動將目前案件加入待發清單。"""

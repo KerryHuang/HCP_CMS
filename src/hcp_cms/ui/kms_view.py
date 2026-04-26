@@ -440,20 +440,57 @@ class KMSView(QWidget):
         pending_tab = QWidget()
         pending_layout = QVBoxLayout(pending_tab)
 
-        self._pending_table = QTableWidget(0, 3)
-        self._pending_table.setHorizontalHeaderLabels(["QA 編號", "問題預覽", "來源案件"])
-        self._pending_table.horizontalHeader().setStretchLastSection(True)
+        pending_splitter = QSplitter(Qt.Orientation.Vertical)
+
+        self._pending_table = QTableWidget(0, 5)
+        self._pending_table.setHorizontalHeaderLabels(
+            ["QA 編號", "問題預覽", "回覆預覽", "產品", "建立時間"]
+        )
+        self._pending_table.setColumnWidth(0, 110)
+        self._pending_table.setColumnWidth(3, 100)
+        self._pending_table.setColumnWidth(4, 130)
+        self._pending_table.horizontalHeader().setStretchLastSection(False)
+        self._pending_table.horizontalHeader().setSectionResizeMode(1, self._pending_table.horizontalHeader().ResizeMode.Stretch)
+        self._pending_table.horizontalHeader().setSectionResizeMode(2, self._pending_table.horizontalHeader().ResizeMode.Stretch)
         self._pending_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._pending_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self._pending_table.itemSelectionChanged.connect(self._on_pending_selection_changed)
         self._pending_table.doubleClicked.connect(self._on_review)
-        pending_layout.addWidget(self._pending_table)
+        pending_splitter.addWidget(self._pending_table)
+
+        # 下方預覽面板
+        preview_widget = QWidget()
+        preview_layout = QVBoxLayout(preview_widget)
+        preview_layout.setContentsMargins(4, 4, 4, 4)
+        preview_layout.setSpacing(4)
+        preview_hdr = QLabel("預覽（點選上方列）")
+        preview_hdr.setStyleSheet("color: #64748b; font-size: 11px;")
+        preview_layout.addWidget(preview_hdr)
+        preview_inner = QSplitter(Qt.Orientation.Horizontal)
+        self._pending_q_preview = QTextEdit()
+        self._pending_q_preview.setReadOnly(True)
+        self._pending_q_preview.setPlaceholderText("問題")
+        self._pending_a_preview = QTextEdit()
+        self._pending_a_preview.setReadOnly(True)
+        self._pending_a_preview.setPlaceholderText("回覆")
+        preview_inner.addWidget(self._pending_q_preview)
+        preview_inner.addWidget(self._pending_a_preview)
+        preview_inner.setSizes([300, 400])
+        preview_layout.addWidget(preview_inner)
+        pending_splitter.addWidget(preview_widget)
+        pending_splitter.setSizes([300, 200])
+        pending_layout.addWidget(pending_splitter)
 
         pending_btn_layout = QHBoxLayout()
         review_btn = QPushButton("✏️ 編輯審核")
         review_btn.clicked.connect(self._on_review)
+        self._quick_approve_btn = QPushButton("✅ 快速核准")
+        self._quick_approve_btn.setToolTip("直接核准選取的 QA，不開啟編輯視窗")
+        self._quick_approve_btn.clicked.connect(self._on_quick_approve)
         delete_btn = QPushButton("🗑️ 刪除")
         delete_btn.clicked.connect(self._on_delete_pending)
         pending_btn_layout.addWidget(review_btn)
+        pending_btn_layout.addWidget(self._quick_approve_btn)
         pending_btn_layout.addWidget(delete_btn)
         pending_btn_layout.addStretch()
         pending_layout.addLayout(pending_btn_layout)
@@ -542,8 +579,38 @@ class KMSView(QWidget):
         self._pending_table.setRowCount(count)
         for i, qa in enumerate(self._pending):
             self._pending_table.setItem(i, 0, QTableWidgetItem(qa.qa_id))
-            self._pending_table.setItem(i, 1, QTableWidgetItem((qa.question or "")[:50]))
-            self._pending_table.setItem(i, 2, QTableWidgetItem(qa.source_case_id or ""))
+            self._pending_table.setItem(i, 1, QTableWidgetItem((qa.question or "")[:60]))
+            self._pending_table.setItem(i, 2, QTableWidgetItem((qa.answer or "")[:60]))
+            self._pending_table.setItem(i, 3, QTableWidgetItem(qa.system_product or ""))
+            self._pending_table.setItem(i, 4, QTableWidgetItem((qa.created_at or "")[:16]))
+        # 清空預覽
+        if hasattr(self, "_pending_q_preview"):
+            self._pending_q_preview.clear()
+            self._pending_a_preview.clear()
+
+    def _on_pending_selection_changed(self) -> None:
+        rows = self._pending_table.selectionModel().selectedRows()
+        if not rows or not self._pending:
+            return
+        row = rows[0].row()
+        if row >= len(self._pending):
+            return
+        qa = self._pending[row]
+        self._pending_q_preview.setPlainText(qa.question or "")
+        self._pending_a_preview.setPlainText(qa.answer or "")
+
+    def _on_quick_approve(self) -> None:
+        if not self._kms:
+            return
+        rows = self._pending_table.selectionModel().selectedRows()
+        if not rows:
+            return
+        row = rows[0].row()
+        if row >= len(self._pending):
+            return
+        qa = self._pending[row]
+        self._kms.approve_qa(qa.qa_id)
+        self._refresh_pending()
 
     def _on_show_all(self) -> None:
         """載入所有已完成 QA 顯示於全部 tab。"""

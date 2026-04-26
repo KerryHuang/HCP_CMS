@@ -53,3 +53,53 @@ class TestClassifierMantis:
         )
         assert result["mantis_ticket_id"] == "0099999"
         assert result["mantis_issue_date"] == "2026/01/01"
+
+    def test_mantis_notify_subject_sets_issue_type(self, db):
+        """[公司名 NNNNN]: 格式主旨應自動設 issue_type = Mantis通知。"""
+        clf = Classifier(db)
+        result = clf.classify(
+            subject="[客服專區 (HCPSERVICE) 001691]: 2025/6/26 上午 09:42【台晶】外傷問題",
+            body="",
+            sender_email="noreply@mantis.system",
+            to_recipients=[],
+        )
+        assert result["issue_type"] == "Mantis通知"
+        assert result["mantis_ticket_id"] == "001691"
+
+    def test_issue_prefix_also_sets_issue_type(self, db):
+        """ISSUE_ 格式主旨也應自動設 issue_type = Mantis通知。"""
+        clf = Classifier(db)
+        result = clf.classify(
+            subject="ISSUE_20260325_I0017475_艾克爾 補發臨時薪資項目問題",
+            body="",
+            sender_email="user@example.com",
+            to_recipients=[],
+        )
+        assert result["issue_type"] == "Mantis通知"
+
+    def test_mantis_company_auto_assigned(self, db):
+        """若 DB 有名稱含 MANTIS 的公司，應自動帶入 company_id。"""
+        db.execute(
+            "INSERT INTO companies (company_id, name, domain) VALUES ('mantis-sys', 'MANTIS系統', 'mantis.system')"
+        )
+        db.commit()
+        clf = Classifier(db)
+        result = clf.classify(
+            subject="[客服專區 (HCPSERVICE) 001691]: 薪資問題",
+            body="",
+            sender_email="noreply@mantis.system",
+            to_recipients=[],
+        )
+        assert result["company_id"] == "mantis-sys"
+
+    def test_no_mantis_company_in_db_stays_none(self, db):
+        """DB 無 MANTIS 公司時，company_id 維持 None 不報錯。"""
+        clf = Classifier(db)
+        result = clf.classify(
+            subject="[客服專區 (HCPSERVICE) 001691]: 薪資問題",
+            body="",
+            sender_email="noreply@mantis.system",
+            to_recipients=[],
+        )
+        assert result["issue_type"] == "Mantis通知"
+        assert result["company_id"] is None

@@ -117,6 +117,25 @@ class CaseDetailDialog(QDialog):
         except Exception:
             return defaults
 
+    def _set_combo(self, combo: QComboBox, value: str) -> None:
+        """設定 QComboBox 的目前值；若選項中不存在則自動加入。"""
+        idx = combo.findText(value)
+        if idx >= 0:
+            combo.setCurrentIndex(idx)
+        else:
+            combo.setCurrentText(value)
+
+    def _load_rule_values(self, rule_type: str, fallback: list[str]) -> list[str]:
+        """從 classification_rules 載入指定 rule_type 的 value 選項（依 priority 排序）。"""
+        try:
+            rows = self._conn.execute(
+                "SELECT DISTINCT value FROM classification_rules WHERE rule_type=? AND enabled=1 ORDER BY priority",
+                (rule_type,),
+            ).fetchall()
+            return [""] + [r[0] for r in rows] if rows else [""] + fallback
+        except Exception:
+            return [""] + fallback
+
     def _build_tab1(self) -> QWidget:
         w = QWidget()
         outer = QVBoxLayout(w)
@@ -160,9 +179,15 @@ class CaseDetailDialog(QDialog):
         self._f_status.addItems(self._load_status_options())
         self._f_priority = QComboBox()
         self._f_priority.addItems(["高", "中", "低"])
-        self._f_issue_type = QLineEdit()
-        self._f_error_type = QLineEdit()
-        self._f_system_product = QLineEdit()
+        self._f_issue_type = QComboBox()
+        self._f_issue_type.setEditable(True)
+        self._f_issue_type.addItems(self._load_rule_values("issue", ["OTH"]))
+        self._f_error_type = QComboBox()
+        self._f_error_type.setEditable(True)
+        self._f_error_type.addItems(self._load_rule_values("error", []))
+        self._f_system_product = QComboBox()
+        self._f_system_product.setEditable(True)
+        self._f_system_product.addItems(self._load_rule_values("product", ["HCP"]))
         self._f_rd_assignee = QLineEdit()
         self._f_handler = QLineEdit()
         self._f_reply_time = QLineEdit()
@@ -694,9 +719,9 @@ class CaseDetailDialog(QDialog):
         self._f_status.setCurrentIndex(max(idx, 0))
         idx = self._f_priority.findText(case.priority)
         self._f_priority.setCurrentIndex(max(idx, 0))
-        self._f_issue_type.setText(case.issue_type or "")
-        self._f_error_type.setText(case.error_type or "")
-        self._f_system_product.setText(case.system_product or "")
+        self._set_combo(self._f_issue_type, case.issue_type or "")
+        self._set_combo(self._f_error_type, case.error_type or "")
+        self._set_combo(self._f_system_product, case.system_product or "")
         self._f_rd_assignee.setText(case.rd_assignee or "")
         self._f_handler.setText(case.handler or "")
         # 自動計算回應時長：sent_time → 最後一筆 HCP 回覆 log
@@ -755,9 +780,9 @@ class CaseDetailDialog(QDialog):
         case.contact_method = self._f_contact_method.currentText()
         case.status = self._f_status.currentText()
         case.priority = self._f_priority.currentText()
-        case.issue_type = self._f_issue_type.text() or None
-        case.error_type = self._f_error_type.text() or None
-        case.system_product = self._f_system_product.text() or None
+        case.issue_type = self._f_issue_type.currentText() or None
+        case.error_type = self._f_error_type.currentText() or None
+        case.system_product = self._f_system_product.currentText() or None
         case.rd_assignee = self._f_rd_assignee.text() or None
         case.handler = self._f_handler.text() or None
         case.reply_time = self._f_reply_time.text() or None
@@ -800,10 +825,62 @@ class CaseDetailDialog(QDialog):
         try:
             self._manager.close_case(self._case_id)
             self.case_updated.emit()
-            QMessageBox.information(self, "結案完成", f"案件 {self._case_id} 已標記為「已完成」。")
-            self.accept()  # 關閉詳情對話框
         except Exception as e:
             QMessageBox.critical(self, "操作失敗", str(e))
+            return
+
+        # 結案後詢問是否加入知識庫
+        kms_reply = QMessageBox.question(
+            self, "加入知識庫？",
+            f"案件 {self._case_id} 已結案。\n\n是否將此案件的問題與回覆加入知識庫？",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if kms_reply == QMessageBox.StandardButton.Yes:
+            self._add_to_kms_from_detail()
+
+        self.accept()
+
+    def _add_to_kms_from_detail(self) -> None:
+        """結案後從詳情對話框將案件加入 KMS 待審核。"""
+        from hcp_cms.core.kms_engine import KMSEngine
+        from hcp_cms.data.repositories import CaseLogRepository
+
+        logs = CaseLogRepository(self._conn).list_by_case(self._case_id)
+        hcp_logs = [lg for lg in logs if lg.direction in ("HCP 信件回覆", "HCP 線上回覆")]
+
+        if not hcp_logs:
+            QMessageBox.warning(
+                self, "無回覆記錄",
+                "此案件尚無 HCP 回覆記錄，無法自動建立知識庫條目。\n"
+                "請至 KMS 知識庫手動新增。"
+            )
+            return
+
+        case = self._case
+        if case is None:
+            return
+        answer = hcp_logs[-1].content or ""
+        question = case.subject or ""
+
+        try:
+            qa = KMSEngine(self._conn).create_qa(
+                question=question,
+                answer=answer,
+                system_product=case.system_product,
+                issue_type=case.issue_type,
+                error_type=case.error_type,
+                source="case",
+                source_case_id=self._case_id,
+                status="待審核",
+            )
+            QMessageBox.information(
+                self, "已加入知識庫",
+                f"已建立知識庫條目 {qa.qa_id}（待審核）。\n"
+                "請至「KMS 知識庫 → 待審核」確認後發布。"
+            )
+        except Exception as e:
+            QMessageBox.critical(self, "建立失敗", f"建立知識庫條目時發生錯誤：\n{e}")
 
     def _on_tab_changed(self, index: int) -> None:
         if index == 1:

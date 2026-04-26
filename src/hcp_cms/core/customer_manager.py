@@ -194,6 +194,33 @@ class CustomerManager:
             self._conn.commit()
         return matched
 
+    def force_reassociate_case_companies(self) -> int:
+        """強制重新比對所有案件的公司別（含已有公司別者）。
+
+        依 contact_person email 網域查詢 companies.domain（支援逗號分隔多 domain）。
+        找到匹配且與現有 company_id 不同時才更新，避免不必要的寫入。
+
+        Returns:
+            實際更新的案件數
+        """
+        matched = 0
+        for case_id, contact_person, current_company_id in self._case_repo.list_all_with_contact_email():
+            if not contact_person or "@" not in contact_person:
+                continue
+            domain = contact_person.split("@")[-1].strip().lower()
+            company = self._company_repo.get_by_domain(domain)
+            if not company:
+                parts = domain.split(".")
+                if len(parts) > 2:
+                    company = self._company_repo.get_by_domain(".".join(parts[1:]))
+            if company and company.company_id != current_company_id:
+                self._case_repo.update_company_id(case_id, company.company_id)
+                matched += 1
+
+        if matched:
+            self._conn.commit()
+        return matched
+
     # ── Mantis HcpVersion 同步 ────────────────────────────────────────────
 
     def sync_hcp_version_from_mantis(self, client) -> tuple[int, str]:

@@ -16,12 +16,27 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
+    QStyledItemDelegate,
     QTableWidget,
     QTableWidgetItem,
     QTabWidget,
     QVBoxLayout,
     QWidget,
 )
+
+
+class _FixedHeightDelegate(QStyledItemDelegate):
+    """確保 inline editor 高度不低於列高，防止編輯時列高縮小。"""
+
+    def __init__(self, min_height: int = 32, parent=None):
+        super().__init__(parent)
+        self._min_height = min_height
+
+    def createEditor(self, parent, option, index):
+        editor = super().createEditor(parent, option, index)
+        if editor is not None:
+            editor.setMinimumHeight(self._min_height)
+        return editor
 
 from hcp_cms.core.customer_manager import CustomerManager
 from hcp_cms.services.credential import CredentialManager
@@ -31,7 +46,7 @@ from hcp_cms.ui.theme import ColorPalette, ThemeManager
 # 客戶公司固定欄（不含負責客服/業務，後者用 QComboBox）
 _COMPANY_FIXED_COLS: list[tuple[str, str]] = [
     ("公司名稱 *", "name"),
-    ("網域 *（@後）", "domain"),
+    ("網域 *（@後，多個以逗號分隔）", "domain"),
     ("別名", "alias"),
     ("聯絡資訊", "contact_info"),
 ]
@@ -176,7 +191,11 @@ class CustomerView(QWidget):
         # 設定各欄初始寬度：HcpVersion、公司名稱、網域、別名、聯絡資訊、負責客服、負責業務
         for col, width in enumerate([80, 180, 160, 120, 200, 130, 130]):
             self._company_table.setColumnWidth(col, width)
-        self._company_table.verticalHeader().setDefaultSectionSize(28)
+        _vh = self._company_table.verticalHeader()
+        _vh.setDefaultSectionSize(32)
+        _vh.setMinimumSectionSize(32)
+        _vh.setSectionResizeMode(_vh.ResizeMode.Fixed)
+        self._company_table.setItemDelegate(_FixedHeightDelegate(32, self._company_table))
         layout.addWidget(self._company_table)
         return w
 
@@ -196,7 +215,11 @@ class CustomerView(QWidget):
             # 設定各欄寬：姓名、Email、電話、備註
             for col, width in enumerate([150, 220, 140, 300]):
                 self._cs_table.setColumnWidth(col, width)
-            self._cs_table.verticalHeader().setDefaultSectionSize(28)
+            _vh_cs = self._cs_table.verticalHeader()
+            _vh_cs.setDefaultSectionSize(32)
+            _vh_cs.setMinimumSectionSize(32)
+            _vh_cs.setSectionResizeMode(_vh_cs.ResizeMode.Fixed)
+            self._cs_table.setItemDelegate(_FixedHeightDelegate(32, self._cs_table))
             layout.addWidget(toolbar)
             layout.addWidget(self._cs_table)
         else:
@@ -211,7 +234,11 @@ class CustomerView(QWidget):
             # 設定各欄寬：姓名、Email、電話、備註
             for col, width in enumerate([150, 220, 140, 300]):
                 self._sales_table.setColumnWidth(col, width)
-            self._sales_table.verticalHeader().setDefaultSectionSize(28)
+            _vh_sales = self._sales_table.verticalHeader()
+            _vh_sales.setDefaultSectionSize(32)
+            _vh_sales.setMinimumSectionSize(32)
+            _vh_sales.setSectionResizeMode(_vh_sales.ResizeMode.Fixed)
+            self._sales_table.setItemDelegate(_FixedHeightDelegate(32, self._sales_table))
             layout.addWidget(toolbar)
             layout.addWidget(self._sales_table)
         return w
@@ -360,7 +387,29 @@ class CustomerView(QWidget):
         rows = self._collect_company_rows()
         mgr = CustomerManager(self._conn)
         inserted, updated = mgr.bulk_upsert_companies(rows)
-        QMessageBox.information(self, "儲存完成", f"新增 {inserted} 筆，更新 {updated} 筆。")
+        msg = f"新增 {inserted} 筆，更新 {updated} 筆。"
+        if updated > 0:
+            from PySide6.QtWidgets import QAbstractButton
+            box = QMessageBox(self)
+            box.setWindowTitle("儲存完成")
+            box.setText(f"{msg}\n\n是否同步更新案件管理的公司別？")
+            btn_null  = box.addButton("僅比對未歸屬案件", QMessageBox.ButtonRole.AcceptRole)
+            btn_force = box.addButton("強制比對全部案件", QMessageBox.ButtonRole.ActionRole)
+            btn_skip  = box.addButton("不更新", QMessageBox.ButtonRole.RejectRole)
+            box.setDefaultButton(btn_null)
+            box.exec()
+            clicked = box.clickedButton()
+            try:
+                if clicked is btn_null:
+                    count = mgr.reassociate_case_companies()
+                    QMessageBox.information(self, "比對完成", f"已更新 {count} 筆未歸屬案件的公司別。")
+                elif clicked is btn_force:
+                    count = mgr.force_reassociate_case_companies()
+                    QMessageBox.information(self, "比對完成", f"已強制更新 {count} 筆案件的公司別。")
+            except Exception as exc:
+                QMessageBox.critical(self, "比對失敗", f"比對時發生錯誤：{exc}")
+        else:
+            QMessageBox.information(self, "儲存完成", msg)
         self.refresh()
 
     def _on_save_cs_staff(self) -> None:

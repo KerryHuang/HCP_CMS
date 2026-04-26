@@ -84,10 +84,15 @@ class CompanyRepository:
         return Company(**dict(row))
 
     def get_by_domain(self, domain: str) -> Company | None:
-        row = self._conn.execute("SELECT * FROM companies WHERE domain = ?", (domain,)).fetchone()
-        if row is None:
-            return None
-        return Company(**dict(row))
+        """以 domain 查詢公司，支援逗號分隔多 domain（如 'abc.com, abc.com.tw'）。"""
+        domain = domain.strip().lower()
+        rows = self._conn.execute("SELECT * FROM companies WHERE domain IS NOT NULL").fetchall()
+        for row in rows:
+            stored = (row["domain"] or "")
+            parts = [d.strip().lower() for d in stored.split(",") if d.strip()]
+            if domain in parts:
+                return Company(**dict(row))
+        return None
 
     def list_all(self) -> list[Company]:
         rows = self._conn.execute("SELECT * FROM companies").fetchall()
@@ -579,6 +584,15 @@ class CaseRepository:
             self._conn.execute("DELETE FROM processed_files")
             self._conn.commit()
         return len(case_ids)
+
+    def list_all_with_contact_email(self) -> list[tuple[str, str, str | None]]:
+        """回傳所有有 email contact_person 的案件 (case_id, contact_person, company_id)。
+        用於強制重新比對，包含已有公司別的案件。
+        """
+        rows = self._conn.execute(
+            "SELECT case_id, contact_person, company_id FROM cs_cases WHERE contact_person LIKE '%@%'"
+        ).fetchall()
+        return [(r[0], r[1], r[2]) for r in rows]
 
     def list_null_company_with_contact(self) -> list[tuple[str, str]]:
         """回傳 company_id 為 NULL 且 contact_person 含 '@' 的 (case_id, contact_person)。
