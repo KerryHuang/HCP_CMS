@@ -29,10 +29,12 @@ from PySide6.QtWidgets import (
 )
 
 from hcp_cms.core.case_manager import CaseManager
-from hcp_cms.core.kms_engine import KMSEngine
 from hcp_cms.data.fts import FTSManager
 from hcp_cms.data.repositories import CaseLogRepository, CaseRepository, CompanyRepository
 from hcp_cms.ui.theme import ColorPalette, ThemeManager
+
+# 注意：KMSEngine 改為 lazy import（在 method 內 import），
+# 避免啟動時連帶載入 openpyxl（~5 秒）影響桌面 ICON 啟動速度。
 
 _FIXED_COL_COUNT = 9
 
@@ -471,6 +473,7 @@ class CaseView(QWidget):
             self._kms_panel.setHtml("<i style='color:#6b7280'>（無主旨，無法搜尋）</i>")
             return
         try:
+            from hcp_cms.core.kms_engine import KMSEngine  # lazy: 避免啟動時載入 openpyxl
             results = KMSEngine(self._conn).search(subject.strip())[:3]
         except Exception:
             self._kms_panel.setHtml("<i style='color:#6b7280'>（搜尋失敗）</i>")
@@ -850,6 +853,7 @@ class CaseView(QWidget):
             return
 
         try:
+            from hcp_cms.core.kms_engine import KMSEngine  # lazy: 避免啟動時載入 openpyxl
             qa = KMSEngine(self._conn).create_qa(
                 question=final_q,
                 answer=final_a,

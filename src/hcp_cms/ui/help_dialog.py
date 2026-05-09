@@ -15,18 +15,26 @@ from PySide6.QtWidgets import (
 
 from hcp_cms.ui.theme import ColorPalette
 
-# 頁面索引 → (頁面名稱, 起始章節號, 結束章節號) 的對應表
-# 結束章節號為 exclusive（不含）
-PAGE_SECTIONS: list[tuple[str, int, int]] = [
-    ("儀表板", 3, 4),
-    ("案件管理", 4, 5),
-    ("KMS 知識庫", 5, 6),
-    ("信件處理", 6, 7),
-    ("Mantis 同步", 7, 8),
-    ("報表中心", 8, 9),
-    ("規則設定", 9, 10),
-    ("系統設定", 10, 12),  # 含第 11 章備份還原
-]
+# 導覽鍵 → (頁面顯示名稱, 起始章節號, 結束章節號) 對應表
+# 結束章節號為 exclusive（不含）。鍵與 main_window 的 nav 項 UserRole data 對應。
+# ⚠ 改用 dict 而非 list：先前用 index 對應，nav 新增「客戶管理」「Patch 整理」「操作說明」後
+#   會錯位（KMS 顯示信件處理章節等）。
+PAGE_SECTIONS: dict[str, tuple[str, int, int]] = {
+    "dashboard": ("儀表板", 3, 4),
+    "cases": ("案件管理", 4, 5),
+    # 客戶管理目前無獨立章節，回退到案件管理章節
+    # （客戶資訊與案件相關，§4.7 案件詳情亦含公司欄位）。
+    # 完整客戶管理操作請使用左側「📖 操作說明」分頁瀏覽全部文件。
+    "customers": ("客戶管理（含於案件管理章節）", 4, 5),
+    "kms": ("KMS 知識庫", 5, 6),
+    "email": ("信件處理", 6, 7),
+    "mantis": ("Mantis 同步", 7, 8),
+    "reports": ("報表中心", 8, 9),
+    "patch": ("Patch 整理", 13, 14),
+    "rules": ("規則設定", 9, 10),
+    "settings": ("系統設定", 10, 12),  # 含第 11 章備份還原
+    # "help" 鍵刻意省略 — 在「📖 操作說明」分頁時 F1 不開 dialog（避免重複）
+}
 
 
 def _build_help_css(p: ColorPalette) -> str:
@@ -61,12 +69,18 @@ hr {{ border: none; border-top: 1px solid {p.border_primary}; margin: 20px 0; }}
 """
 
 
-def extract_section(manual_text: str, page_index: int) -> str:
-    """Extract the manual section(s) corresponding to a page index."""
-    if page_index < 0 or page_index >= len(PAGE_SECTIONS):
+def extract_section(manual_text: str, page_key: str) -> str:
+    """Extract the manual section(s) corresponding to a nav-key.
+
+    Args:
+        manual_text: 操作手冊的 markdown 全文
+        page_key: nav 項的鍵（如 "kms"、"cases"），與 PAGE_SECTIONS 對應
+    """
+    section = PAGE_SECTIONS.get(page_key)
+    if section is None:
         return "找不到對應的說明內容。"
 
-    _, start_ch, end_ch = PAGE_SECTIONS[page_index]
+    _, start_ch, end_ch = section
 
     # 找出所有 ## N. 標題的位置
     pattern = re.compile(r"^## (\d+)\. ", re.MULTILINE)
@@ -108,7 +122,7 @@ class HelpDialog(QDialog):
 
     def __init__(
         self,
-        page_index: int,
+        page_key: str,
         manual_text: str,
         parent: object | None = None,
         palette: ColorPalette | None = None,
@@ -118,9 +132,9 @@ class HelpDialog(QDialog):
         p = palette or DARK_PALETTE
 
         # 取得頁面名稱
-        if 0 <= page_index < len(PAGE_SECTIONS):
-            page_name = PAGE_SECTIONS[page_index][0]
-            title = f"說明 — {page_name}"
+        section = PAGE_SECTIONS.get(page_key)
+        if section is not None:
+            title = f"說明 — {section[0]}"
         else:
             title = "說明"
 
@@ -129,7 +143,7 @@ class HelpDialog(QDialog):
         self.setMinimumSize(600, 400)
 
         # 擷取章節並渲染
-        section_md = extract_section(manual_text, page_index)
+        section_md = extract_section(manual_text, page_key)
         html = render_help_html(section_md, palette=p)
 
         # UI

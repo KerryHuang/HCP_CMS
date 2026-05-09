@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+from typing import TYPE_CHECKING
 
 from PySide6.QtCore import Qt, QThread, QUrl, Signal
 from PySide6.QtGui import QColor, QDesktopServices
@@ -25,7 +26,10 @@ from PySide6.QtWidgets import (
 from hcp_cms.core.mantis_classifier import MantisClassifier
 from hcp_cms.data.repositories import MantisRepository
 from hcp_cms.services.credential import CredentialManager
-from hcp_cms.services.mantis.soap import MantisSoapClient
+
+if TYPE_CHECKING:
+    # 僅供型別註解，避免啟動時載入 requests（~2.5 秒）
+    from hcp_cms.services.mantis.soap import MantisSoapClient  # noqa: F401
 from hcp_cms.ui.theme import ColorPalette, ThemeManager
 
 
@@ -427,6 +431,7 @@ class MantisView(QWidget):
             return None
         # 自動修正：無論填入哪種 Mantis 網址，都萃取 base URL
         base_url = self._extract_base_url(url)
+        from hcp_cms.services.mantis.soap import MantisSoapClient  # lazy
         client = MantisSoapClient(base_url, user, pwd)
         if not client.connect():
             QMessageBox.warning(self, "連線失敗", f"無法連線至 Mantis：\n{base_url}")

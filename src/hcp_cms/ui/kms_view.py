@@ -33,8 +33,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from hcp_cms.core.kms_engine import KMSEngine
 from hcp_cms.ui.theme import ColorPalette, ThemeManager
+
+if TYPE_CHECKING:
+    # 僅供型別註解，避免啟動時載入 openpyxl（~4 秒）
+    from hcp_cms.core.kms_engine import KMSEngine  # noqa: F401
 
 _IMAGE_EXTS = frozenset({".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"})
 
@@ -284,7 +287,12 @@ class KMSView(QWidget):
     ) -> None:
         super().__init__()
         self._conn = conn
-        self._kms = kms or (KMSEngine(conn) if conn else None)
+        # Lazy import KMSEngine：避免啟動時載入 openpyxl（~4 秒）
+        if kms is None and conn is not None:
+            from hcp_cms.core.kms_engine import KMSEngine
+            self._kms = KMSEngine(conn)
+        else:
+            self._kms = kms
         self._db_dir = db_dir
         self._theme_mgr = theme_mgr
         self._results: list = []

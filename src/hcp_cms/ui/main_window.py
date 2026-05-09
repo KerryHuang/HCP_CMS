@@ -20,11 +20,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from hcp_cms.core.kms_engine import KMSEngine
 from hcp_cms.ui.case_view import CaseView
 from hcp_cms.ui.customer_view import CustomerView
 from hcp_cms.ui.dashboard_view import DashboardView
 from hcp_cms.ui.email_view import EmailView
+from hcp_cms.ui.help_view import HelpView
 from hcp_cms.ui.kms_view import KMSView
 from hcp_cms.ui.mantis_view import MantisView
 from hcp_cms.ui.patch_view import PatchView
@@ -96,6 +96,7 @@ class MainWindow(QMainWindow):
             ("📦 Patch 整理", "patch", "⇧P"),
             ("📏 規則設定", "rules", "⇧L"),
             ("⚙️ 系統設定", "settings", "⇧S"),
+            ("📖 操作說明", "help", "⇧/"),
         ]
 
         for text, key, shortcut in nav_items:
@@ -113,7 +114,12 @@ class MainWindow(QMainWindow):
         # Content area (stacked widget)
         self._stack = QStackedWidget()
 
-        kms = KMSEngine(self._conn) if self._conn else None
+        # Lazy import：KMSEngine 連帶 openpyxl（~5 秒），延後到實際需要時才載入。
+        # 這裡只在 conn 存在時 import + 建立實例。
+        kms = None
+        if self._conn:
+            from hcp_cms.core.kms_engine import KMSEngine
+            kms = KMSEngine(self._conn)
 
         self._views: dict[str, QWidget] = {
             "dashboard": DashboardView(self._conn, theme_mgr=self._theme_mgr),
@@ -128,6 +134,7 @@ class MainWindow(QMainWindow):
             "patch": PatchView(self._conn, theme_mgr=self._theme_mgr),
             "rules": RulesView(self._conn, theme_mgr=self._theme_mgr),
             "settings": SettingsView(self._conn, theme_mgr=self._theme_mgr),
+            "help": HelpView(theme_mgr=self._theme_mgr),
         }
 
         for view in self._views.values():
@@ -211,6 +218,7 @@ class MainWindow(QMainWindow):
             ("Ctrl+Shift+P", 7),  # Patch 整理
             ("Ctrl+Shift+L", 8),  # 規則設定
             ("Ctrl+Shift+S", 9),  # 系統設定
+            ("Ctrl+Shift+?", 10),  # 操作說明
         ]
         for key, index in shortcuts:
             action = QAction(key, self)
@@ -225,14 +233,21 @@ class MainWindow(QMainWindow):
         self.addAction(help_action)
 
     def _on_help_requested(self) -> None:
-        """Open help dialog for the current page."""
+        """Open help dialog for the current page (依 nav key 對應章節)."""
         from hcp_cms.ui.help_dialog import HelpDialog
+
+        item = self._nav_list.currentItem()
+        if item is None:
+            return
+        page_key = item.data(Qt.ItemDataRole.UserRole)
+        # 在「操作說明」頁面按 F1 不重複開 dialog（已是完整文件瀏覽器）
+        if page_key == "help":
+            return
 
         manual_text = self._load_manual()
         if manual_text:
-            page_index = self._nav_list.currentRow()
             palette = self._current_palette if hasattr(self, "_current_palette") else None
-            dialog = HelpDialog(page_index, manual_text, parent=self, palette=palette)
+            dialog = HelpDialog(page_key, manual_text, parent=self, palette=palette)
             dialog.exec()
 
     def _load_manual(self) -> str:

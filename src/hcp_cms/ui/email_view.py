@@ -9,6 +9,7 @@ import traceback
 import warnings
 from html import escape
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QDate, Qt, Signal
 from PySide6.QtWebEngineWidgets import QWebEngineView
@@ -34,7 +35,10 @@ from PySide6.QtWidgets import (
 )
 
 from hcp_cms.core.case_manager import CaseManager
-from hcp_cms.core.kms_engine import KMSEngine
+
+if TYPE_CHECKING:
+    # 僅供型別註解，避免啟動時載入 openpyxl（~5 秒）
+    from hcp_cms.core.kms_engine import KMSEngine  # noqa: F401
 from hcp_cms.data.repositories import ProcessedFileRepository
 from hcp_cms.services.credential import CredentialManager
 from hcp_cms.services.mail.base import MailProvider, RawEmail

@@ -42,8 +42,10 @@ class _FixedHeightDelegate(QStyledItemDelegate):
 
 from hcp_cms.core.customer_manager import CustomerManager
 from hcp_cms.services.credential import CredentialManager
-from hcp_cms.services.mantis.soap import MantisSoapClient
 from hcp_cms.ui.theme import ColorPalette, ThemeManager
+
+# 注意：MantisSoapClient 改為 lazy import（在 method 內 import），
+# 避免啟動時連帶載入 requests/urllib3（~2.5 秒）影響桌面 ICON 啟動速度。
 
 # 客戶公司固定欄（不含負責客服/業務，後者用 QComboBox）
 _COMPANY_FIXED_COLS: list[tuple[str, str]] = [
@@ -587,6 +589,7 @@ class CustomerView(QWidget):
             path = path[:path.rfind("/")]
         base_url = f"{parsed.scheme}://{parsed.netloc}{path}".rstrip("/")
 
+        from hcp_cms.services.mantis.soap import MantisSoapClient  # lazy: 避免啟動時載入 requests
         client = MantisSoapClient(base_url, username=user, password=pwd)
         if not client.connect():
             QMessageBox.critical(self, "連線失敗", f"無法連線至 Mantis：{client.last_error}")

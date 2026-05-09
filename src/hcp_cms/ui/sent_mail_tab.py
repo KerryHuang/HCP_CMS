@@ -30,12 +30,14 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from hcp_cms.core.excel_exporter import ExcelExporter
 from hcp_cms.core.sent_mail_manager import EnrichedSentMail, SentMailManager
 from hcp_cms.data.models import Company
 from hcp_cms.data.repositories import CompanyRepository
 from hcp_cms.services.mail.base import MailProvider
 from hcp_cms.ui.theme import ColorPalette, ThemeManager
+
+# 注意：ExcelExporter 改為 lazy import（在 method 內 import），
+# 避免啟動時載入 openpyxl（~4 秒）影響桌面 ICON 啟動速度。
 
 
 class _UnknownCompanyDialog(QDialog):
@@ -470,6 +472,7 @@ class SentMailTab(QWidget):
         if not path:
             return
         try:
+            from hcp_cms.core.excel_exporter import ExcelExporter  # lazy: 避免啟動載入 openpyxl
             ExcelExporter().export_sent_mail(self._current_mails, path)
             self._log.append(f"✅ 已匯出至 {path}")
         except Exception as e:

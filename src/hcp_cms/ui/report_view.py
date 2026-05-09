@@ -27,9 +27,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from hcp_cms.core.report_engine import ReportEngine
 from hcp_cms.ui.theme import ColorPalette, ThemeManager
 from hcp_cms.ui.utils import open_file
+
+# 注意：ReportEngine 改為 lazy import（在 method 內 import），
+# 避免啟動時載入 openpyxl（~3.5 秒）影響桌面 ICON 啟動速度。
 
 
 class ReportView(QWidget):
@@ -162,6 +164,7 @@ class ReportView(QWidget):
             return
 
         try:
+            from hcp_cms.core.report_engine import ReportEngine  # lazy: 避免啟動載入 openpyxl
             engine = ReportEngine(self._conn)
             report_type = self._type_combo.currentText()
             if report_type == "追蹤表":
@@ -596,6 +599,7 @@ class ReportView(QWidget):
             return
 
         try:
+            from hcp_cms.core.report_engine import ReportEngine  # lazy
             engine = ReportEngine(self._conn)
             if report_type == "追蹤表":
                 engine.generate_tracking_table(start, end, Path(path))
