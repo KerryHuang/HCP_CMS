@@ -214,6 +214,7 @@ class CaseManager:
                 )
             except Exception:
                 pass  # 偵測失敗不影響主流程
+            self._maybe_auto_close_thread(existing, subject, sender_email)
             return existing, "merged"
 
         # 沒有 existing → 原有建案流程（不變）
@@ -249,6 +250,7 @@ class CaseManager:
             )
         except Exception:
             pass  # 偵測失敗不影響主流程
+        self._maybe_auto_close_thread(case, subject, sender_email)
         return case, "created"
 
     def create_case(
@@ -446,6 +448,39 @@ class CaseManager:
     def close_case(self, case_id: str) -> None:
         """Mark case as completed."""
         self._case_repo.update_status(case_id, "已完成")
+
+    def close_thread(self, case_id: str) -> int:
+        """關閉指定案件所屬整串 thread（root + 所有後代）→ 全部設為「已完成」。
+
+        Returns:
+            被關閉的案件數量。case_id 不存在時回傳 0。
+        """
+        members = self._tracker.find_thread_members(case_id)
+        for m in members:
+            self._case_repo.update_status(m.case_id, "已完成")
+        return len(members)
+
+    # 自動結案關鍵字：HCP 客服在主旨末端追加 (回覆結案) 表示已完成處理。
+    # ⚠ 嚴格匹配（含括號）— 避免「回覆結案」一般詞被誤觸發。
+    _AUTO_CLOSE_KEYWORD = "(回覆結案)"
+
+    def _maybe_auto_close_thread(
+        self, case: Case | None, subject: str, sender_email: str
+    ) -> None:
+        """若 HCP 端回覆主旨含 (回覆結案) → 自動結案整串 thread。
+
+        判定條件全部成立才觸發：
+          1. case 存在
+          2. direction 為「HCP 信件回覆」（依寄件者網域，由 _detect_direction 判定）
+          3. 主旨含關鍵字 (回覆結案)（嚴格匹配，含括號；僅看主旨不看 body）
+        """
+        if case is None:
+            return
+        if self._AUTO_CLOSE_KEYWORD not in subject:
+            return
+        if _detect_direction(sender_email, subject) != "HCP 信件回覆":
+            return
+        self.close_thread(case.case_id)
 
     def delete_case(self, case_id: str) -> None:
         """刪除單一案件（含 KMS 待審查條目）。"""

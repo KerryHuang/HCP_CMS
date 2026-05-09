@@ -175,6 +175,59 @@ class TestReportEngine:
         assert ase_rows[1][0] == "案件編號"
         assert len(ase_rows) == 4  # link + header + 2 cases
 
+    def test_cs_index_sheet_has_total_row(self, seeded_db):
+        """各客服分頁尾端應有「合計」列，E 欄為案件數加總。
+
+        seeded_db 中 C1=日月光 有 2 個案件、C2=欣興 有 1 個案件。
+        兩公司都未指定 cs_staff_id → 全部歸入「👤 其他」分頁。
+        合計列應為 3。
+        """
+        engine = ReportEngine(seeded_db.connection)
+        data = engine.build_tracking_table("2026/03/01", "2026/03/31")
+        other_rows = data["👤 其他"]
+        last_row = other_rows[-1]
+        assert last_row[1] == "合計"
+        # E 欄（index 4）= 獨立案件數加總
+        assert last_row[4] == 3
+
+    def test_cs_index_total_excludes_empty_sheet(self, seeded_db):
+        """無案件的客服分頁不應追加合計列（避免空表 + 合計 = 2 列假象）。"""
+        from hcp_cms.data.models import Staff
+        from hcp_cms.data.repositories import StaffRepository
+        StaffRepository(seeded_db.connection).insert(
+            Staff(staff_id="STAFF-JILL", name="Jill", email="jill@ares.com.tw", role="cs")
+        )
+        engine = ReportEngine(seeded_db.connection)
+        data = engine.build_tracking_table("2026/03/01", "2026/03/31")
+        jill_rows = data["👤 Jill"]
+        # Jill 沒有任何負責公司，分頁只有表頭
+        assert len(jill_rows) == 1
+
+    def test_cs_index_total_per_staff(self, seeded_db):
+        """合計列應只計算該客服分頁內的案件，不跨客服累計。"""
+        from hcp_cms.data.models import Staff
+        from hcp_cms.data.repositories import CompanyRepository, StaffRepository
+
+        StaffRepository(seeded_db.connection).insert(
+            Staff(staff_id="STAFF-JILL", name="Jill", email="jill@ares.com.tw", role="cs")
+        )
+        # 將 C1=日月光 指派給 Jill
+        comp_repo = CompanyRepository(seeded_db.connection)
+        c1 = comp_repo.get_by_id("C1")
+        c1.cs_staff_id = "STAFF-JILL"
+        comp_repo.update(c1)
+
+        engine = ReportEngine(seeded_db.connection)
+        data = engine.build_tracking_table("2026/03/01", "2026/03/31")
+        # Jill 分頁應有日月光 2 筆 → 合計 2
+        jill_rows = data["👤 Jill"]
+        assert jill_rows[-1][1] == "合計"
+        assert jill_rows[-1][4] == 2
+        # 其他分頁應有欣興 1 筆 → 合計 1
+        other_rows = data["👤 其他"]
+        assert other_rows[-1][1] == "合計"
+        assert other_rows[-1][4] == 1
+
     # ── build_monthly_report 測試 ──────────────────────────────────────────
 
     def test_build_monthly_report_returns_dict(self, seeded_db):

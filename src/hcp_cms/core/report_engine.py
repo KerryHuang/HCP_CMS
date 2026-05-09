@@ -185,9 +185,14 @@ class ReportEngine:
         _INDEX_HEADER = ["#", "公司名稱", "Email 域名", "聯絡方式", "獨立案件數", "快速連結"]
 
         def _build_cs_index(filter_ids: set[str] | None) -> list[list]:
-            """filter_ids=None 表示「其他」（cs_staff_id 不在任何 CS 清單中）。"""
+            """filter_ids=None 表示「其他」（cs_staff_id 不在任何 CS 清單中）。
+
+            最後一列為「合計」，將「獨立案件數」（E 欄）加總，方便客服統計。
+            若無資料列則不附加合計（避免空表）。
+            """
             rows: list[list] = [_INDEX_HEADER]
             seq = 0
+            total_cases = 0
             for comp in companies:
                 count = sum(
                     1 for c in cases
@@ -203,12 +208,16 @@ class ReportEngine:
                 if not in_group:
                     continue
                 seq += 1
+                total_cases += count
                 link_cell = (
                     HyperlinkCell(f"→ {comp.name}問題記錄", company_sheet_names[comp.company_id])
                     if comp.company_id in company_sheet_names
                     else None
                 )
                 rows.append(_clean_row([seq, comp.name, comp.domain, comp.contact_info or "", count, link_cell]))
+            if seq > 0:
+                # 合計列：A 欄留空，B 欄標示「合計」，E 欄放總和（與 _INDEX_HEADER 對齊）
+                rows.append(_clean_row(["", "合計", "", "", total_cases, ""]))
             return rows
 
         for staff in cs_staff_list:

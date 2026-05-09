@@ -118,3 +118,25 @@ class ThreadTracker:
             self._case_repo.update(child)
             parent.reply_count += 1
             self._case_repo.update(parent)
+
+    def find_thread_members(self, case_id: str) -> list[Case]:
+        """回傳指定案件所屬整串 thread 的所有案件（root + 所有後代）。
+
+        從給定 case 上溯到 root，再以 BFS 找出所有透過 linked_case_id 串接的子案件。
+        若 case_id 不存在則回傳空 list。
+        """
+        case = self._case_repo.get_by_id(case_id)
+        if not case:
+            return []
+        root = self._find_root(case)
+        members: list[Case] = [root]
+        visited: set[str] = {root.case_id}
+        queue: list[str] = [root.case_id]
+        while queue:
+            parent_id = queue.pop(0)
+            for child in self._case_repo.list_by_linked_case_id(parent_id):
+                if child.case_id not in visited:
+                    members.append(child)
+                    visited.add(child.case_id)
+                    queue.append(child.case_id)
+        return members

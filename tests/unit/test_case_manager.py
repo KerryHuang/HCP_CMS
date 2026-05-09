@@ -553,6 +553,130 @@ class TestImportEmail:
         assert len(logs) == 2
         assert logs[-1].direction == "客戶來信"
 
+    def test_hcp_reply_with_close_keyword_closes_thread(self, seeded_db):
+        """HCP 回覆主旨含 (回覆結案) → 整串 thread 案件 status 改為「已完成」。
+
+        情境：客戶來信建立案件 A，後續 HCP 回覆主旨末端追加 (回覆結案)。
+        應將同 thread 的所有案件（A 與其他 linked 案件）一併設為「已完成」。
+        """
+        from hcp_cms.data.repositories import CaseRepository
+
+        mgr = CaseManager(seeded_db.connection)
+        repo = CaseRepository(seeded_db.connection)
+
+        # 客戶來信建案 A
+        case_a, _ = mgr.import_email(
+            subject="留停轉離職作業詢問",
+            body="請問流程",
+            sender_email="user@aseglobal.com",
+            to_recipients=["hcpservice@ares.com.tw"],
+            sent_time="2026/05/01 09:00",
+        )
+        # 客戶後續再來信，被串成同 thread（不同 case 但 linked_case_id=A）
+        case_b, _ = mgr.import_email(
+            subject="RE: 留停轉離職作業詢問 補充",
+            body="補充資料",
+            sender_email="user@aseglobal.com",
+            to_recipients=["hcpservice@ares.com.tw"],
+            sent_time="2026/05/02 09:00",
+        )
+
+        # HCP 回覆並標記結案
+        mgr.import_email(
+            subject="RE: 留停轉離職作業詢問(回覆結案)",
+            body="已處理",
+            sender_email="hcpservice@ares.com.tw",
+            to_recipients=["user@aseglobal.com"],
+            sent_time="2026/05/03 10:00",
+        )
+
+        # A 與 B 應全部變「已完成」
+        a_after = repo.get_by_id(case_a.case_id)
+        b_after = repo.get_by_id(case_b.case_id)
+        assert a_after.status == "已完成"
+        assert b_after.status == "已完成"
+
+    def test_hcp_reply_without_close_keyword_does_not_close(self, seeded_db):
+        """HCP 一般回覆（無 (回覆結案)）不應觸發自動結案。"""
+        from hcp_cms.data.repositories import CaseRepository
+
+        mgr = CaseManager(seeded_db.connection)
+        repo = CaseRepository(seeded_db.connection)
+        case_a, _ = mgr.import_email(
+            subject="薪資問題",
+            body="請問薪資",
+            sender_email="user@aseglobal.com",
+            to_recipients=["hcpservice@ares.com.tw"],
+        )
+        mgr.import_email(
+            subject="RE: 薪資問題",
+            body="處理中",
+            sender_email="hcpservice@ares.com.tw",
+            to_recipients=["user@aseglobal.com"],
+        )
+        after = repo.get_by_id(case_a.case_id)
+        assert after.status != "已完成"
+
+    def test_customer_email_with_close_keyword_does_not_close(self, seeded_db):
+        """關鍵字僅由 HCP 端觸發，客戶來信含 (回覆結案) 不應結案。"""
+        from hcp_cms.data.repositories import CaseRepository
+
+        mgr = CaseManager(seeded_db.connection)
+        repo = CaseRepository(seeded_db.connection)
+        # 客戶誤打 (回覆結案) — 例如手動轉貼了標題
+        case_a, _ = mgr.import_email(
+            subject="薪資問題(回覆結案)",
+            body="客戶誤打",
+            sender_email="user@aseglobal.com",
+            to_recipients=["hcpservice@ares.com.tw"],
+        )
+        after = repo.get_by_id(case_a.case_id)
+        assert after.status != "已完成"
+
+    def test_close_keyword_must_be_in_subject_not_body(self, seeded_db):
+        """關鍵字僅看主旨，body 含 (回覆結案) 不應觸發。"""
+        from hcp_cms.data.repositories import CaseRepository
+
+        mgr = CaseManager(seeded_db.connection)
+        repo = CaseRepository(seeded_db.connection)
+        case_a, _ = mgr.import_email(
+            subject="薪資問題",
+            body="客戶提到的關鍵字 (回覆結案) 在內文",
+            sender_email="user@aseglobal.com",
+            to_recipients=["hcpservice@ares.com.tw"],
+        )
+        # HCP 回覆，body 含 (回覆結案) 但主旨不含
+        mgr.import_email(
+            subject="RE: 薪資問題",
+            body="(回覆結案) — 但這是寫在 body",
+            sender_email="hcpservice@ares.com.tw",
+            to_recipients=["user@aseglobal.com"],
+        )
+        after = repo.get_by_id(case_a.case_id)
+        assert after.status != "已完成"
+
+    def test_close_keyword_strict_match_with_parens(self, seeded_db):
+        """嚴格匹配 (回覆結案) — 不含括號的「回覆結案」不觸發。"""
+        from hcp_cms.data.repositories import CaseRepository
+
+        mgr = CaseManager(seeded_db.connection)
+        repo = CaseRepository(seeded_db.connection)
+        case_a, _ = mgr.import_email(
+            subject="薪資問題",
+            body="",
+            sender_email="user@aseglobal.com",
+            to_recipients=["hcpservice@ares.com.tw"],
+        )
+        # HCP 回覆，主旨僅含「回覆結案」（無括號），不應結案
+        mgr.import_email(
+            subject="RE: 薪資問題 回覆結案",
+            body="",
+            sender_email="hcpservice@ares.com.tw",
+            to_recipients=["user@aseglobal.com"],
+        )
+        after = repo.get_by_id(case_a.case_id)
+        assert after.status != "已完成"
+
     def test_import_email_merged_log_time_format_with_seconds(self, seeded_db):
         """sent_time 已有秒數時，logged_at 不應再拼接 :00。"""
         from hcp_cms.data.repositories import CaseLogRepository

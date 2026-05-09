@@ -103,11 +103,21 @@ class ReportView(QWidget):
         ctrl.addWidget(self._sync_sheets_btn)
         self._sync_sheets_btn.setVisible(False)
 
+        # 指定公司：限「❓ 未知公司」分頁可用，行為同案件管理（批次指定 + 整併同主旨）
+        self._assign_company_btn = QPushButton("🏢 指定公司")
+        self._assign_company_btn.setToolTip(
+            "於「❓ 未知公司」分頁選取案件後，批次指定公司並自動整併同主旨案件"
+        )
+        self._assign_company_btn.setEnabled(False)
+        self._assign_company_btn.clicked.connect(self._on_assign_company)
+        ctrl.addWidget(self._assign_company_btn)
+
         ctrl.addStretch()
         layout.addLayout(ctrl)
 
         # ── 預覽區 QTabWidget ────────────────────────────────────────────
         self._tab_widget = QTabWidget()
+        self._tab_widget.currentChanged.connect(self._update_assign_btn_state)
         layout.addWidget(self._tab_widget)
 
         # ── 狀態列 ──────────────────────────────────────────────────────
@@ -191,6 +201,9 @@ class ReportView(QWidget):
             self._status.setText(f"❌ 載入失敗：{e}")
             QMessageBox.critical(self, "載入失敗", str(e))
 
+    # 「未知公司」分頁名稱（與 report_engine.py 字串保持一致）
+    _UNKNOWN_COMPANY_SHEET = "❓ 未知公司"
+
     def _fill_preview(self, data: dict[str, list[list]]) -> None:
         """將結構化資料填入 QTabWidget。"""
         self._tab_widget.clear()
@@ -245,7 +258,15 @@ class ReportView(QWidget):
                 # 公司分頁：單擊「↩ 返回客戶索引」或案件 row → 跳轉 / 開啟案件
                 table.cellClicked.connect(self._on_company_cell_clicked)
 
+            # ❓ 未知公司分頁：允許多選列、選取變動時更新「指定公司」按鈕狀態
+            if sheet_name == self._UNKNOWN_COMPANY_SHEET:
+                table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+                table.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection)
+                table.itemSelectionChanged.connect(self._update_assign_btn_state)
+
             self._tab_widget.addTab(table, sheet_name)
+        # 重整完畢後重新評估按鈕狀態
+        self._update_assign_btn_state()
 
     # ── 互動 handler ──────────────────────────────────────────────────
 
@@ -342,6 +363,74 @@ class ReportView(QWidget):
             dlg.exec()
         except Exception as e:
             QMessageBox.critical(self, "開啟案件失敗", str(e))
+
+    # ── 指定公司（同案件管理）─────────────────────────────────────────
+
+    def _current_unknown_table(self) -> QTableWidget | None:
+        """若當前分頁為「❓ 未知公司」，回傳該 QTableWidget；否則 None。"""
+        idx = self._tab_widget.currentIndex()
+        if idx < 0:
+            return None
+        if self._tab_widget.tabText(idx) != self._UNKNOWN_COMPANY_SHEET:
+            return None
+        widget = self._tab_widget.widget(idx)
+        return widget if isinstance(widget, QTableWidget) else None
+
+    def _update_assign_btn_state(self, *_args) -> None:
+        """依當前分頁與選取狀態切換「指定公司」按鈕啟用。"""
+        table = self._current_unknown_table()
+        has_selection = bool(table and table.selectionModel().selectedRows())
+        self._assign_company_btn.setEnabled(has_selection)
+
+    def _on_assign_company(self) -> None:
+        """為「❓ 未知公司」分頁選取的案件批次指定公司。
+
+        行為與案件管理一致：呼叫 batch_assign_company_and_merge，
+        除更新 company_id 外亦會整併同主旨案件。完成後重新整理預覽。
+        """
+        if not self._conn:
+            return
+        table = self._current_unknown_table()
+        if not table:
+            return
+        rows = table.selectionModel().selectedRows()
+        if not rows:
+            return
+
+        # 第 0 欄為 case_id（與 report_engine 未知公司表結構一致）
+        case_ids: list[str] = []
+        for idx in rows:
+            item = table.item(idx.row(), 0)
+            if item and item.text().startswith("CS-"):
+                case_ids.append(item.text())
+        if not case_ids:
+            return
+
+        from hcp_cms.core.case_manager import CaseManager
+        from hcp_cms.ui.assign_company_dialog import AssignCompanyDialog
+
+        dlg = AssignCompanyDialog(self._conn, len(case_ids), parent=self)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        company_id = dlg.selected_company_id
+        if not company_id:
+            return
+
+        result = CaseManager(self._conn).batch_assign_company_and_merge(case_ids, company_id)
+        updated = result["updated"]
+        merged = result["merged"]
+        merge_msg = (
+            f"成功整併 {merged} 筆為同主旨根案件的子案件。"
+            if merged > 0
+            else "無需整併同主旨案件。"
+        )
+        QMessageBox.information(
+            self,
+            "完成",
+            f"已更新 {updated} 筆案件的公司。\n{merge_msg}\n報表將重新整理。",
+        )
+        # 重新整理預覽（重抓未知公司清單，剛指定的應消失）
+        self._on_preview()
 
     def _fill_cs_report_preview(self) -> None:
         """產生「客服問題彙整」報表並填入 QTabWidget 預覽。"""

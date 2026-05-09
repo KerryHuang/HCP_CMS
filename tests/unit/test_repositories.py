@@ -601,6 +601,90 @@ class TestCaseRepositoryFindByCompanyAndSubject:
         assert result is not None
         assert result.case_id == "CS-2026-010"
 
+    def test_find_by_company_and_subject_prefix_with_suffix_annotation(
+        self, db: DatabaseManager
+    ) -> None:
+        """主旨尾端追加備註（如 (回覆結案)）應仍視為同案件。
+
+        現實情境：HCP 客服回信時在主旨追加 (回覆結案) 標記，
+        應與原始主旨「留停轉離職作業詢問」合併進同一個案件。
+        """
+        repo = CaseRepository(db.connection)
+        repo.insert(
+            Case(
+                case_id="CS-2026-1389",
+                subject="留停轉離職作業詢問",
+                company_id="C001",
+                sent_time="2026/05/01 09:00",
+            )
+        )
+        # 來信主旨 = "RE: 留停轉離職作業詢問(回覆結案)"
+        # clean_subject 後 = "留停轉離職作業詢問(回覆結案)"
+        result = repo.find_by_company_and_subject(
+            "C001", "留停轉離職作業詢問(回覆結案)"
+        )
+        assert result is not None
+        assert result.case_id == "CS-2026-1389"
+
+    def test_find_by_company_and_subject_prefix_reverse_direction(
+        self, db: DatabaseManager
+    ) -> None:
+        """DB 內主旨較長（含後綴），新進主旨較短時也應匹配。"""
+        repo = CaseRepository(db.connection)
+        repo.insert(
+            Case(
+                case_id="CS-2026-1500",
+                subject="留停轉離職作業詢問(回覆結案)",
+                company_id="C001",
+                sent_time="2026/05/01 09:00",
+            )
+        )
+        result = repo.find_by_company_and_subject(
+            "C001", "留停轉離職作業詢問"
+        )
+        assert result is not None
+        assert result.case_id == "CS-2026-1500"
+
+    def test_find_by_company_and_subject_rejects_long_diff_over_20(
+        self, db: DatabaseManager
+    ) -> None:
+        """長度差超過 20 字時不應誤合併（避免「申請作業」 vs「申請作業流程說明…」）。"""
+        repo = CaseRepository(db.connection)
+        # subject 長 30 字，與「申請作業」(4 字) 差 26 > 20
+        long_subject = "申請作業" + "流程說明大綱完整版本內容描述細節步驟附錄補充說明文件版"
+        assert len(long_subject) - len("申請作業") > 20
+        repo.insert(
+            Case(
+                case_id="CS-2026-2000",
+                subject=long_subject,
+                company_id="C001",
+                sent_time="2026/05/01 09:00",
+            )
+        )
+        # 短主旨「申請作業」是上面的前綴，但長度差 > 20
+        result = repo.find_by_company_and_subject("C001", "申請作業")
+        assert result is None
+
+    def test_find_by_company_and_subject_accepts_diff_within_20(
+        self, db: DatabaseManager
+    ) -> None:
+        """長度差 ≤ 20 字時允許合併（容忍 (回覆結案) 等備註後綴）。"""
+        repo = CaseRepository(db.connection)
+        repo.insert(
+            Case(
+                case_id="CS-2026-2100",
+                subject="申請作業",
+                company_id="C001",
+                sent_time="2026/05/01 09:00",
+            )
+        )
+        # 長度差 = len("申請作業(回覆結案)") - len("申請作業") = 6 字（中文計 1 字符），≤ 20
+        result = repo.find_by_company_and_subject(
+            "C001", "申請作業(回覆結案)"
+        )
+        assert result is not None
+        assert result.case_id == "CS-2026-2100"
+
 
 # ---------------------------------------------------------------------------
 # TestCaseRepositoryListByCompanyAndSubject
