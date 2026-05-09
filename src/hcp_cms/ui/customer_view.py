@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import csv
 import sqlite3
 
 from PySide6.QtCore import Qt
@@ -11,6 +12,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
     QDialogButtonBox,
+    QFileDialog,
     QHBoxLayout,
     QLabel,
     QMessageBox,
@@ -177,11 +179,15 @@ class CustomerView(QWidget):
             self._on_add_company_row,
             self._on_delete_company,
         )
-        # 在工具列右側加入 Mantis 同步按鈕
+        # 在工具列右側加入 Mantis 同步 + 匯出按鈕
         sync_btn = QPushButton("🔄 從 Mantis 同步 HcpVersion")
         sync_btn.setToolTip("連線 Mantis，依使用者 email 網域比對公司，同步 HcpVersion 欄位")
         sync_btn.clicked.connect(self._on_sync_hcp_version)
         toolbar.layout().insertWidget(toolbar.layout().count() - 1, sync_btn)
+        export_btn = QPushButton("📥 匯出 CSV")
+        export_btn.setToolTip("將目前公司清單匯出為 CSV 檔")
+        export_btn.clicked.connect(self._on_export_companies_csv)
+        toolbar.layout().insertWidget(toolbar.layout().count() - 1, export_btn)
         layout.addWidget(toolbar)
         headers = ["HcpVersion"] + [c[0] for c in _COMPANY_FIXED_COLS] + ["負責客服", "負責業務"]
         self._company_table = QTableWidget(0, _COMPANY_TOTAL_COLS)
@@ -587,16 +593,53 @@ class CustomerView(QWidget):
             return
 
         mgr = CustomerManager(self._conn)
-        updated, err = mgr.sync_hcp_version_from_mantis(client)
+        updated, unmatched, err = mgr.sync_hcp_version_from_mantis(client)
         if err:
             QMessageBox.warning(self, "同步失敗", f"同步時發生錯誤：{err}")
         else:
-            QMessageBox.information(
-                self, "同步完成",
-                f"成功更新 {updated} 筆公司的 HcpVersion。" if updated
-                else "所有公司的 HcpVersion 均已是最新，無需更新。"
+            all_users = getattr(mgr, "_last_sync_users", [])
+            total = len(all_users)
+            with_ver = sum(1 for u in all_users if u.get("hcp_version"))
+            msg = (
+                f"Mantis 共抓到 {total} 個 -USER 帳號，其中 {with_ver} 個有設定 HcpVersion。\n"
+                f"成功更新：{updated} 筆　|　已是最新：{with_ver - updated - len(unmatched)} 筆　|　找不到公司：{len(unmatched)} 筆"
             )
+            if unmatched:
+                msg += f"\n\n⚠ 找不到對應公司的 Mantis 帳號：\n"
+                msg += "\n".join(f"  • {u}" for u in unmatched)
+            if total == 0:
+                msg = "Mantis 未回傳任何 -USER 帳號，請確認帳號過濾條件或連線設定。"
+            QMessageBox.information(self, "同步完成", msg)
         self.refresh()
+
+    def _on_export_companies_csv(self) -> None:
+        """將目前公司清單（含 HcpVersion）匯出為 CSV 檔。"""
+        path, _ = QFileDialog.getSaveFileName(
+            self, "匯出公司清單", "companies.csv", "CSV 檔案 (*.csv)"
+        )
+        if not path:
+            return
+        table = self._company_table
+        headers = [table.horizontalHeaderItem(c).text() for c in range(table.columnCount())]
+        rows = []
+        for r in range(table.rowCount()):
+            row = []
+            for c in range(table.columnCount()):
+                item = table.item(r, c)
+                if item is not None:
+                    row.append(item.text())
+                else:
+                    widget = table.cellWidget(r, c)
+                    row.append(widget.currentText() if widget else "")
+            rows.append(row)
+        try:
+            with open(path, "w", newline="", encoding="utf-8-sig") as f:
+                writer = csv.writer(f)
+                writer.writerow(headers)
+                writer.writerows(rows)
+            QMessageBox.information(self, "匯出完成", f"已儲存至：{path}")
+        except OSError as e:
+            QMessageBox.critical(self, "匯出失敗", str(e))
 
     def _on_reassociate_cases(self) -> None:
         if not self._conn:

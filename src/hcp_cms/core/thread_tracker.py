@@ -46,13 +46,20 @@ class ThreadTracker:
         return False
 
     def find_thread_parent(
-        self, company_id: str | None, subject: str, mantis_id: str | None = None
+        self,
+        company_id: str | None,
+        subject: str,
+        mantis_id: str | None = None,
+        in_reply_to: str | None = None,
     ) -> Case | None:
         """Find the root case of a conversation thread.
 
-        Match criteria (in order):
-        1. Same Mantis ticket ID (via case_mantis table)
-        2. Same company + similar subject (cleaned)
+        Match criteria (in order of priority):
+        1. in_reply_to → parent's message_id（最精確，Email RFC 標準）
+        2. Same company + similar subject (cleaned)（有公司資訊時）
+        3. Subject-only fallback across all open cases（company_id 為 None 時）
+           ⚠ Subject-only fallback：無公司資訊時仍可串接，但跨公司同主旨時
+             可能誤串，屬可接受的 false-positive 容錯策略。
 
         Searches open/replied cases first, then recently completed cases
         (已完成 within last 90 days) to catch replies that arrive after closure.
@@ -62,24 +69,35 @@ class ThreadTracker:
         if not subject:
             return None
 
-        if not company_id:
+        # 1. in_reply_to 精確比對（最高優先）
+        if in_reply_to:
+            parent = self._case_repo.get_by_message_id(in_reply_to)
+            if parent:
+                return self._find_root(parent)
+
+        # 2. 有 company_id：同公司 + 主旨比對
+        if company_id:
+            for status in ("處理中", "已回覆"):
+                for case in self._case_repo.list_by_status(status):
+                    if case.company_id == company_id and case.subject:
+                        if self.subjects_match(case.subject, subject):
+                            return self._find_root(case)
+
+            from datetime import datetime, timedelta
+            cutoff = (datetime.now() - timedelta(days=90)).strftime("%Y/%m/%d")
+            for case in self._case_repo.list_by_status("已完成"):
+                if case.company_id == company_id and case.subject:
+                    if (case.sent_time or "") >= cutoff:
+                        if self.subjects_match(case.subject, subject):
+                            return self._find_root(case)
+
             return None
 
-        # 1. 開放中案件優先
+        # 3. 無 company_id fallback：僅比對開放中案件的主旨
         for status in ("處理中", "已回覆"):
             for case in self._case_repo.list_by_status(status):
-                if case.company_id == company_id and case.subject:
-                    if self.subjects_match(case.subject, subject):
-                        return self._find_root(case)
-
-        # 2. 近 90 天已完成案件（結案後仍可能收到回覆）
-        from datetime import datetime, timedelta
-        cutoff = (datetime.now() - timedelta(days=90)).strftime("%Y/%m/%d")
-        for case in self._case_repo.list_by_status("已完成"):
-            if case.company_id == company_id and case.subject:
-                if (case.sent_time or "") >= cutoff:
-                    if self.subjects_match(case.subject, subject):
-                        return self._find_root(case)
+                if case.subject and self.subjects_match(case.subject, subject):
+                    return self._find_root(case)
 
         return None
 

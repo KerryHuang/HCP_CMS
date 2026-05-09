@@ -271,6 +271,7 @@ class DatabaseManager:
             "ALTER TABLE cs_cases ADD COLUMN problem TEXT",
             "ALTER TABLE cs_cases ADD COLUMN cause TEXT",
             "ALTER TABLE cs_cases ADD COLUMN solution TEXT",
+            "ALTER TABLE cs_cases ADD COLUMN in_reply_to TEXT",
         ]
         for sql in pending:
             try:

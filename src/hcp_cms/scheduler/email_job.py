@@ -61,6 +61,8 @@ class EmailJob:
             body=msg.body,
             sender_email=msg.sender,
             sent_time=msg.date,
+            message_id=msg.message_id,
+            in_reply_to=msg.in_reply_to,
         )
 
         # 若主旨含 ISSUE_YYYYMMDD_INNNNN_ 格式，自動建立 Mantis 連結

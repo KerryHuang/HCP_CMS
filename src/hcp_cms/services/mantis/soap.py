@@ -120,12 +120,87 @@ class MantisSoapClient(MantisClient):
         return []
 
     def get_users_hcp_version(self) -> list[dict]:
-        """透過 SOAP mc_project_get_users 取得所有使用者，解析 HcpVersion 自訂欄位。
+        """透過 Web 登入取得客戶帳號（*-USER）的 HcpVersion 自訂欄位。
 
-        Mantis 使用者的「真實姓名」為公司名稱，email 網域對應 companies.domain。
-        回傳 list of dict：{"email": str, "real_name": str, "hcp_version": str}
-        hcp_version 為空字串表示該使用者未設定 HcpVersion。
+        Mantis SOAP mc_project_get_users 不回傳自訂欄位，改以 HTTP Session
+        登入後爬取 manage_user_page.php 與各使用者 edit page 解析。
+
+        回傳 list of dict：{"username": str, "real_name": str, "email": str, "hcp_version": str}
         """
+        if not self._connected:
+            self.last_error = "尚未連線，請先呼叫 connect()"
+            return []
+
+        try:
+            session = requests.Session()
+            session.verify = False
+            login_r = session.post(
+                f"{self._base_url}/login.php",
+                data={"username": self._username, "password": self._password, "return": "index.php"},
+                timeout=15,
+                allow_redirects=True,
+            )
+            if "my_view_page" not in login_r.url and "index.php" not in login_r.url:
+                self.last_error = "Web 登入失敗"
+                return []
+
+            # 取使用者清單（一次 500 筆，過濾 -USER / -User 帳號）
+            list_r = session.get(
+                f"{self._base_url}/manage_user_page.php?sort=username&dir=ASC&show_disabled=0&per_page=500",
+                timeout=15,
+            )
+            all_users = re.findall(
+                r'manage_user_edit_page\.php\?user_id=(\d+)[^"]*"[^>]*>([^<]+)<',
+                list_r.text,
+            )
+            customer_users = [
+                (uid, uname) for uid, uname in all_users
+                if re.search(r"-user", uname, re.IGNORECASE)
+            ]
+
+            result: list[dict] = []
+            for uid, username in customer_users:
+                edit_r = session.get(
+                    f"{self._base_url}/manage_user_edit_page.php?user_id={uid}",
+                    timeout=10,
+                )
+                text = edit_r.text
+
+                # 解析 real_name
+                rn = re.search(r'name="realname"[^>]*value="([^"]*)"', text)
+                real_name = rn.group(1).strip() if rn else ""
+
+                # 解析 email
+                em = re.search(r'name="email"[^>]*value="([^"]*)"', text)
+                email = em.group(1).strip() if em else ""
+
+                # 解析 HcpVersion（select 欄位的 selected option）
+                hcp_version = ""
+                hcp_idx = text.find("HcpVersion")
+                if hcp_idx >= 0:
+                    snippet = text[hcp_idx:hcp_idx + 600]
+                    sel = re.search(r'<option[^>]+selected[^>]*>([^<]+)</option>', snippet)
+                    if sel:
+                        hcp_version = sel.group(1).strip()
+
+                result.append({
+                    "username": username.strip(),
+                    "real_name": real_name,
+                    "email": email,
+                    "hcp_version": hcp_version,
+                })
+
+            return result
+
+        except requests.exceptions.ConnectionError as e:
+            self.last_error = f"連線失敗：{e}"
+            return []
+        except Exception as e:
+            self.last_error = f"未知錯誤：{e}"
+            return []
+
+    def _get_users_hcp_version_soap_legacy(self) -> list[dict]:
+        """舊 SOAP 實作（保留備用）：mc_project_get_users 不回傳自訂欄位。"""
         if not self._connected:
             self.last_error = "尚未連線，請先呼叫 connect()"
             return []

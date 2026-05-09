@@ -96,6 +96,94 @@ class TestBulkUpsertStaff:
         assert inserted == 0
 
 
+class TestSyncHcpVersionFromMantis:
+    """sync_hcp_version_from_mantis 的比對策略測試。"""
+
+    def _make_client(self, users: list[dict]):
+        """建立一個模擬 Mantis client，回傳指定使用者清單。"""
+
+        class _FakeClient:
+            last_error = ""
+
+            def get_users_hcp_version(self):
+                return users
+
+        return _FakeClient()
+
+    def _insert_company(self, db, *, name, domain="", alias="", hcp_version=None):
+        from hcp_cms.data.models import Company
+        from hcp_cms.data.repositories import CompanyRepository
+
+        import uuid
+        cid = f"COMP-{uuid.uuid4().hex[:8]}"
+        CompanyRepository(db.connection).insert(
+            Company(company_id=cid, name=name, domain=domain, alias=alias, hcp_version=hcp_version)
+        )
+
+    def test_match_by_email_domain(self, db):
+        self._insert_company(db, name="PSI 公司", domain="psi.com.tw")
+        mgr = CustomerManager(db.connection)
+        client = self._make_client([
+            {"username": "PSI-USER", "real_name": "", "email": "user@psi.com.tw", "hcp_version": "12c"},
+        ])
+        updated, unmatched, err = mgr.sync_hcp_version_from_mantis(client)
+        assert err == ""
+        assert updated == 1
+        assert unmatched == []
+
+    def test_match_by_alias(self, db):
+        self._insert_company(db, name="台灣迪恩士半導體股份有限公司", domain="screen.com.tw", alias="Screen, DNS")
+        mgr = CustomerManager(db.connection)
+        client = self._make_client([
+            {"username": "SCREEN-USER", "real_name": "Screen", "email": "", "hcp_version": "14c"},
+        ])
+        updated, unmatched, err = mgr.sync_hcp_version_from_mantis(client)
+        assert err == ""
+        assert updated == 1
+        assert unmatched == []
+
+    def test_match_by_username_startswith(self, db):
+        self._insert_company(db, name="Amkor 科技", domain="amkor.com")
+        mgr = CustomerManager(db.connection)
+        client = self._make_client([
+            {"username": "AMKOR-USER", "real_name": "", "email": "", "hcp_version": "12c"},
+        ])
+        updated, unmatched, err = mgr.sync_hcp_version_from_mantis(client)
+        assert err == ""
+        assert updated == 1
+
+    def test_short_keyword_not_false_positive(self, db):
+        """'ts' (長度 < 4) 不應誤中 'mantis-user'。"""
+        self._insert_company(db, name="台灣半導體", domain="ts.com.tw")
+        mgr = CustomerManager(db.connection)
+        client = self._make_client([
+            {"username": "mantis-user", "real_name": "", "email": "", "hcp_version": "12c"},
+        ])
+        updated, unmatched, err = mgr.sync_hcp_version_from_mantis(client)
+        assert updated == 0
+        assert len(unmatched) == 1
+
+    def test_unmatched_user_reported(self, db):
+        mgr = CustomerManager(db.connection)
+        client = self._make_client([
+            {"username": "GHOST-USER", "real_name": "幽靈公司", "email": "x@ghost.io", "hcp_version": "12c"},
+        ])
+        updated, unmatched, err = mgr.sync_hcp_version_from_mantis(client)
+        assert updated == 0
+        assert len(unmatched) == 1
+        assert "幽靈公司" in unmatched[0]
+
+    def test_no_hcp_version_skipped(self, db):
+        self._insert_company(db, name="ABC 公司", domain="abc.com.tw")
+        mgr = CustomerManager(db.connection)
+        client = self._make_client([
+            {"username": "ABC-USER", "real_name": "", "email": "x@abc.com.tw", "hcp_version": ""},
+        ])
+        updated, unmatched, err = mgr.sync_hcp_version_from_mantis(client)
+        assert updated == 0
+        assert unmatched == []
+
+
 class TestResolveHandlerByDomain:
     def test_resolve_handler_from_domain(self, db):
         from hcp_cms.data.models import Company, Staff

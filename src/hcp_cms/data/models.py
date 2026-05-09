@@ -34,6 +34,7 @@ class Case:
     linked_case_id: str | None = None
     source: str = "email"
     message_id: str | None = None
+    in_reply_to: str | None = None
     created_at: str | None = None
     updated_at: str | None = None
     problem_level: str | None = None    # "A" | "B" | "C"

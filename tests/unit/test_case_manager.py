@@ -243,7 +243,13 @@ class TestCaseManager:
         assert stored.sent_time == "2026/03/17 14:22"
 
     def test_batch_assign_company_and_merge_links_cases(self, seeded_db):
-        """5 筆孤兒案件（無公司），批次指定公司後應整併為 1 根 + 4 子。"""
+        """5 筆孤兒案件（無公司），批次指定公司後 company_id 全更新。
+
+        注意：subject-only fallback 修正後，create_case 建立 RE: 案件時已透過
+        主旨比對自動串接至根案件（linked_case_id 在 create_case 時即設定），
+        因此 batch_assign 時案件已串接，merged == 0。
+        最終串接狀態（linked_case_id）在建案時即正確。
+        """
         CompanyRepository(seeded_db.connection).insert(
             Company(company_id="C-CHI", name="群光", domain="chicony.com")
         )
@@ -269,15 +275,17 @@ class TestCaseManager:
 
         result = mgr.batch_assign_company_and_merge(case_ids, "C-CHI")
 
+        # 公司 ID 全部更新
         assert result["updated"] == 5
-
         cases = [repo.get_by_id(cid) for cid in case_ids]
         assert all(c.company_id == "C-CHI" for c in cases)
 
-        root = min(cases, key=lambda c: c.sent_time or "")
+        # 案件已在 create_case 時串接，batch_assign 不重複計入 merged
+        root = cases[0]  # 第一個建立的是根案件
         linked = [c for c in cases if c.case_id != root.case_id]
         assert all(c.linked_case_id == root.case_id for c in linked)
-        assert result["merged"] == 4
+        # merged == 0：案件已於 create_case 時自動串接，batch 跳過已串接案件
+        assert result["merged"] == 0
 
     def test_batch_assign_company_and_merge_skips_already_linked(self, seeded_db):
         """已有 linked_case_id 的案件不重複連結。"""

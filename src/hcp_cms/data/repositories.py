@@ -223,7 +223,7 @@ class CaseRepository:
             "case_id, company_id, subject, status, priority, sent_time, "
             "contact_person, contact_method, system_product, issue_type, error_type, "
             "impact_period, progress, handler, actual_reply, reply_time, notes, "
-            "rd_assignee, reply_count, linked_case_id, source, message_id, created_at, updated_at, "
+            "rd_assignee, reply_count, linked_case_id, source, message_id, in_reply_to, created_at, updated_at, "
             "problem_level, problem, cause, solution"
         )
         if not self._custom_cols:
@@ -258,14 +258,14 @@ class CaseRepository:
                 case_id, contact_method, status, priority, sent_time,
                 company_id, contact_person, subject, system_product, issue_type,
                 error_type, impact_period, progress, actual_reply, reply_time, notes,
-                rd_assignee, handler, reply_count, linked_case_id, source, message_id,
+                rd_assignee, handler, reply_count, linked_case_id, source, message_id, in_reply_to,
                 created_at, updated_at,
                 problem_level, problem, cause, solution
             ) VALUES (
                 :case_id, :contact_method, :status, :priority, :sent_time,
                 :company_id, :contact_person, :subject, :system_product, :issue_type,
                 :error_type, :impact_period, :progress, :actual_reply, :reply_time, :notes,
-                :rd_assignee, :handler, :reply_count, :linked_case_id, :source, :message_id,
+                :rd_assignee, :handler, :reply_count, :linked_case_id, :source, :message_id, :in_reply_to,
                 :created_at, :updated_at,
                 :problem_level, :problem, :cause, :solution
             )
@@ -293,6 +293,7 @@ class CaseRepository:
                 "linked_case_id": case.linked_case_id,
                 "source": case.source,
                 "message_id": case.message_id,
+                "in_reply_to": case.in_reply_to,
                 "created_at": case.created_at,
                 "updated_at": case.updated_at,
                 "problem_level": case.problem_level,
@@ -306,6 +307,14 @@ class CaseRepository:
     def get_by_id(self, case_id: str) -> Case | None:
         sql = self._build_select() + " WHERE case_id = ?"
         row = self._conn.execute(sql, (case_id,)).fetchone()
+        if row is None:
+            return None
+        return self._row_to_case(row)
+
+    def get_by_message_id(self, message_id: str) -> Case | None:
+        """依 message_id 查詢案件，回傳第一筆相符或 None。"""
+        sql = self._build_select() + " WHERE message_id = ?"
+        row = self._conn.execute(sql, (message_id,)).fetchone()
         if row is None:
             return None
         return self._row_to_case(row)
