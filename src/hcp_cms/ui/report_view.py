@@ -112,6 +112,16 @@ class ReportView(QWidget):
         self._assign_company_btn.clicked.connect(self._on_assign_company)
         ctrl.addWidget(self._assign_company_btn)
 
+        # 刪除選取：限「❓ 未知公司」分頁可用，刪除多筆無公司案件（如垃圾信件）
+        self._delete_selected_btn = QPushButton("🗑 刪除選取")
+        self._delete_selected_btn.setObjectName("dangerBtn")
+        self._delete_selected_btn.setToolTip(
+            "於「❓ 未知公司」分頁選取案件後，批次刪除（含關聯記錄，無法復原）"
+        )
+        self._delete_selected_btn.setEnabled(False)
+        self._delete_selected_btn.clicked.connect(self._on_delete_selected_cases)
+        ctrl.addWidget(self._delete_selected_btn)
+
         ctrl.addStretch()
         layout.addLayout(ctrl)
 
@@ -380,10 +390,15 @@ class ReportView(QWidget):
         return widget if isinstance(widget, QTableWidget) else None
 
     def _update_assign_btn_state(self, *_args) -> None:
-        """依當前分頁與選取狀態切換「指定公司」按鈕啟用。"""
+        """依當前分頁與選取狀態切換「指定公司」與「刪除選取」按鈕啟用。
+
+        命名沿用舊名（_update_assign_btn_state）以維持既有訊號連線，
+        實際同時管理兩顆按鈕。
+        """
         table = self._current_unknown_table()
         has_selection = bool(table and table.selectionModel().selectedRows())
         self._assign_company_btn.setEnabled(has_selection)
+        self._delete_selected_btn.setEnabled(has_selection)
 
     def _on_assign_company(self) -> None:
         """為「❓ 未知公司」分頁選取的案件批次指定公司。
@@ -433,6 +448,61 @@ class ReportView(QWidget):
             f"已更新 {updated} 筆案件的公司。\n{merge_msg}\n報表將重新整理。",
         )
         # 重新整理預覽（重抓未知公司清單，剛指定的應消失）
+        self._on_preview()
+
+    def _on_delete_selected_cases(self) -> None:
+        """批次刪除「❓ 未知公司」分頁選取的案件。
+
+        刪除是不可逆操作，先彈確認對話框；確認後逐筆呼叫 delete_case
+        （含 cascade 清除 case_logs / case_mantis / 待審查 KMS 等）。
+        """
+        if not self._conn:
+            return
+        table = self._current_unknown_table()
+        if not table:
+            return
+        rows = table.selectionModel().selectedRows()
+        if not rows:
+            return
+
+        case_ids: list[str] = []
+        for idx in rows:
+            item = table.item(idx.row(), 0)
+            if item and item.text().startswith("CS-"):
+                case_ids.append(item.text())
+        if not case_ids:
+            return
+
+        # 確認對話框（破壞性操作）
+        sample = "、".join(case_ids[:3]) + ("..." if len(case_ids) > 3 else "")
+        reply = QMessageBox.warning(
+            self,
+            "確認刪除",
+            f"確定刪除 {len(case_ids)} 筆案件？\n\n包含：{sample}\n\n"
+            "此操作無法復原，將一併刪除：\n"
+            "• 案件記錄（case_logs）\n"
+            "• Mantis 關聯（僅此案件獨佔的票單會一併刪除）\n"
+            "• 待審查 KMS 條目",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        from hcp_cms.core.case_manager import CaseManager
+        mgr = CaseManager(self._conn)
+        deleted = 0
+        for cid in case_ids:
+            try:
+                mgr.delete_case(cid)
+                deleted += 1
+            except Exception:
+                pass  # 個別失敗不影響其他案件
+        QMessageBox.information(
+            self,
+            "刪除完成",
+            f"已刪除 {deleted} / {len(case_ids)} 筆案件。\n報表將重新整理。",
+        )
         self._on_preview()
 
     def _fill_cs_report_preview(self) -> None:
