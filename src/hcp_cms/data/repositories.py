@@ -39,6 +39,30 @@ def _clean_subject(subject: str) -> str:
         result = stripped
 
 
+_SUBJECT_LEN_TOLERANCE = 20
+
+
+def _subjects_equivalent(s1: str, s2: str, max_len_diff: int = _SUBJECT_LEN_TOLERANCE) -> bool:
+    """主旨等價判定：相等，或較短者為較長者前綴且長度差 ≤ max_len_diff。
+
+    應傳入已 _clean_subject() 處理過的字串。比對不分大小寫。
+
+    用途：合併路徑（find_by_company_and_subject / list_by_company_and_subject）容忍
+    主旨末端追加備註（如「(回覆結案)」、「-加急」），仍視為同一案件主題。
+
+    ⚠ 容忍上限 20 字符避免誤合併「申請作業」與「申請作業流程說明大綱…」等不同主題。
+    """
+    a, b = s1.lower(), s2.lower()
+    if a == b:
+        return True
+    short, long_ = (a, b) if len(a) <= len(b) else (b, a)
+    if not short:
+        return False
+    if long_.startswith(short) and len(long_) - len(short) <= max_len_diff:
+        return True
+    return False
+
+
 def _now() -> str:
     return datetime.now().strftime("%Y/%m/%d %H:%M:%S")
 
@@ -338,7 +362,8 @@ class CaseRepository:
     def find_by_company_and_subject(self, company_id: str, clean_subject: str) -> Case | None:
         """查詢 company_id 相同且主旨（去前綴後）相符的最早案件。
 
-        先抓該公司所有案件，Python 側逐一 _clean_subject() 比對。
+        先抓該公司所有案件，Python 側逐一比對。比對採前綴等價（含 ≤20 字長度容忍），
+        以容忍主旨尾端追加備註（如「(回覆結案)」）。
         回傳 sent_time 最早的匹配案件（若 sent_time 相同則取 case_id 字典序最小）。
         """
         rows = self._conn.execute(
@@ -347,12 +372,15 @@ class CaseRepository:
         ).fetchall()
         for row in rows:
             case = self._row_to_case(row)
-            if _clean_subject(case.subject) == clean_subject:
+            if _subjects_equivalent(_clean_subject(case.subject), clean_subject):
                 return case
         return None
 
     def list_by_company_and_subject(self, company_id: str, clean_subject: str) -> list[Case]:
-        """回傳同公司、同主旨（去前綴後，大小寫不敏感）的所有案件，按 sent_time ASC 排序。"""
+        """回傳同公司、同主旨（去前綴後）的所有案件，按 sent_time ASC 排序。
+
+        比對採前綴等價（含 ≤20 字長度容忍），與 find_by_company_and_subject 一致。
+        """
         rows = self._conn.execute(
             self._build_select() + " WHERE company_id = ? ORDER BY sent_time ASC, case_id ASC",
             (company_id,),
@@ -360,9 +388,17 @@ class CaseRepository:
         result = []
         for row in rows:
             case = self._row_to_case(row)
-            if _clean_subject(case.subject).lower() == clean_subject.lower():
+            if _subjects_equivalent(_clean_subject(case.subject), clean_subject):
                 result.append(case)
         return result
+
+    def list_by_linked_case_id(self, linked_case_id: str) -> list[Case]:
+        """回傳 linked_case_id 等於指定案件的所有子案件（不遞迴）。"""
+        rows = self._conn.execute(
+            self._build_select() + " WHERE linked_case_id = ? ORDER BY sent_time ASC, case_id ASC",
+            (linked_case_id,),
+        ).fetchall()
+        return [self._row_to_case(r) for r in rows]
 
     def list_by_status(self, status: str) -> list[Case]:
         rows = self._conn.execute(self._build_select() + " WHERE status = ?", (status,)).fetchall()
