@@ -219,6 +219,39 @@ class TestCaseManager:
         assert case.progress == "待確認"
 
 
+    def test_create_case_fills_contact_person_from_sender(self, seeded_db):
+        """create_case 未顯式傳 contact_person 時，應以 sender_email 作為預設值。
+
+        目的：未知公司案件在報表中心可辨識來源（寄件者）。
+        """
+        mgr = CaseManager(seeded_db.connection)
+        case = mgr.create_case(
+            subject="未知公司來信",
+            body="內容",
+            sender_email="user@aseglobal.com",
+        )
+        assert case.contact_person == "user@aseglobal.com"
+
+    def test_create_case_explicit_contact_person_overrides_sender(self, seeded_db):
+        """顯式傳入 contact_person 時，應優先採用，不被 sender_email 覆蓋。"""
+        mgr = CaseManager(seeded_db.connection)
+        case = mgr.create_case(
+            subject="手動建案",
+            body="內容",
+            sender_email="user@aseglobal.com",
+            contact_person="張小姐",
+        )
+        assert case.contact_person == "張小姐"
+
+    def test_create_case_no_sender_no_contact(self, seeded_db):
+        """無 sender_email、無 contact_person 時，contact_person 為 None。"""
+        mgr = CaseManager(seeded_db.connection)
+        case = mgr.create_case(
+            subject="無寄件者來源",
+            body="",
+        )
+        assert case.contact_person is None
+
     def test_create_case_normalizes_iso_sent_time(self, seeded_db):
         """傳入 ISO 8601 格式 sent_time（含時區）應自動轉為 YYYY/MM/DD HH:MM。"""
         mgr = CaseManager(seeded_db.connection)

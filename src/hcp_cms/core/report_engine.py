@@ -355,15 +355,17 @@ class ReportEngine:
             ),
         )
         if unknown_cases:
+            # 在「公司」與「聯絡方式」之間插入「寄件者」欄
+            # ⚠ 案件編號維持在 col 0（assign/delete 按鈕依賴）；公司在 col 1。
             unk_headers = (
-                ["案件編號", "公司"]
-                + comp_case_headers[1:]  # 略過原 "案件編號"，後面所有欄位順序保持不變
+                ["案件編號", "公司", "寄件者"]
+                + comp_case_headers[1:]
             )
             unk_rows: list[list] = [unk_headers]
             for case in unknown_cases:
                 closed_at = case.updated_at if case.status in ("已完成", "Closed") else ""
                 unk_rows.append(_clean_row([
-                    case.case_id, "（未知）",
+                    case.case_id, "（未知）", case.contact_person or "",
                     case.contact_method, case.status, case.priority,
                     case.sent_time, _reply_elapsed(case.sent_time, case.actual_reply),
                     case.reply_count,

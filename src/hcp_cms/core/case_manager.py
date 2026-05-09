@@ -297,12 +297,17 @@ class CaseManager:
         # body ==進度== 標記優先；若無則用主旨/檔名解析結果
         final_progress = progress_note.strip() if progress_note else classification.get("progress")
 
+        # 若呼叫者未指定 contact_person 但有 sender_email，
+        # 將寄件者作為預設聯絡人（方便未知公司案件補登時辨識來源）。
+        # ⚠ 顯式傳入的 contact_person 優先（NewCaseDialog 等手動建案路徑不受影響）。
+        effective_contact = contact_person if contact_person else (sender_email or None)
+
         case = Case(
             case_id=case_id,
             subject=subject,
             sent_time=_normalize_sent_time(sent_time) or now,
             company_id=classification["company_id"],
-            contact_person=contact_person,
+            contact_person=effective_contact,
             system_product=classification["system_product"],
             issue_type=classification["issue_type"],
             error_type=classification["error_type"],
