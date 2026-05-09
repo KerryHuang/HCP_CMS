@@ -1,5 +1,7 @@
 # HCP CMS 專案藍圖
 
+**最後更新：** 2026/05/09（對應系統版本 v2.3）
+
 ## 技術棧
 
 - **語言**：Python >= 3.10（目前使用 3.14.3）
@@ -193,3 +195,15 @@ python -m hcp_cms
 - Windows：`PyInstaller → HCP_CMS.exe`
 - macOS：`PyInstaller → HCP_CMS.app`
 - 可選：GitHub Actions CI/CD
+
+## v2.3 主要功能補充（2026/05/09）
+
+詳細條列見 `系統交接文件.md` §16，這裡簡述：
+
+| 模組 | 改動 |
+|------|------|
+| `core/case_manager.py` | 自動結案 `(回覆結案)`、寄件者填入 `contact_person` |
+| `core/thread_tracker.py` | `find_thread_members()` BFS、in_reply_to 三層比對 |
+| `core/report_engine.py` | 客服分頁加合計列、未知公司分頁加「公司」「寄件者」欄、預設依主旨聚集排序 |
+| `data/repositories.py` | `_subjects_equivalent` 前綴等價（≤20 字容忍）、`get_by_message_id`、`list_by_linked_case_id` |
+| `ui/report_view.py` | 報表中心控制列加「指定公司」「刪除選取」按鈕 |
