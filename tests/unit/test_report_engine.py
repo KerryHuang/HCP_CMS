@@ -228,6 +228,56 @@ class TestReportEngine:
         assert other_rows[-1][1] == "合計"
         assert other_rows[-1][4] == 1
 
+    def test_unknown_company_sheet_has_company_column(self, seeded_db):
+        """❓ 未知公司分頁的表頭應含「公司」欄（位於案件編號之後），方便使用者視覺確認。"""
+        from hcp_cms.data.models import Case
+        from hcp_cms.data.repositories import CaseRepository
+
+        # 補一筆無公司案件
+        CaseRepository(seeded_db.connection).insert(
+            Case(case_id="CS-2026-099", subject="未知來源信件", company_id=None,
+                 status="處理中", sent_time="2026/03/25 10:00")
+        )
+        engine = ReportEngine(seeded_db.connection)
+        data = engine.build_tracking_table("2026/03/01", "2026/03/31")
+        assert "❓ 未知公司" in data
+        unk_rows = data["❓ 未知公司"]
+        # 表頭順序：案件編號（col 0） → 公司（col 1） → ...
+        assert unk_rows[0][0] == "案件編號"
+        assert unk_rows[0][1] == "公司"
+
+    def test_unknown_company_sheet_shows_unknown_label(self, seeded_db):
+        """❓ 未知公司分頁的每一資料列「公司」欄應顯示「（未知）」。"""
+        from hcp_cms.data.models import Case
+        from hcp_cms.data.repositories import CaseRepository
+
+        CaseRepository(seeded_db.connection).insert(
+            Case(case_id="CS-2026-099", subject="未知來源信件", company_id=None,
+                 status="處理中", sent_time="2026/03/25 10:00")
+        )
+        engine = ReportEngine(seeded_db.connection)
+        data = engine.build_tracking_table("2026/03/01", "2026/03/31")
+        unk_rows = data["❓ 未知公司"]
+        # 第一筆資料列：col 0 案件編號、col 1 公司=「（未知）」
+        first_data = unk_rows[1]
+        assert first_data[0] == "CS-2026-099"
+        assert first_data[1] == "（未知）"
+
+    def test_unknown_company_sheet_case_id_at_col_0(self, seeded_db):
+        """⚠ 案件編號必須維持在 col 0，因 report_view._on_assign_company 依賴此位置抓 case_id。"""
+        from hcp_cms.data.models import Case
+        from hcp_cms.data.repositories import CaseRepository
+
+        CaseRepository(seeded_db.connection).insert(
+            Case(case_id="CS-2026-099", subject="未知來源信件", company_id=None,
+                 status="處理中", sent_time="2026/03/25 10:00")
+        )
+        engine = ReportEngine(seeded_db.connection)
+        data = engine.build_tracking_table("2026/03/01", "2026/03/31")
+        unk_rows = data["❓ 未知公司"]
+        for row in unk_rows[1:]:
+            assert isinstance(row[0], str) and row[0].startswith("CS-")
+
     # ── build_monthly_report 測試 ──────────────────────────────────────────
 
     def test_build_monthly_report_returns_dict(self, seeded_db):

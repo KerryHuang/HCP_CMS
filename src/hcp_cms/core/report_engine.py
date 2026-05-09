@@ -339,13 +339,22 @@ class ReportEngine:
             result["客制需求"] = custom_rows
 
         # ── 未知公司案件（company_id 為空）────────────────────────────
+        # 加入「公司」欄位（位於案件編號之後）顯示「（未知）」，
+        # 讓使用者在報表中心可視覺確認哪些案件待指定公司，配合上方
+        # 「指定公司」按鈕做批次補登。
+        # ⚠ 案件編號維持在第 0 欄，report_view._on_assign_company 依賴此位置。
         unknown_cases = [c for c in cases if not c.company_id]
         if unknown_cases:
-            unk_rows: list[list] = [comp_case_headers]
+            unk_headers = (
+                ["案件編號", "公司"]
+                + comp_case_headers[1:]  # 略過原 "案件編號"，後面所有欄位順序保持不變
+            )
+            unk_rows: list[list] = [unk_headers]
             for case in unknown_cases:
                 closed_at = case.updated_at if case.status in ("已完成", "Closed") else ""
                 unk_rows.append(_clean_row([
-                    case.case_id, case.contact_method, case.status, case.priority,
+                    case.case_id, "（未知）",
+                    case.contact_method, case.status, case.priority,
                     case.sent_time, _reply_elapsed(case.sent_time, case.actual_reply),
                     case.reply_count,
                     case.subject, case.system_product or "",
