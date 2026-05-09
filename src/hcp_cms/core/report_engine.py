@@ -343,7 +343,17 @@ class ReportEngine:
         # 讓使用者在報表中心可視覺確認哪些案件待指定公司，配合上方
         # 「指定公司」按鈕做批次補登。
         # ⚠ 案件編號維持在第 0 欄，report_view._on_assign_company 依賴此位置。
-        unknown_cases = [c for c in cases if not c.company_id]
+        # 預設按主旨排序：方便使用者把同主題的多筆案件聚在一起一次選取補登。
+        # subjects 經 ThreadTracker.clean_subject 去前綴後排序，把 "RE: 主旨"
+        # 與 "主旨" 視為同一群。
+        from hcp_cms.core.thread_tracker import ThreadTracker
+        unknown_cases = sorted(
+            [c for c in cases if not c.company_id],
+            key=lambda c: (
+                ThreadTracker.clean_subject(c.subject or "").lower(),
+                c.sent_time or "",
+            ),
+        )
         if unknown_cases:
             unk_headers = (
                 ["案件編號", "公司"]

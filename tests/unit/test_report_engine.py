@@ -263,6 +263,33 @@ class TestReportEngine:
         assert first_data[0] == "CS-2026-099"
         assert first_data[1] == "（未知）"
 
+    def test_unknown_company_sheet_sorted_by_subject(self, seeded_db):
+        """❓ 未知公司分頁應預設按主旨排序（去前綴後），讓同主題案件聚集成群。"""
+        from hcp_cms.data.models import Case
+        from hcp_cms.data.repositories import CaseRepository
+
+        repo = CaseRepository(seeded_db.connection)
+        # 故意亂序插入：B、A、A 主題交錯
+        repo.insert(Case(case_id="CS-2026-101", subject="B 主題詢問", company_id=None,
+                         status="處理中", sent_time="2026/03/25 10:00"))
+        repo.insert(Case(case_id="CS-2026-102", subject="A 主題詢問", company_id=None,
+                         status="處理中", sent_time="2026/03/25 11:00"))
+        repo.insert(Case(case_id="CS-2026-103", subject="RE: A 主題詢問", company_id=None,
+                         status="處理中", sent_time="2026/03/25 12:00"))
+
+        engine = ReportEngine(seeded_db.connection)
+        data = engine.build_tracking_table("2026/03/01", "2026/03/31")
+        unk_rows = data["❓ 未知公司"]
+        # 跳過 header，取主旨欄（看完整 row 找）
+        # subject 在欄位順序中：col 0=案件編號, 1=公司, 2=聯絡方式, 3=狀態, 4=優先,
+        #                        5=寄件時間, 6=首次回覆, 7=來回, 8=主旨
+        subjects = [row[8] for row in unk_rows[1:]]
+        # A 主題（含 "RE: A 主題詢問"）應排在 B 主題之前
+        # clean_subject 後 "A 主題詢問" 的兩筆相連，再來才是 "B 主題詢問"
+        a_indices = [i for i, s in enumerate(subjects) if "A 主題" in s]
+        b_indices = [i for i, s in enumerate(subjects) if "B 主題" in s]
+        assert max(a_indices) < min(b_indices), f"A 主題應全部排在 B 主題之前: {subjects}"
+
     def test_unknown_company_sheet_case_id_at_col_0(self, seeded_db):
         """⚠ 案件編號必須維持在 col 0，因 report_view._on_assign_company 依賴此位置抓 case_id。"""
         from hcp_cms.data.models import Case

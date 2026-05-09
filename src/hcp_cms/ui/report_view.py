@@ -259,10 +259,13 @@ class ReportView(QWidget):
                 table.cellClicked.connect(self._on_company_cell_clicked)
 
             # ❓ 未知公司分頁：允許多選列、選取變動時更新「指定公司」按鈕狀態
+            # ⚠ 啟用排序前要關閉，否則 setItem 過程被排序干擾。資料填完才開。
             if sheet_name == self._UNKNOWN_COMPANY_SHEET:
                 table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
                 table.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection)
                 table.itemSelectionChanged.connect(self._update_assign_btn_state)
+                # 點欄位標題可重新排序，方便使用者依「主旨」聚集同主題案件批次指定公司
+                table.setSortingEnabled(True)
 
             self._tab_widget.addTab(table, sheet_name)
         # 重整完畢後重新評估按鈕狀態
