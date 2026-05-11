@@ -145,7 +145,9 @@ class PendingReleaseTab(QWidget):
         hdr.setSectionsMovable(True)
         self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self._table.setSortingEnabled(True)
+        # ⚠ 不啟用點欄位標題排序：本表順序由「狀態群組 + 手動上下移」決定，
+        #   啟用後會與 self._items 的 row 對應錯位導致點 0016914 開到 0017095 等錯誤。
+        self._table.setSortingEnabled(False)
         self._table.setWordWrap(True)
         self._table.itemSelectionChanged.connect(self._on_selection_changed)
         self._table.cellDoubleClicked.connect(self._on_cell_double_clicked)
@@ -184,7 +186,7 @@ class PendingReleaseTab(QWidget):
             x.sort_order if x.sort_order is not None else 999999,
         ))
 
-        self._table.setSortingEnabled(False)
+        # 排序狀態保持 False（與 _setup_ui 中註解一致），避免 row 對應錯位
         self._table.setRowCount(0)
         for item in self._items:
             row = self._table.rowCount()
@@ -198,8 +200,10 @@ class PendingReleaseTab(QWidget):
                 elif item.status == "待確認":
                     from PySide6.QtGui import QColor
                     cell.setForeground(QColor("#F59E0B"))  # 琥珀色
+                # 第 0 欄存 item.id 作為唯一識別，供未來若需點擊查找使用
+                if col == 0:
+                    cell.setData(Qt.ItemDataRole.UserRole, item.id)
                 self._table.setItem(row, col, cell)
-        self._table.setSortingEnabled(True)
         self._table.resizeRowsToContents()
         self._release_btn.setEnabled(False)
         self._move_btn.setEnabled(False)
