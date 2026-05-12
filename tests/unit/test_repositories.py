@@ -221,8 +221,12 @@ class TestQARepository:
         assert parts[2] == "001"
 
     def test_next_qa_id_sequential(self, db: DatabaseManager) -> None:
+        # next_qa_id() 以當月為前綴（datetime.now().strftime("%Y%m")），
+        # 測試必須與當月對齊，否則 MAX 查詢落空會回傳當月首號。
+        from datetime import datetime
+
         repo = QARepository(db.connection)
-        ym = "202603"
+        ym = datetime.now().strftime("%Y%m")
         qa1 = QAKnowledge(qa_id=f"QA-{ym}-001", question="Q1", answer="A1")
         qa2 = QAKnowledge(qa_id=f"QA-{ym}-002", question="Q2", answer="A2")
         repo.insert(qa1)
