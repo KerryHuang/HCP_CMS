@@ -169,6 +169,68 @@ class TestCaseRepository:
         assert result.status == "已完成"
         assert result.updated_at is not None
 
+    def test_list_overdue_excludes_completed(self, db: DatabaseManager) -> None:
+        """已完成案件不應出現在超時清單，即使 sent_time 很久。"""
+        from datetime import datetime, timedelta
+        repo = CaseRepository(db.connection)
+        long_ago = (datetime.now() - timedelta(days=30)).strftime("%Y/%m/%d %H:%M:%S")
+        repo.insert(Case(case_id="CS-OLD-DONE", subject="完成的", status="已完成", sent_time=long_ago))
+        overdue = repo.list_overdue(days=7)
+        assert not any(c.case_id == "CS-OLD-DONE" for c in overdue)
+
+    def test_list_overdue_returns_stuck_in_progress(self, db: DatabaseManager) -> None:
+        """處理中且 sent_time 超過 N 天的案件應出現在超時清單。"""
+        from datetime import datetime, timedelta
+        repo = CaseRepository(db.connection)
+        ten_days_ago = (datetime.now() - timedelta(days=10)).strftime("%Y/%m/%d %H:%M:%S")
+        three_days_ago = (datetime.now() - timedelta(days=3)).strftime("%Y/%m/%d %H:%M:%S")
+        repo.insert(Case(case_id="CS-STUCK-10", subject="卡 10 天", status="處理中", sent_time=ten_days_ago))
+        repo.insert(Case(case_id="CS-RECENT-3", subject="才 3 天", status="處理中", sent_time=three_days_ago))
+        overdue = repo.list_overdue(days=7)
+        ids = [c.case_id for c in overdue]
+        assert "CS-STUCK-10" in ids
+        assert "CS-RECENT-3" not in ids
+
+    def test_list_overdue_sorted_by_oldest_first(self, db: DatabaseManager) -> None:
+        """超時清單按 sent_time 升序（最舊在最前）。"""
+        from datetime import datetime, timedelta
+        repo = CaseRepository(db.connection)
+        days_30 = (datetime.now() - timedelta(days=30)).strftime("%Y/%m/%d %H:%M:%S")
+        days_15 = (datetime.now() - timedelta(days=15)).strftime("%Y/%m/%d %H:%M:%S")
+        days_8 = (datetime.now() - timedelta(days=8)).strftime("%Y/%m/%d %H:%M:%S")
+        repo.insert(Case(case_id="CS-A", subject="8天", status="處理中", sent_time=days_8))
+        repo.insert(Case(case_id="CS-B", subject="30天", status="處理中", sent_time=days_30))
+        repo.insert(Case(case_id="CS-C", subject="15天", status="處理中", sent_time=days_15))
+        overdue = repo.list_overdue(days=7)
+        ids = [c.case_id for c in overdue]
+        assert ids.index("CS-B") < ids.index("CS-C") < ids.index("CS-A")
+
+    def test_list_unassigned_returns_empty_handler(self, db: DatabaseManager) -> None:
+        """handler 為 NULL 或空字串的案件應出現，已完成的排除。"""
+        repo = CaseRepository(db.connection)
+        repo.insert(Case(case_id="CS-NULL", subject="無 handler", status="處理中", handler=None))
+        repo.insert(Case(case_id="CS-EMPTY", subject="空 handler", status="處理中", handler=""))
+        repo.insert(Case(case_id="CS-DONE-NULL", subject="完成無 handler", status="已完成", handler=None))
+        repo.insert(Case(case_id="CS-HAS", subject="有 handler", status="處理中", handler="jill"))
+        unassigned = repo.list_unassigned()
+        ids = [c.case_id for c in unassigned]
+        assert "CS-NULL" in ids
+        assert "CS-EMPTY" in ids
+        assert "CS-DONE-NULL" not in ids
+        assert "CS-HAS" not in ids
+
+    def test_list_by_handler_case_insensitive(self, db: DatabaseManager) -> None:
+        """list_by_handler 應採大小寫不敏感比對（既有資料含 jill / JILL）。"""
+        repo = CaseRepository(db.connection)
+        repo.insert(Case(case_id="CS-LOW", subject="小寫", handler="jill"))
+        repo.insert(Case(case_id="CS-UP", subject="大寫", handler="JILL"))
+        repo.insert(Case(case_id="CS-MIX", subject="混合", handler="Jill"))
+        repo.insert(Case(case_id="CS-OTHER", subject="他人", handler="YOGA"))
+        result = repo.list_by_handler("jill")
+        ids = {c.case_id for c in result}
+        assert {"CS-LOW", "CS-UP", "CS-MIX"} <= ids
+        assert "CS-OTHER" not in ids
+
     def test_update(self, db: DatabaseManager) -> None:
         repo = CaseRepository(db.connection)
         case = Case(case_id="CS-2026-040", subject="Original subject")

@@ -62,6 +62,28 @@ def _calc_elapsed(sent_time: str | None, end_time: str | None) -> str:
         return ""
 
 
+def _days_since(sent_time: str | None) -> int:
+    """計算 sent_time 距今幾天（無法解析回傳 0）。"""
+    if not sent_time:
+        return 0
+    try:
+        start = datetime.strptime(sent_time[:16], "%Y/%m/%d %H:%M")
+        return max(0, (datetime.now() - start).days)
+    except Exception:
+        return 0
+
+
+def _overdue_color(days_stuck: int) -> str | None:
+    """依卡幾天回傳背景顏色（深色主題友善的淡背景）；< 7 天回傳 None。"""
+    if days_stuck >= 30:
+        return "#5b2526"  # 紅
+    if days_stuck >= 14:
+        return "#5b4525"  # 橘
+    if days_stuck >= 7:
+        return "#5b5525"  # 黃
+    return None
+
+
 class CaseView(QWidget):
     """Case management page."""
 
@@ -100,7 +122,24 @@ class CaseView(QWidget):
         header.addWidget(self._search_input)
 
         self._filter_combo = QComboBox()
-        self._filter_combo.addItems(["全部", "處理中", "已回覆", "已完成", "Closed", "最近匯入"])
+        self._filter_combo.addItems([
+            "全部", "處理中", "已回覆", "已完成", "Closed", "最近匯入",
+            "─── 追蹤 ───",
+            "🚨 超時 7 天以上",
+            "🚨 超時 14 天以上",
+            "🚨 超時 30 天以上",
+            "❓ 未指派 handler",
+        ])
+        # 分隔線項目不可選
+        from PySide6.QtGui import QStandardItemModel
+        model = self._filter_combo.model()
+        if isinstance(model, QStandardItemModel):
+            sep_idx = self._filter_combo.findText("─── 追蹤 ───")
+            if sep_idx >= 0:
+                item = model.item(sep_idx)
+                if item is not None:
+                    item.setEnabled(False)
+        self._filter_combo.currentTextChanged.connect(lambda _: self.refresh())
         header.addWidget(self._filter_combo)
 
         refresh_btn = QPushButton("🔄 重新整理")
@@ -281,6 +320,33 @@ class CaseView(QWidget):
 
         layout.addWidget(splitter)
 
+        # 底部追蹤狀態列
+        self._tracker_status = QLabel("")
+        self._tracker_status.setStyleSheet(
+            "color: #94a3b8; font-size: 11px; padding: 4px 8px;"
+            " background: #1e293b; border-top: 1px solid #334155;"
+        )
+        layout.addWidget(self._tracker_status)
+
+    def _update_status_bar(self, cases: list) -> None:
+        """更新底部追蹤狀態列：總筆數 / 處理中 / 超時 7+ / 未指派。"""
+        total = len(cases)
+        in_progress = sum(1 for c in cases if c.status == "處理中")
+        overdue = sum(
+            1 for c in cases
+            if c.status == "處理中" and _days_since(c.sent_time) >= 7
+        )
+        unassigned = sum(
+            1 for c in cases
+            if (not c.handler or c.handler == "") and c.status != "已完成"
+        )
+        self._tracker_status.setText(
+            f"📋 顯示 {total} 筆"
+            f"   |   ⏳ 處理中 {in_progress}"
+            f"   |   🚨 超時 7+ 天 {overdue}"
+            f"   |   ❓ 未指派 {unassigned}"
+        )
+
     def refresh(self) -> None:
         if not self._conn:
             return
@@ -311,6 +377,16 @@ class CaseView(QWidget):
                 cases = repo.list_all()
             elif status_filter == "最近匯入":
                 cases = repo.list_recently_created(minutes=10)
+            elif status_filter == "🚨 超時 7 天以上":
+                cases = repo.list_overdue(days=7)
+            elif status_filter == "🚨 超時 14 天以上":
+                cases = repo.list_overdue(days=14)
+            elif status_filter == "🚨 超時 30 天以上":
+                cases = repo.list_overdue(days=30)
+            elif status_filter == "❓ 未指派 handler":
+                cases = repo.list_unassigned()
+            elif status_filter == "─── 追蹤 ───":
+                cases = []  # 不可選的分隔線，保險起見
             else:
                 cases = repo.list_by_status(status_filter)
 
@@ -334,6 +410,7 @@ class CaseView(QWidget):
             self._table.setRowCount(len(cases))
             if not cases:
                 self._clear_detail()
+            from PySide6.QtGui import QBrush, QColor
             for i, case in enumerate(cases):
                 self._table.setItem(i, 0, QTableWidgetItem(case.case_id))
                 self._table.setItem(i, 1, QTableWidgetItem(case.status))
@@ -355,6 +432,20 @@ class CaseView(QWidget):
                 for j, col in enumerate(visible_cols):
                     val = case.extra_fields.get(col.col_key) or ""
                     self._table.setItem(i, _FIXED_COL_COUNT + j, QTableWidgetItem(val))
+
+                # 超時案件顏色標示：處理中且 sent_time 距今超過 7 天才標
+                if case.status == "處理中":
+                    days_stuck = _days_since(case.sent_time)
+                    bg = _overdue_color(days_stuck)
+                    if bg is not None:
+                        brush = QBrush(QColor(bg))
+                        for col_idx in range(total_cols):
+                            item = self._table.item(i, col_idx)
+                            if item is not None:
+                                item.setBackground(brush)
+
+            # 更新狀態列
+            self._update_status_bar(cases)
         except Exception:
             pass
 

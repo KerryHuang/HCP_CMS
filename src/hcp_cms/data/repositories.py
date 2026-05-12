@@ -393,6 +393,40 @@ class CaseRepository:
         ).fetchall()
         return [self._row_to_case(r) for r in rows]
 
+    def list_overdue(self, days: int) -> list[Case]:
+        """查詢狀態為「處理中」且 sent_time 距今超過 N 天的案件，按 sent_time ASC（最舊在前）。
+
+        sent_time 格式為 `YYYY/MM/DD HH:MM:SS`，SQLite julianday 不認識斜線，
+        故先 replace 為 dash 再比對。
+        """
+        rows = self._conn.execute(
+            self._build_select()
+            + " WHERE status = '處理中'"
+            + " AND sent_time IS NOT NULL AND sent_time != ''"
+            + " AND julianday('now') - julianday(replace(sent_time, '/', '-')) > ?"
+            + " ORDER BY sent_time ASC",
+            (days,),
+        ).fetchall()
+        return [self._row_to_case(r) for r in rows]
+
+    def list_unassigned(self) -> list[Case]:
+        """查詢 handler 為空且尚未完成的案件，按 sent_time ASC。"""
+        rows = self._conn.execute(
+            self._build_select()
+            + " WHERE (handler IS NULL OR handler = '')"
+            + " AND status != '已完成'"
+            + " ORDER BY sent_time ASC",
+        ).fetchall()
+        return [self._row_to_case(r) for r in rows]
+
+    def list_by_handler(self, name: str) -> list[Case]:
+        """大小寫不敏感比對 handler 欄位（容忍既有資料 jill / JILL / Jill 並存）。"""
+        rows = self._conn.execute(
+            self._build_select() + " WHERE LOWER(handler) = LOWER(?) ORDER BY sent_time DESC",
+            (name,),
+        ).fetchall()
+        return [self._row_to_case(r) for r in rows]
+
     def update_status(self, case_id: str, status: str) -> None:
         self._conn.execute(
             "UPDATE cs_cases SET status = ?, updated_at = ? WHERE case_id = ?",
