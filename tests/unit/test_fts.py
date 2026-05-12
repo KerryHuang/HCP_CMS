@@ -67,3 +67,44 @@ class TestFTSManager:
         tokens = fts.tokenize("員工離職薪水怎麼算")
         assert isinstance(tokens, str)
         assert " " in tokens
+
+    def test_phrase_match_ranks_above_distant_match(self, fts: FTSManager) -> None:
+        """多詞查詢時，tokens 相鄰出現的 QA 應排在分散出現的 QA 之前。
+
+        重現使用者回報：建立 question='資料修改需求', keywords='資料修改' 的 QA 後
+        搜尋'資料修改'，該 QA 應排在前面，而非被「answer 內分散出現 資料 與 修改」
+        的舊 QA 擠到第 12 名。
+        """
+        # 分散出現：question/answer 各自含 資料、修改 多次，但「資料」與「修改」不相鄰
+        fts.index_qa(
+            "QA-OLD",
+            "如何修改員工姓名",
+            "可進行修改：先到資料建檔後修改設定資料內容，再修改設定",
+            None,
+            None,
+        )
+        # 相鄰出現：keywords 與 question 直接是「資料修改」
+        fts.index_qa(
+            "QA-NEW",
+            "資料修改需求",
+            "與內部確認後，因該欄位敏感，目前暫無法提供 SQL 語法供客戶自行更新",
+            None,
+            "資料修改",
+        )
+
+        results = fts.search_qa("資料修改")
+        qa_ids = [r["qa_id"] for r in results]
+        assert "QA-NEW" in qa_ids, f"QA-NEW 應出現在結果內：{qa_ids}"
+        assert "QA-OLD" in qa_ids, f"QA-OLD 應出現在結果內：{qa_ids}"
+        assert qa_ids.index("QA-NEW") < qa_ids.index("QA-OLD"), (
+            f"預期 QA-NEW（相鄰）排在 QA-OLD（分散）之前，實際順序：{qa_ids}"
+        )
+
+    def test_single_token_query_unchanged(self, fts: FTSManager) -> None:
+        """單一 token 查詢不應受 phrase 加強影響，行為與現況一致。"""
+        fts.index_qa("QA-A", "薪資計算問題", "進入模組", None, None)
+        fts.index_qa("QA-B", "另一個無關問題", "別的內容", None, None)
+        results = fts.search_qa("薪資")
+        qa_ids = [r["qa_id"] for r in results]
+        assert "QA-A" in qa_ids
+        assert "QA-B" not in qa_ids
