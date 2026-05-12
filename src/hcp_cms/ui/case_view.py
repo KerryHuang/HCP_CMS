@@ -74,13 +74,25 @@ def _days_since(sent_time: str | None) -> int:
 
 
 def _overdue_color(days_stuck: int) -> str | None:
-    """依卡幾天回傳背景顏色（深色主題友善的淡背景）；< 7 天回傳 None。"""
+    """依卡幾天回傳背景顏色（深色主題友善的淡背景）；< 3 天回傳 None。
+
+    5 級漸層：
+      3-4 天：淡黃綠（輕微警示）
+      5-6 天：黃（明顯警示）
+      7-9 天：深黃 / 卡其（注意）
+      10-29 天：橘（需處理）
+      30+ 天：紅（嚴重）
+    """
     if days_stuck >= 30:
         return "#5b2526"  # 紅
-    if days_stuck >= 14:
-        return "#5b4525"  # 橘
+    if days_stuck >= 10:
+        return "#5b3a25"  # 橘
     if days_stuck >= 7:
-        return "#5b5525"  # 黃
+        return "#5b5025"  # 深黃
+    if days_stuck >= 5:
+        return "#4a4225"  # 黃
+    if days_stuck >= 3:
+        return "#3a3825"  # 淡黃綠
     return None
 
 
@@ -129,6 +141,7 @@ class CaseView(QWidget):
             "🚨 超時 14 天以上",
             "🚨 超時 30 天以上",
             "❓ 未指派 handler",
+            "📩 回覆 1 次（依客服分組）",
         ])
         # 分隔線項目不可選
         from PySide6.QtGui import QStandardItemModel
@@ -385,6 +398,8 @@ class CaseView(QWidget):
                 cases = repo.list_overdue(days=30)
             elif status_filter == "❓ 未指派 handler":
                 cases = repo.list_unassigned()
+            elif status_filter == "📩 回覆 1 次（依客服分組）":
+                cases = repo.list_by_reply_count(1)
             elif status_filter == "─── 追蹤 ───":
                 cases = []  # 不可選的分隔線，保險起見
             else:

@@ -427,6 +427,32 @@ class CaseRepository:
         ).fetchall()
         return [self._row_to_case(r) for r in rows]
 
+    def list_by_reply_count(self, count: int) -> list[Case]:
+        """查詢指定回覆次數的案件，依公司的 cs_staff_id 分組排序（未指派排最後），
+        組內按 sent_time ASC。
+
+        用途：例如「回覆 1 次」清單，按客服分組瀏覽。
+        """
+        # 先查出所有符合條件的案件
+        cases = [
+            self._row_to_case(r)
+            for r in self._conn.execute(
+                self._build_select() + " WHERE reply_count = ?",
+                (count,),
+            ).fetchall()
+        ]
+        # 再查 company → cs_staff_id 對照（一次查完，避免 N+1）
+        cs_staff_map: dict[str, str] = {}
+        for row in self._conn.execute("SELECT company_id, cs_staff_id FROM companies").fetchall():
+            cs_staff_map[row[0]] = row[1] or ""
+        # Python 端排序：未指派排最後、cs_staff_id 升序、sent_time 升序
+        def sort_key(c: Case) -> tuple:
+            staff = cs_staff_map.get(c.company_id or "", "")
+            unassigned_flag = 1 if not staff else 0
+            return (unassigned_flag, staff, c.sent_time or "")
+        cases.sort(key=sort_key)
+        return cases
+
     def update_status(self, case_id: str, status: str) -> None:
         self._conn.execute(
             "UPDATE cs_cases SET status = ?, updated_at = ? WHERE case_id = ?",

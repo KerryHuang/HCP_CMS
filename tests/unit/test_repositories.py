@@ -231,6 +231,60 @@ class TestCaseRepository:
         assert {"CS-LOW", "CS-UP", "CS-MIX"} <= ids
         assert "CS-OTHER" not in ids
 
+    def test_list_by_reply_count_filters_correctly(self, db: DatabaseManager) -> None:
+        """list_by_reply_count(1) 只回傳 reply_count=1 的案件。"""
+        repo = CaseRepository(db.connection)
+        repo.insert(Case(case_id="CS-R1", subject="回覆 1 次", reply_count=1))
+        repo.insert(Case(case_id="CS-R2", subject="回覆 2 次", reply_count=2))
+        repo.insert(Case(case_id="CS-R0", subject="未回覆", reply_count=0))
+        result = repo.list_by_reply_count(1)
+        ids = {c.case_id for c in result}
+        assert "CS-R1" in ids
+        assert "CS-R2" not in ids
+        assert "CS-R0" not in ids
+
+    def test_list_by_reply_count_sorted_by_cs_staff(self, db: DatabaseManager) -> None:
+        """list_by_reply_count 依公司的 cs_staff_id 分組排序，組內按 sent_time。"""
+        from hcp_cms.data.models import Company
+
+        company_repo = CompanyRepository(db.connection)
+        # 建立公司並指派 cs_staff_id
+        company_repo.insert(Company(company_id="C-A", name="A 公司", domain="a.com", cs_staff_id="STAFF-jill"))
+        company_repo.insert(Company(company_id="C-B", name="B 公司", domain="b.com", cs_staff_id="STAFF-YOGA"))
+        company_repo.insert(Company(company_id="C-C", name="C 公司", domain="c.com", cs_staff_id=None))
+
+        repo = CaseRepository(db.connection)
+        repo.insert(Case(
+            case_id="CS-A1", subject="A1", company_id="C-A", reply_count=1,
+            sent_time="2026/05/01 10:00:00",
+        ))
+        repo.insert(Case(
+            case_id="CS-B1", subject="B1", company_id="C-B", reply_count=1,
+            sent_time="2026/05/02 10:00:00",
+        ))
+        repo.insert(Case(
+            case_id="CS-A2", subject="A2", company_id="C-A", reply_count=1,
+            sent_time="2026/05/03 10:00:00",
+        ))
+        repo.insert(Case(
+            case_id="CS-C1", subject="C1", company_id="C-C", reply_count=1,
+            sent_time="2026/05/04 10:00:00",
+        ))
+        repo.insert(Case(
+            case_id="CS-X", subject="X", company_id="C-A", reply_count=2,
+            sent_time="2026/05/05 10:00:00",
+        ))
+
+        result = repo.list_by_reply_count(1)
+        ids = [c.case_id for c in result]
+        # CS-X 不在內（reply_count=2）
+        assert "CS-X" not in ids
+        # 同客服（C-A: jill）的案件應相鄰；CS-A1、CS-A2 同組，組內按 sent_time
+        a1_idx = ids.index("CS-A1")
+        a2_idx = ids.index("CS-A2")
+        assert abs(a1_idx - a2_idx) == 1, f"同客服案件應相鄰，實際順序：{ids}"
+        assert a1_idx < a2_idx, f"組內應按 sent_time 升序，實際：{ids}"
+
     def test_update(self, db: DatabaseManager) -> None:
         repo = CaseRepository(db.connection)
         case = Case(case_id="CS-2026-040", subject="Original subject")
