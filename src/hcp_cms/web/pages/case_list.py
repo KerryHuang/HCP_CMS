@@ -5,10 +5,10 @@ import sqlite3
 
 from nicegui import ui
 
+from hcp_cms.core.mantis_push import MantisPushManager
 from hcp_cms.data.models import Staff
 from hcp_cms.data.repositories import CaseRepository
 from hcp_cms.services.mantis.base import MantisClient
-from hcp_cms.web.mantis_push import MantisPushManager
 from hcp_cms.web.visibility import CaseVisibilityFilter
 
 STATUS_COLORS = {

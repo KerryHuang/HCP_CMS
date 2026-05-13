@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Hook: 在 Write/Edit 後執行 ruff format（自動修正）+ ruff check（阻擋錯誤）"""
 import json
+import os
 import subprocess
 import sys
-import os
 
 data = json.load(sys.stdin)
 file_path = data.get("tool_input", {}).get("file_path", "")

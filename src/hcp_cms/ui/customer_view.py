@@ -397,7 +397,6 @@ class CustomerView(QWidget):
         inserted, updated = mgr.bulk_upsert_companies(rows)
         msg = f"新增 {inserted} 筆，更新 {updated} 筆。"
         if updated > 0:
-            from PySide6.QtWidgets import QAbstractButton
             box = QMessageBox(self)
             box.setWindowTitle("儲存完成")
             box.setText(f"{msg}\n\n是否同步更新案件管理的公司別？")
@@ -608,7 +607,7 @@ class CustomerView(QWidget):
                 f"成功更新：{updated} 筆　|　已是最新：{with_ver - updated - len(unmatched)} 筆　|　找不到公司：{len(unmatched)} 筆"
             )
             if unmatched:
-                msg += f"\n\n⚠ 找不到對應公司的 Mantis 帳號：\n"
+                msg += "\n\n⚠ 找不到對應公司的 Mantis 帳號：\n"
                 msg += "\n".join(f"  • {u}" for u in unmatched)
             if total == 0:
                 msg = "Mantis 未回傳任何 -USER 帳號，請確認帳號過濾條件或連線設定。"

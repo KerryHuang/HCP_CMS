@@ -627,10 +627,11 @@ class ReportView(QWidget):
         """產生統計圖表分頁並插入 QTabWidget 第一頁。"""
         try:
             import io
+
             import matplotlib
             matplotlib.use("Agg")
-            import matplotlib.pyplot as plt
             import matplotlib.font_manager as fm
+            import matplotlib.pyplot as plt
 
             # 找可顯示中文的字型
             _CJK_CANDIDATES = ["Microsoft JhengHei", "Microsoft YaHei", "SimHei", "PingFang TC", "Noto Sans CJK TC"]

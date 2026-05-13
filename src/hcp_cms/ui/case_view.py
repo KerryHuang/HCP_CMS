@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sqlite3
 from datetime import datetime
 from pathlib import Path
@@ -186,6 +187,12 @@ class CaseView(QWidget):
         self._assign_company_btn.setEnabled(False)
         self._assign_company_btn.clicked.connect(self._on_assign_company)
         header.addWidget(self._assign_company_btn)
+
+        self._mantis_push_btn = QPushButton("🚀 推到 Mantis")
+        self._mantis_push_btn.setToolTip("將選取案件推送到 Mantis 建立新 ticket（已連結的案件會自動略過）")
+        self._mantis_push_btn.setEnabled(False)
+        self._mantis_push_btn.clicked.connect(self._on_push_to_mantis)
+        header.addWidget(self._mantis_push_btn)
 
         self._delete_btn = QPushButton("🗑 批次刪除")
         self._delete_btn.setObjectName("dangerBtn")
@@ -488,6 +495,8 @@ class CaseView(QWidget):
         """清空下方詳細資訊面板。"""
         self._delete_selected_btn.setEnabled(False)
         self._assign_company_btn.setEnabled(False)
+        self._mantis_push_btn.setEnabled(False)
+        self._mantis_push_btn.setText("🚀 推到 Mantis")
         self._detail_id.clear()
         self._detail_subject.clear()
         self._detail_status.clear()
@@ -509,6 +518,10 @@ class CaseView(QWidget):
         rows = self._table.selectionModel().selectedRows()
         self._delete_selected_btn.setEnabled(bool(rows))
         self._assign_company_btn.setEnabled(bool(rows))
+        self._mantis_push_btn.setEnabled(bool(rows))
+        self._mantis_push_btn.setText(
+            f"🚀 推到 Mantis ({len(rows)} 筆)" if rows else "🚀 推到 Mantis"
+        )
         if not rows or not hasattr(self, '_cases'):
             return
         row = rows[0].row()
@@ -717,6 +730,106 @@ class CaseView(QWidget):
             "完成",
             f"已更新 {updated} 筆案件的公司。\n{merge_msg}",
         )
+        self.refresh()
+        self.cases_changed.emit()
+
+    def _on_push_to_mantis(self) -> None:
+        """推到 Mantis 按鈕 handler — 將選取案件批次推送建新 ticket。"""
+        from PySide6.QtWidgets import QApplication
+
+        rows = self._table.selectionModel().selectedRows()
+        if not rows or not hasattr(self, '_cases') or not self._conn:
+            return
+        case_ids = [
+            self._cases[r.row()].case_id
+            for r in rows
+            if r.row() < len(self._cases)
+        ]
+
+        # 確認對話框
+        from hcp_cms.ui.mantis_push_dialog import PushToMantisConfirmDialog
+
+        # 從環境變數取得 Mantis project_id 與 label（fallback 為預設值）
+        project_id = os.environ.get("HCP_CMS_MANTIS_PROJECT", "218")
+        project_label = os.environ.get(
+            "HCP_CMS_MANTIS_PROJECT_LABEL",
+            f"Mantis (project {project_id})"
+        )
+
+        palette = self._theme_mgr.current_palette() if self._theme_mgr else None
+        dlg = PushToMantisConfirmDialog(
+            self._conn,
+            case_ids,
+            project_label=project_label,
+            parent=self,
+            palette=palette,
+        )
+        if dlg.exec() != PushToMantisConfirmDialog.DialogCode.Accepted:
+            return
+
+        target_ids = dlg.confirmed_case_ids()
+        if not target_ids:
+            QMessageBox.information(self, "推到 Mantis", "沒有可推送的案件。")
+            return
+
+        # 準備 Mantis client（從 keyring）
+        from hcp_cms.services.credential import CredentialManager
+        from hcp_cms.services.mantis.soap import MantisSoapClient
+        creds = CredentialManager()
+        url = creds.retrieve("mantis_url") or ""
+        user = creds.retrieve("mantis_user") or ""
+        pwd = creds.retrieve("mantis_password") or ""
+        if not all([url, user, pwd]):
+            QMessageBox.warning(
+                self, "Mantis 設定不完整",
+                "請先到「設定」分頁填寫 Mantis URL / 帳號 / 密碼。"
+            )
+            return
+
+        client = MantisSoapClient(url, user, pwd)
+        if not client.connect():
+            QMessageBox.critical(
+                self, "Mantis 連線失敗", f"無法連線：{client.last_error}"
+            )
+            return
+
+        # 取 operator staff_id（自己）— 桌面 App 為 Jill
+        from hcp_cms.data.repositories import StaffRepository
+        jill = None
+        for s in StaffRepository(self._conn).list_by_role("cs"):
+            if s.name.lower() == "jill":
+                jill = s
+                break
+        operator_staff_id = jill.staff_id if jill else "jill"
+
+        # 執行批次推送
+        from hcp_cms.core.mantis_push import MantisPushManager
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            mgr = MantisPushManager(self._conn, client, project_id=project_id)
+            results = mgr.push_cases_batch(target_ids, operator_staff_id)
+        finally:
+            QApplication.restoreOverrideCursor()
+
+        # 結果摘要
+        ok = sum(1 for r in results if r[1] == "success")
+        fail = sum(1 for r in results if r[1] == "failed")
+        skip = sum(1 for r in results if r[1] == "skipped")
+
+        summary = f"✓ 成功 {ok} 筆 / ✗ 失敗 {fail} 筆 / ⊘ 略過 {skip} 筆"
+        msg = QMessageBox(self)
+        msg.setWindowTitle("推到 Mantis 完成")
+        msg.setIcon(QMessageBox.Icon.Information if fail == 0 else QMessageBox.Icon.Warning)
+        msg.setText(summary)
+
+        if fail > 0:
+            failures = [r for r in results if r[1] == "failed"]
+            detail = "\n".join(f"{r[0]}: {r[2]}" for r in failures)
+            msg.setDetailedText(detail)
+
+        msg.exec()
+
+        # 重新整理清單（顯示新連結狀態）
         self.refresh()
         self.cases_changed.emit()
 

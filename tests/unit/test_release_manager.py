@@ -1,7 +1,8 @@
 """ReleaseDetector / ReleaseManager 單元測試。"""
 import pytest
-from hcp_cms.data.database import DatabaseManager
+
 from hcp_cms.core.release_manager import ReleaseDetector, ReleaseManager
+from hcp_cms.data.database import DatabaseManager
 
 
 @pytest.fixture

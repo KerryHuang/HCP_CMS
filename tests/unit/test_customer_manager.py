@@ -111,10 +111,10 @@ class TestSyncHcpVersionFromMantis:
         return _FakeClient()
 
     def _insert_company(self, db, *, name, domain="", alias="", hcp_version=None):
+        import uuid
+
         from hcp_cms.data.models import Company
         from hcp_cms.data.repositories import CompanyRepository
-
-        import uuid
         cid = f"COMP-{uuid.uuid4().hex[:8]}"
         CompanyRepository(db.connection).insert(
             Company(company_id=cid, name=name, domain=domain, alias=alias, hcp_version=hcp_version)
