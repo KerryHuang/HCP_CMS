@@ -199,8 +199,56 @@ class MantisSoapClient(MantisClient):
         text: str,
         view_state: str = "public",
     ) -> str | None:
-        """Stub — Task 7 實作。"""
-        raise NotImplementedError("Task 7 將實作此方法")
+        if not self._connected:
+            self.last_error = "尚未連線，請先呼叫 connect()"
+            return None
+
+        soap_body = f"""<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+                  xmlns:man="http://futureware.biz/mantisconnect">
+    <soapenv:Body>
+        <man:mc_issue_note_add>
+            <man:username>{self._escape_xml(self._username)}</man:username>
+            <man:password>{self._escape_xml(self._password)}</man:password>
+            <man:issue_id>{self._escape_xml(issue_id)}</man:issue_id>
+            <man:note>
+                <man:text>{self._escape_xml(text)}</man:text>
+                <man:view_state><man:name>{self._escape_xml(view_state)}</man:name></man:view_state>
+            </man:note>
+        </man:mc_issue_note_add>
+    </soapenv:Body>
+</soapenv:Envelope>"""
+
+        try:
+            resp = requests.post(
+                f"{self._base_url}/api/soap/mantisconnect.php",
+                data=soap_body.encode("utf-8"),
+                headers={"Content-Type": "text/xml; charset=utf-8"},
+                timeout=30,
+                verify=False,
+            )
+            if resp.status_code != 200:
+                self.last_error = f"HTTP {resp.status_code}: {resp.text[:200]}"
+                return None
+            text_resp = resp.text
+            if "<faultstring>" in text_resp:
+                fault = self._extract_xml(text_resp, "faultstring") or "未知錯誤"
+                self.last_error = f"SOAP 錯誤：{fault}"
+                return None
+            note_id = self._extract_xml(text_resp, "return")
+            if not note_id or not note_id.strip().isdigit():
+                self.last_error = f"回應解析失敗：{text_resp[:200]}"
+                return None
+            return note_id.strip()
+        except requests.exceptions.ConnectionError as e:
+            self.last_error = f"連線失敗：{e}"
+            return None
+        except requests.exceptions.Timeout:
+            self.last_error = "連線逾時（30 秒）"
+            return None
+        except Exception as e:
+            self.last_error = f"未知錯誤：{e}"
+            return None
 
     @staticmethod
     def _escape_xml(value: str | None) -> str:

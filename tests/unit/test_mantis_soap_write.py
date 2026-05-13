@@ -107,3 +107,37 @@ def test_create_issue_escapes_xml_in_summary(client: MantisSoapClient) -> None:
         )
         sent_body = mock_post.call_args.kwargs.get("data", b"").decode("utf-8")
     assert "A &amp; B &lt;tag&gt;" in sent_body
+
+
+# ============= add_note tests =============
+
+
+def test_add_note_success_returns_note_id(client: MantisSoapClient) -> None:
+    response_xml = """<?xml version="1.0"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/">
+<SOAP-ENV:Body>
+<m:mc_issue_note_addResponse><return xsi:type="xsd:integer">789</return></m:mc_issue_note_addResponse>
+</SOAP-ENV:Body>
+</SOAP-ENV:Envelope>"""
+    with patch("hcp_cms.services.mantis.soap.requests.post") as mock_post:
+        mock_post.return_value = _mock_response(response_xml)
+        note_id = client.add_note(issue_id="1234", text="客服更新")
+    assert note_id == "789"
+
+
+def test_add_note_fault_returns_none(client: MantisSoapClient) -> None:
+    fault_xml = "<SOAP-ENV:Fault><faultstring>Issue not found</faultstring></SOAP-ENV:Fault>"
+    with patch("hcp_cms.services.mantis.soap.requests.post") as mock_post:
+        mock_post.return_value = _mock_response(fault_xml)
+        result = client.add_note(issue_id="999", text="x")
+    assert result is None
+    assert "Issue not found" in client.last_error
+
+
+def test_add_note_escapes_xml(client: MantisSoapClient) -> None:
+    response_xml = '<return xsi:type="xsd:integer">1</return>'
+    with patch("hcp_cms.services.mantis.soap.requests.post") as mock_post:
+        mock_post.return_value = _mock_response(response_xml)
+        client.add_note(issue_id="1", text="A & B <tag>")
+        sent_body = mock_post.call_args.kwargs.get("data", b"").decode("utf-8")
+    assert "A &amp; B &lt;tag&gt;" in sent_body
