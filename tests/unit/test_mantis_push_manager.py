@@ -104,6 +104,26 @@ def test_push_case_as_new_ticket_case_not_found(setup) -> None:
     client.create_issue.assert_not_called()
 
 
+def test_push_case_as_new_ticket_works_for_closed_case(setup) -> None:
+    """已結案案件若先前未連結 Mantis，仍應可建新 ticket（補建歷史紀錄）。"""
+    db = setup
+    # 把 C-1 標為 已結案
+    case_repo = CaseRepository(db.connection)
+    case = case_repo.get_by_id("C-1")
+    case.status = "已結案"
+    case_repo.update(case)
+
+    client = MagicMock()
+    client.create_issue.return_value = "888"
+    mgr = MantisPushManager(db.connection, client=client, project_id="218")
+    success, payload = mgr.push_case_as_new_ticket("C-1", "S-YOGA")
+
+    assert success is True
+    assert payload == "888"
+    # 狀態保持 已結案，不被推送動作影響
+    assert case_repo.get_by_id("C-1").status == "已結案"
+
+
 def test_push_case_as_new_ticket_soap_failure_does_not_write_link(setup) -> None:
     db = setup
     client = MagicMock()
