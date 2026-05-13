@@ -128,6 +128,7 @@ class MantisSoapClient(MantisClient):
         priority: str = "normal",
         severity: str = "minor",
         handler: str | None = None,
+        custom_fields: dict[str, str] | None = None,
     ) -> str | None:
         if not self._connected:
             self.last_error = "尚未連線，請先呼叫 connect()"
@@ -141,6 +142,16 @@ class MantisSoapClient(MantisClient):
             f"<man:category>{self._escape_xml(category)}</man:category>"
             if category else ""
         )
+        custom_fields_block = ""
+        if custom_fields:
+            items = "".join(
+                f"<man:item>"
+                f"<man:field><man:name>{self._escape_xml(name)}</man:name></man:field>"
+                f"<man:value>{self._escape_xml(value)}</man:value>"
+                f"</man:item>"
+                for name, value in custom_fields.items()
+            )
+            custom_fields_block = f"<man:custom_fields>{items}</man:custom_fields>"
 
         soap_body = f"""<?xml version="1.0" encoding="UTF-8"?>
 <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
@@ -157,6 +168,7 @@ class MantisSoapClient(MantisClient):
                 <man:priority><man:name>{self._escape_xml(priority)}</man:name></man:priority>
                 <man:severity><man:name>{self._escape_xml(severity)}</man:name></man:severity>
                 {handler_block}
+                {custom_fields_block}
             </man:issue>
         </man:mc_issue_add>
     </soapenv:Body>

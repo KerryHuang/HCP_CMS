@@ -689,9 +689,7 @@ class CaseDetailDialog(QDialog):
         client = self._build_mantis_client()
         result, _ticket = self._manager.sync_mantis_ticket(ticket_id, client=client)
 
-        if result == SyncResult.SUCCESS:
-            self._refresh_mantis_table()
-        elif result == SyncResult.NOT_FOUND:
+        if result == SyncResult.NOT_FOUND:
             reply = QMessageBox.question(
                 self,
                 "Ticket 已不存在",
@@ -709,8 +707,30 @@ class CaseDetailDialog(QDialog):
                 QMessageBox.information(
                     self, "已解除連結", f"Ticket #{ticket_id} 連結已移除。"
                 )
-        else:  # SyncResult.ERROR
+            return
+
+        if result == SyncResult.ERROR:
             QMessageBox.warning(self, "同步失敗", "無法連線至 Mantis，或 Mantis 設定未完成。")
+            return
+
+        # SUCCESS — 接著雙向同步 bugnotes
+        summary_dict = self._manager.sync_bugnotes_bidirectional(
+            case_id=self._case_id,
+            ticket_id=ticket_id,
+            client=client,
+        )
+        self._refresh_mantis_table()
+        self._refresh_log_table()
+
+        QMessageBox.information(
+            self,
+            "同步完成",
+            f"Ticket metadata 已更新。\n\n"
+            f"補充記錄同步：\n"
+            f"  推出 {summary_dict['pushed']} 筆\n"
+            f"  拉入 {summary_dict['pulled']} 筆\n"
+            f"  失敗 {summary_dict['fail']} 筆",
+        )
 
     # ------------------------------------------------------------------
     # 資料載入

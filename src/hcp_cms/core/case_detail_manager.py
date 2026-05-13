@@ -18,6 +18,10 @@ from hcp_cms.data.repositories import (
 from hcp_cms.services.mantis.base import MantisClient
 from hcp_cms.services.mantis.error_detector import is_ticket_not_found
 
+# 出向同步至 Mantis bugnote 的 case_log direction 範圍
+# 排除：客戶來信（已在 ticket description）、Mantis 推送（audit log）、Mantis bugnote（入向同步來的，避免循環）
+_PUSH_DIRECTIONS = ("內部討論", "HCP 信件回覆", "HCP 線上回覆")
+
 
 class SyncResult(Enum):
     """sync_mantis_ticket 三態返回。"""
@@ -197,6 +201,100 @@ class CaseDetailManager:
             logged_at=now,
         )
         self._log_repo.insert(log)
+
+    def sync_bugnotes_outbound(
+        self,
+        case_id: str,
+        ticket_id: str,
+        client: MantisClient,
+    ) -> tuple[int, int]:
+        """把 case_logs 推為 Mantis bugnotes。
+
+        過濾規則：
+        - direction 必須在 _PUSH_DIRECTIONS（內部討論 / HCP 信件回覆 / HCP 線上回覆）
+        - bugnote_id 為 NULL（尚未同步）
+
+        Returns:
+            (success_count, fail_count)
+        """
+        logs = self._log_repo.list_by_case(case_id)
+        candidates = [
+            log for log in logs
+            if log.direction in _PUSH_DIRECTIONS and not log.bugnote_id
+        ]
+        success = 0
+        fail = 0
+        for log in candidates:
+            note_id = client.add_note(
+                issue_id=ticket_id,
+                text=log.content or "",
+            )
+            if note_id is None:
+                fail += 1
+                continue
+            log.bugnote_id = note_id
+            self._log_repo.update(log)
+            success += 1
+        return success, fail
+
+    def sync_bugnotes_inbound(
+        self,
+        case_id: str,
+        ticket_id: str,
+        client: MantisClient,
+    ) -> tuple[int, int]:
+        """從 Mantis 拉新 bugnotes 為 case_logs。
+
+        過濾規則：
+        - 從 client.get_issue(ticket_id) 取 notes_list
+        - note_id 不在現有 case_logs.bugnote_id → 新增
+
+        Returns:
+            (pulled_count, fail_count)
+        """
+        issue = client.get_issue(ticket_id)
+        if issue is None:
+            return 0, 1
+
+        existing_logs = self._log_repo.list_by_case(case_id)
+        existing_ids = {log.bugnote_id for log in existing_logs if log.bugnote_id}
+
+        pulled = 0
+        now = datetime.now().strftime("%Y/%m/%d %H:%M:%S")
+        for note in issue.notes_list:
+            if not note.note_id or note.note_id in existing_ids:
+                continue
+            new_log = CaseLog(
+                log_id=self._log_repo.next_log_id(),
+                case_id=case_id,
+                direction="Mantis bugnote",
+                content=note.text or "",
+                bugnote_id=note.note_id,
+                logged_by=note.reporter,
+                logged_at=note.date_submitted or now,
+            )
+            self._log_repo.insert(new_log)
+            pulled += 1
+        return pulled, 0
+
+    def sync_bugnotes_bidirectional(
+        self,
+        case_id: str,
+        ticket_id: str,
+        client: MantisClient,
+    ) -> dict:
+        """雙向同步 case_logs ↔ Mantis bugnotes。
+
+        Returns:
+            {"pushed": int, "pulled": int, "fail": int}
+        """
+        push_success, push_fail = self.sync_bugnotes_outbound(case_id, ticket_id, client)
+        pull_success, pull_fail = self.sync_bugnotes_inbound(case_id, ticket_id, client)
+        return {
+            "pushed": push_success,
+            "pulled": pull_success,
+            "fail": push_fail + pull_fail,
+        }
 
     def get_mantis_ticket(self, ticket_id: str) -> MantisTicket | None:
         """依 ticket_id 取得本地快取的 Ticket 資料。"""

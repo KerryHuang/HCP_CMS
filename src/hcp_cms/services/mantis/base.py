@@ -56,6 +56,7 @@ class MantisClient(ABC):
         priority: str = "normal",
         severity: str = "minor",
         handler: str | None = None,
+        custom_fields: dict[str, str] | None = None,
     ) -> str | None:
         """建立新 issue，成功回傳 ticket_id，失敗回 None（self.last_error 含原因）。"""
 
