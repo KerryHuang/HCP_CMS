@@ -11,7 +11,7 @@ from hcp_cms.data.repositories import (
     CaseRepository,
     MantisRepository,
 )
-from hcp_cms.web.mantis_push import MantisPushManager
+from hcp_cms.core.mantis_push import MantisPushManager
 
 
 def _link_with_ticket(conn, case_id: str, ticket_id: str) -> None:

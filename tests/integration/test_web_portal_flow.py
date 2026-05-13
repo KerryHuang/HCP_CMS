@@ -14,7 +14,7 @@ from hcp_cms.data.repositories import (
 )
 from hcp_cms.web.audit import AuditLogger
 from hcp_cms.web.auth import WebAuthManager
-from hcp_cms.web.mantis_push import MantisPushManager
+from hcp_cms.core.mantis_push import MantisPushManager
 from hcp_cms.web.visibility import CaseVisibilityFilter
 
 
