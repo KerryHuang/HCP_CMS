@@ -325,6 +325,23 @@ class CaseManager:
         parent = self._tracker.find_thread_parent(
             classification["company_id"], subject, in_reply_to=in_reply_to
         )
+
+        # D-2：已結案 parent 不建子案件，只加 case_log 到 parent
+        if parent and parent.status == "已結案":
+            log_time = _normalize_sent_time(sent_time) or now
+            if len(log_time) == 16:
+                log_time = f"{log_time}:00"
+            direction = _detect_direction(sender_email, subject)
+            closed_log = CaseLog(
+                log_id=self._log_repo.next_log_id(),
+                case_id=parent.case_id,
+                direction=direction,
+                content=body,
+                logged_at=log_time,
+            )
+            self._log_repo.insert(closed_log)
+            return parent
+
         if parent:
             case.linked_case_id = parent.case_id
 

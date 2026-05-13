@@ -85,11 +85,12 @@ class ThreadTracker:
 
             from datetime import datetime, timedelta
             cutoff = (datetime.now() - timedelta(days=90)).strftime("%Y/%m/%d")
-            for case in self._case_repo.list_by_status("已完成"):
-                if case.company_id == company_id and case.subject:
-                    if (case.sent_time or "") >= cutoff:
-                        if self.subjects_match(case.subject, subject):
-                            return self._find_root(case)
+            for status in ("已完成", "已結案"):
+                for case in self._case_repo.list_by_status(status):
+                    if case.company_id == company_id and case.subject:
+                        if (case.sent_time or "") >= cutoff:
+                            if self.subjects_match(case.subject, subject):
+                                return self._find_root(case)
 
             return None
 

@@ -211,6 +211,17 @@ CREATE TABLE IF NOT EXISTS cs_release_items (
     patch_id          INTEGER,
     created_at        TEXT
 );
+
+CREATE TABLE IF NOT EXISTS web_audit_log (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    staff_id    TEXT NOT NULL,
+    occurred_at TEXT NOT NULL,
+    case_id     TEXT NOT NULL,
+    field_name  TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_case  ON web_audit_log(case_id, occurred_at);
+CREATE INDEX IF NOT EXISTS idx_audit_staff ON web_audit_log(staff_id, occurred_at);
 """
 
 
