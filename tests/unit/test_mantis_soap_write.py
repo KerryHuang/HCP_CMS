@@ -141,3 +141,50 @@ def test_add_note_escapes_xml(client: MantisSoapClient) -> None:
         client.add_note(issue_id="1", text="A & B <tag>")
         sent_body = mock_post.call_args.kwargs.get("data", b"").decode("utf-8")
     assert "A &amp; B &lt;tag&gt;" in sent_body
+
+
+# ============= custom_fields support =============
+
+
+def test_create_issue_includes_custom_fields_when_provided(client: MantisSoapClient) -> None:
+    response_xml = '<return xsi:type="xsd:integer">99</return>'
+    with patch("hcp_cms.services.mantis.soap.requests.post") as mock_post:
+        mock_post.return_value = _mock_response(response_xml)
+        client.create_issue(
+            project_id="1",
+            summary="x",
+            description="y",
+            custom_fields={"客戶提問人員": "customer@xyz.com"},
+        )
+        sent_body = mock_post.call_args.kwargs.get("data", b"").decode("utf-8")
+    assert "<man:custom_fields>" in sent_body
+    assert "<man:name>客戶提問人員</man:name>" in sent_body
+    assert "<man:value>customer@xyz.com</man:value>" in sent_body
+
+
+def test_create_issue_omits_custom_fields_when_none(client: MantisSoapClient) -> None:
+    response_xml = '<return xsi:type="xsd:integer">99</return>'
+    with patch("hcp_cms.services.mantis.soap.requests.post") as mock_post:
+        mock_post.return_value = _mock_response(response_xml)
+        client.create_issue(
+            project_id="1",
+            summary="x",
+            description="y",
+            custom_fields=None,
+        )
+        sent_body = mock_post.call_args.kwargs.get("data", b"").decode("utf-8")
+    assert "<man:custom_fields>" not in sent_body
+
+
+def test_create_issue_custom_field_xml_escapes(client: MantisSoapClient) -> None:
+    response_xml = '<return xsi:type="xsd:integer">99</return>'
+    with patch("hcp_cms.services.mantis.soap.requests.post") as mock_post:
+        mock_post.return_value = _mock_response(response_xml)
+        client.create_issue(
+            project_id="1",
+            summary="x",
+            description="y",
+            custom_fields={"問題類型": "A&B <test>"},
+        )
+        sent_body = mock_post.call_args.kwargs.get("data", b"").decode("utf-8")
+    assert "A&amp;B &lt;test&gt;" in sent_body

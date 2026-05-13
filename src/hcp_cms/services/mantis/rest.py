@@ -73,6 +73,7 @@ class MantisRESTClient(MantisClient):
         priority: str = "normal",
         severity: str = "minor",
         handler: str | None = None,
+        custom_fields: dict[str, str] | None = None,
     ) -> str | None:
         raise NotImplementedError("REST create_issue 未實作；MVP 僅支援 SOAP")
 
