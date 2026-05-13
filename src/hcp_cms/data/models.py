@@ -45,7 +45,7 @@ class Case:
 
     @property
     def is_open(self) -> bool:
-        return self.status not in ("已完成", "Closed")
+        return self.status not in ("已完成", "Closed", "已結案")
 
     @property
     def sla_hours(self) -> int:
