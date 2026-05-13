@@ -165,9 +165,11 @@ class CaseLog:
     """補充記錄 — case_logs table."""
     log_id: str               # LOG-YYYYMMDD-NNN
     case_id: str
-    direction: str            # '客戶來信' | 'HCP 信件回覆' | 'HCP 線上回覆' | '內部討論' | 'Mantis 推送'
+    # '客戶來信' | 'HCP 信件回覆' | 'HCP 線上回覆' | '內部討論' | 'Mantis 推送' | 'Mantis bugnote'
+    direction: str
     content: str
     mantis_ref: str | None = None   # Mantis Issue 編號（可空）
+    bugnote_id: str | None = None   # Mantis bugnote id（雙向同步 dedup key）
     logged_by: str | None = None    # 記錄人
     logged_at: str = ""             # YYYY/MM/DD HH:MM:SS
     reply_time: str | None = None   # 回覆時間（YYYY/MM/DD HH:MM）

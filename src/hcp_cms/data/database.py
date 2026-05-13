@@ -147,6 +147,7 @@ CREATE TABLE IF NOT EXISTS case_logs (
     direction  TEXT NOT NULL,
     content    TEXT NOT NULL,
     mantis_ref TEXT,
+    bugnote_id TEXT,
     logged_by  TEXT,
     logged_at  TEXT NOT NULL
 );
@@ -272,6 +273,7 @@ class DatabaseManager:
             "ALTER TABLE mantis_tickets ADD COLUMN last_updated TEXT",
             "ALTER TABLE mantis_tickets ADD COLUMN notes_count INTEGER",
             "ALTER TABLE case_logs ADD COLUMN reply_time TEXT",
+            "ALTER TABLE case_logs ADD COLUMN bugnote_id TEXT",
             "ALTER TABLE companies ADD COLUMN cs_staff_id TEXT",
             "ALTER TABLE companies ADD COLUMN sales_staff_id TEXT",
             "ALTER TABLE companies ADD COLUMN hcp_version TEXT",

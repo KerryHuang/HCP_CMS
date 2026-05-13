@@ -1257,8 +1257,11 @@ class CaseLogRepository:
     def insert(self, log: CaseLog) -> None:
         self._conn.execute(
             """
-            INSERT INTO case_logs (log_id, case_id, direction, content, mantis_ref, logged_by, logged_at, reply_time)
-            VALUES (:log_id, :case_id, :direction, :content, :mantis_ref, :logged_by, :logged_at, :reply_time)
+            INSERT INTO case_logs
+                (log_id, case_id, direction, content, mantis_ref,
+                 bugnote_id, logged_by, logged_at, reply_time)
+            VALUES (:log_id, :case_id, :direction, :content, :mantis_ref,
+                 :bugnote_id, :logged_by, :logged_at, :reply_time)
             """,
             {
                 "log_id": log.log_id,
@@ -1266,6 +1269,34 @@ class CaseLogRepository:
                 "direction": log.direction,
                 "content": log.content,
                 "mantis_ref": log.mantis_ref,
+                "bugnote_id": log.bugnote_id,
+                "logged_by": log.logged_by,
+                "logged_at": log.logged_at,
+                "reply_time": log.reply_time,
+            },
+        )
+        self._conn.commit()
+
+    def update(self, log: CaseLog) -> None:
+        """更新既有 case_log（依 log_id 找到對應筆覆寫）。"""
+        self._conn.execute(
+            """
+            UPDATE case_logs SET
+                direction = :direction,
+                content = :content,
+                mantis_ref = :mantis_ref,
+                bugnote_id = :bugnote_id,
+                logged_by = :logged_by,
+                logged_at = :logged_at,
+                reply_time = :reply_time
+            WHERE log_id = :log_id
+            """,
+            {
+                "log_id": log.log_id,
+                "direction": log.direction,
+                "content": log.content,
+                "mantis_ref": log.mantis_ref,
+                "bugnote_id": log.bugnote_id,
                 "logged_by": log.logged_by,
                 "logged_at": log.logged_at,
                 "reply_time": log.reply_time,
