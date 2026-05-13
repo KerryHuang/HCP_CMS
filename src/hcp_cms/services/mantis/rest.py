@@ -63,3 +63,23 @@ class MantisRESTClient(MantisClient):
             ]
         except Exception:
             return []
+
+    def create_issue(
+        self,
+        project_id: str,
+        summary: str,
+        description: str,
+        category: str = "",
+        priority: str = "normal",
+        severity: str = "minor",
+        handler: str | None = None,
+    ) -> str | None:
+        raise NotImplementedError("REST create_issue 未實作；MVP 僅支援 SOAP")
+
+    def add_note(
+        self,
+        issue_id: str,
+        text: str,
+        view_state: str = "public",
+    ) -> str | None:
+        raise NotImplementedError("REST add_note 未實作；MVP 僅支援 SOAP")

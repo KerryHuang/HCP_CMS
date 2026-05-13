@@ -45,3 +45,25 @@ class MantisClient(ABC):
 
     @abstractmethod
     def get_issues(self, project_id: str | None = None) -> list[MantisIssue]: ...
+
+    @abstractmethod
+    def create_issue(
+        self,
+        project_id: str,
+        summary: str,
+        description: str,
+        category: str = "",
+        priority: str = "normal",
+        severity: str = "minor",
+        handler: str | None = None,
+    ) -> str | None:
+        """建立新 issue，成功回傳 ticket_id，失敗回 None（self.last_error 含原因）。"""
+
+    @abstractmethod
+    def add_note(
+        self,
+        issue_id: str,
+        text: str,
+        view_state: str = "public",
+    ) -> str | None:
+        """加 bugnote，成功回傳 note_id，失敗回 None。"""

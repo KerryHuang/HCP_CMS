@@ -119,6 +119,28 @@ class MantisSoapClient(MantisClient):
     def get_issues(self, project_id: str | None = None) -> list[MantisIssue]:
         return []
 
+    def create_issue(
+        self,
+        project_id: str,
+        summary: str,
+        description: str,
+        category: str = "",
+        priority: str = "normal",
+        severity: str = "minor",
+        handler: str | None = None,
+    ) -> str | None:
+        """Stub — Task 6 實作。"""
+        raise NotImplementedError("Task 6 將實作此方法")
+
+    def add_note(
+        self,
+        issue_id: str,
+        text: str,
+        view_state: str = "public",
+    ) -> str | None:
+        """Stub — Task 7 實作。"""
+        raise NotImplementedError("Task 7 將實作此方法")
+
     def get_users_hcp_version(self) -> list[dict]:
         """透過 Web 登入取得客戶帳號（*-USER）的 HcpVersion 自訂欄位。
 
