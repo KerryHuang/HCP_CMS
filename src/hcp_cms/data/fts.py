@@ -33,7 +33,13 @@ class FTSManager:
         (original token + synonyms). OR groups are AND-joined (space in FTS5),
         so all tokens must appear — preventing false positives from common words.
 
-        Returns FTS5 query like '(A OR B) (C OR D)' or 'A B'.
+        For multi-token queries, prepends a phrase match of the original tokens
+        ('"A B" OR (A B)') so QAs containing tokens adjacent rank above QAs
+        where tokens appear distant — reflecting the user's intent of typing
+        a continuous string.
+
+        Returns FTS5 query like '"A B" OR ((A OR S1) (B OR S2))' for multi-token
+        or 'A' / '(A OR S1)' for single-token.
         """
         jieba_tokens = [t for t in jieba.cut(query, cut_all=False) if t.strip()]
         if not jieba_tokens:
@@ -76,7 +82,11 @@ class FTSManager:
             else:
                 groups.append("(" + " OR ".join(sorted(alternatives)) + ")")
 
-        return " ".join(groups)
+        and_part = " ".join(groups)
+        if len(jieba_tokens) >= 2:
+            phrase = '"' + " ".join(jieba_tokens) + '"'
+            return f"{phrase} OR ({and_part})"
+        return and_part
 
     # ------------------------------------------------------------------
     # QA FTS

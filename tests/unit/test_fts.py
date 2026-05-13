@@ -58,12 +58,56 @@ class TestFTSManager:
         assert len(results) == 0
 
     def test_update_qa_index(self, fts: FTSManager) -> None:
-        fts.index_qa("QA-001", "舊問題", "舊回覆", None, None)
-        fts.update_qa_index("QA-001", "新問題關於請假", "新回覆", None, None)
-        assert len(fts.search_qa("請假")) > 0
-        assert len(fts.search_qa("舊問題")) == 0
+        # 使用 jieba 在獨立 / 上下文中斷詞一致的詞「薪資」進行測試。
+        # NOTE: 「請假」在不同句子裡會被 jieba 拆成「請 假」或保持「請假」，
+        # 導致 indexed 與 query 不匹配（屬獨立的搜尋管線議題，不在本測試範圍）。
+        fts.index_qa("QA-001", "舊主題", "舊回覆", None, None)
+        fts.update_qa_index("QA-001", "新主題關於薪資", "新回覆", None, None)
+        assert len(fts.search_qa("薪資")) > 0
+        assert len(fts.search_qa("舊主題")) == 0
 
     def test_tokenize_chinese(self, fts: FTSManager) -> None:
         tokens = fts.tokenize("員工離職薪水怎麼算")
         assert isinstance(tokens, str)
         assert " " in tokens
+
+    def test_phrase_match_ranks_above_distant_match(self, fts: FTSManager) -> None:
+        """多詞查詢時，tokens 相鄰出現的 QA 應排在分散出現的 QA 之前。
+
+        重現使用者回報：建立 question='資料修改需求', keywords='資料修改' 的 QA 後
+        搜尋'資料修改'，該 QA 應排在前面，而非被「answer 內分散出現 資料 與 修改」
+        的舊 QA 擠到第 12 名。
+        """
+        # 分散出現：question/answer 各自含 資料、修改 多次，但「資料」與「修改」不相鄰
+        fts.index_qa(
+            "QA-OLD",
+            "如何修改員工姓名",
+            "可進行修改：先到資料建檔後修改設定資料內容，再修改設定",
+            None,
+            None,
+        )
+        # 相鄰出現：keywords 與 question 直接是「資料修改」
+        fts.index_qa(
+            "QA-NEW",
+            "資料修改需求",
+            "與內部確認後，因該欄位敏感，目前暫無法提供 SQL 語法供客戶自行更新",
+            None,
+            "資料修改",
+        )
+
+        results = fts.search_qa("資料修改")
+        qa_ids = [r["qa_id"] for r in results]
+        assert "QA-NEW" in qa_ids, f"QA-NEW 應出現在結果內：{qa_ids}"
+        assert "QA-OLD" in qa_ids, f"QA-OLD 應出現在結果內：{qa_ids}"
+        assert qa_ids.index("QA-NEW") < qa_ids.index("QA-OLD"), (
+            f"預期 QA-NEW（相鄰）排在 QA-OLD（分散）之前，實際順序：{qa_ids}"
+        )
+
+    def test_single_token_query_unchanged(self, fts: FTSManager) -> None:
+        """單一 token 查詢不應受 phrase 加強影響，行為與現況一致。"""
+        fts.index_qa("QA-A", "薪資計算問題", "進入模組", None, None)
+        fts.index_qa("QA-B", "另一個無關問題", "別的內容", None, None)
+        results = fts.search_qa("薪資")
+        qa_ids = [r["qa_id"] for r in results]
+        assert "QA-A" in qa_ids
+        assert "QA-B" not in qa_ids

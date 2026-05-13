@@ -28,6 +28,10 @@ from hcp_cms.data.models import (
 _COL_KEY_RE = _re.compile(r"^cx_\d+$")
 _PREFIX_RE = _re.compile(r"^(RE:|FW:|FWD:|回覆:|轉寄:|答覆:)\s*", _re.IGNORECASE)
 
+# 內部 / 系統公司：這些公司的案件不算「未指派 handler」（不需分派客服）
+# 用於：CaseRepository.list_unassigned、報表追蹤、案件管理篩選的未指派 count
+SYSTEM_COMPANY_NAMES: tuple[str, ...] = ("資通電腦", "Mantis")
+
 
 def _clean_subject(subject: str) -> str:
     """遞迴去除主旨前綴（RE:/FW:/回覆: 等），供 Python 側比對使用。"""
@@ -437,6 +441,75 @@ class CaseRepository:
             (cutoff,),
         ).fetchall()
         return [self._row_to_case(r) for r in rows]
+
+    def list_overdue(self, days: int) -> list[Case]:
+        """查詢狀態為「處理中」且 sent_time 距今超過 N 天的案件，按 sent_time ASC（最舊在前）。
+
+        sent_time 格式為 `YYYY/MM/DD HH:MM:SS`，SQLite julianday 不認識斜線，
+        故先 replace 為 dash 再比對。
+        """
+        rows = self._conn.execute(
+            self._build_select()
+            + " WHERE status = '處理中'"
+            + " AND sent_time IS NOT NULL AND sent_time != ''"
+            + " AND julianday('now') - julianday(replace(sent_time, '/', '-')) > ?"
+            + " ORDER BY sent_time ASC",
+            (days,),
+        ).fetchall()
+        return [self._row_to_case(r) for r in rows]
+
+    def list_unassigned(self) -> list[Case]:
+        """查詢 handler 為空且尚未完成的案件，按 sent_time ASC。
+
+        排除「內部 / 系統公司」案件（資通電腦、Mantis）— 這些案件不算需要分派 handler。
+        參見 SYSTEM_COMPANY_NAMES 常數。
+        """
+        placeholders = ",".join("?" for _ in SYSTEM_COMPANY_NAMES)
+        rows = self._conn.execute(
+            self._build_select()
+            + " WHERE (handler IS NULL OR handler = '')"
+            + " AND status != '已完成'"
+            + " AND (company_id IS NULL OR company_id NOT IN ("
+            + f"   SELECT company_id FROM companies WHERE name IN ({placeholders})"
+            + " ))"
+            + " ORDER BY sent_time ASC",
+            tuple(SYSTEM_COMPANY_NAMES),
+        ).fetchall()
+        return [self._row_to_case(r) for r in rows]
+
+    def list_by_handler(self, name: str) -> list[Case]:
+        """大小寫不敏感比對 handler 欄位（容忍既有資料 jill / JILL / Jill 並存）。"""
+        rows = self._conn.execute(
+            self._build_select() + " WHERE LOWER(handler) = LOWER(?) ORDER BY sent_time DESC",
+            (name,),
+        ).fetchall()
+        return [self._row_to_case(r) for r in rows]
+
+    def list_by_reply_count(self, count: int) -> list[Case]:
+        """查詢指定回覆次數的案件，依公司的 cs_staff_id 分組排序（未指派排最後），
+        組內按 sent_time ASC。
+
+        用途：例如「回覆 1 次」清單，按客服分組瀏覽。
+        """
+        # 先查出所有符合條件的案件
+        cases = [
+            self._row_to_case(r)
+            for r in self._conn.execute(
+                self._build_select() + " WHERE reply_count = ?",
+                (count,),
+            ).fetchall()
+        ]
+        # 再查 company → cs_staff_id 對照（一次查完，避免 N+1）
+        cs_staff_map: dict[str, str] = {}
+        for row in self._conn.execute("SELECT company_id, cs_staff_id FROM companies").fetchall():
+            cs_staff_map[row[0]] = row[1] or ""
+        # Python 端排序：未指派排最後、cs_staff_id 升序、sent_time 升序
+        def sort_key(c: Case) -> tuple:
+            staff = cs_staff_map.get(c.company_id or "", "")
+            unassigned_flag = 1 if not staff else 0
+            return (unassigned_flag, staff, c.sent_time or "")
+        cases.sort(key=sort_key)
+        return cases
 
     def update_status(self, case_id: str, status: str) -> None:
         self._conn.execute(

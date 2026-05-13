@@ -38,13 +38,99 @@ _MANTIS_COLORS: dict[str, tuple[str, str]] = {
     "closed": ("F3F4F6", "6B7280"),
 }
 
+# 美化樣式（B 方案 + 丙：標題、分隔列、handler 分色、超時分級）
+
+# 大標題列（單元格的 sheet title 列）
+FONT_TITLE = Font(name="微軟正黑體", size=14, bold=True, color="1E3A5F")
+FILL_TITLE = PatternFill(start_color="DBEAFE", end_color="DBEAFE", fill_type="solid")
+
+# Numbered section 標題（1. 處理中案件...）
+FONT_SECTION = Font(name="微軟正黑體", size=12, bold=True, color="111827")
+FILL_SECTION = PatternFill(start_color="E5E7EB", end_color="E5E7EB", fill_type="solid")
+
+# Handler 分色（各客服一個色）
+_HANDLER_FILLS: dict[str, str] = {
+    "jill": "DBEAFE",       # 淡藍
+    "yoga": "D1FAE5",       # 淡綠
+    "rebecca": "FCE7F3",    # 淡粉紅
+    "（未指派）": "FEF3C7",  # 淡黃
+}
+_HANDLER_FALLBACK_PALETTE = ["E9D5FF", "FED7AA", "BFDBFE", "FEE2E2", "CCFBF1"]
+FONT_HANDLER_HEADER = Font(name="微軟正黑體", size=12, bold=True, color="111827")
+
+# 超時 5 級背景色（與 case_view._overdue_color 對齊，但用較淡色適合 Excel 白底）
+OVERDUE_FILLS: list[tuple[int, str]] = [
+    (30, "FECACA"),   # 紅
+    (10, "FED7AA"),   # 橘
+    (7, "FEF08A"),    # 黃
+    (5, "FEF3C7"),    # 淡黃
+    (3, "FFFBEB"),    # 米黃
+]
+
+
+def _is_title_row(rows: list[list], row_idx: int) -> bool:
+    """判斷是否為大標題列（第 1 列且只佔 1 格、含表情符號或破折號標識）。"""
+    if row_idx != 0:
+        return False
+    if not rows or not rows[0] or len(rows[0]) != 1:
+        return False
+    s = str(rows[0][0])
+    return any(c in s for c in "📊📋🏢⏰👥📌📈🚨❓") or "—" in s
+
+
+def _is_section_divider(row: list) -> bool:
+    """━━ jill — ... ━━ 這種 handler section 分隔列。"""
+    return len(row) == 1 and row[0] and "━━" in str(row[0])
+
+
+def _is_numbered_section(row: list) -> bool:
+    """1. 處理中... / 2. 各處理人... 這種編號 section 標題。"""
+    if len(row) != 1 or not row[0]:
+        return False
+    s = str(row[0]).strip()
+    return len(s) > 2 and s[0].isdigit() and s[1] == "."
+
+
+def _extract_handler_from_divider(s: str) -> str:
+    """從「━━ jill — ... ━━」抽取 handler 名稱（小寫）。"""
+    import re
+    m = re.search(r"━━\s*(\S+?)\s*—", s)
+    return m.group(1).lower() if m else ""
+
+
+def _handler_fill_color(handler_name_lower: str, counter: dict[str, int]) -> str:
+    """取得 handler 的背景色（已知 handler 用固定色，其他用 fallback palette）。"""
+    if handler_name_lower in _HANDLER_FILLS:
+        return _HANDLER_FILLS[handler_name_lower]
+    # 未指派
+    if handler_name_lower in ("（未指派）", "未指派"):
+        return _HANDLER_FILLS["（未指派）"]
+    # Fallback：依 counter 輪替
+    idx = counter.setdefault(handler_name_lower, len(counter))
+    return _HANDLER_FALLBACK_PALETTE[idx % len(_HANDLER_FALLBACK_PALETTE)]
+
+
+def _overdue_fill_color(days_stuck: int) -> str | None:
+    """依卡幾天回傳 Excel 背景色（< 3 天回傳 None）。"""
+    for threshold, color in OVERDUE_FILLS:
+        if days_stuck >= threshold:
+            return color
+    return None
+
 
 class ReportWriter:
     """Writes structured report data to Excel files with styling."""
 
     @staticmethod
     def write_excel(data: dict[str, list[list]], path: Path) -> None:
-        """Write structured data to an Excel file.
+        """Write structured data to an Excel file with enhanced styling.
+
+        美化規則：
+        - 標題列（第 1 列且單格、含表情符號 / 破折號）：大字 + 淡藍底 + 合併
+        - Section 分隔列（含「━━」）：合併 + handler 分色背景
+        - Numbered section（如「1. ...」）：合併 + 灰色背景 + 粗體
+        - 資料列若有「卡幾天」欄且數值 >= 3：依 5 級漸層上色
+        - 凍結首列
 
         Args:
             data: dict mapping sheet_name to rows. First row of each sheet = header.
@@ -64,48 +150,163 @@ class ReportWriter:
             if not rows:
                 continue
 
-            # Header row
-            for col, value in enumerate(rows[0], 1):
-                if isinstance(value, HyperlinkCell):
-                    cell = ws.cell(row=1, column=col, value=value.text)
-                    escaped = value.target_sheet.replace("'", "''")
-                    cell.hyperlink = Hyperlink(ref=cell.coordinate, location=f"'{escaped}'!A1")
-                    cell.font = Font(name="微軟正黑體", size=11, bold=True, color="0563C1", underline="single")
-                else:
-                    cell = ws.cell(row=1, column=col, value=value)
-                    cell.font = FONT_HEADER
-                    cell.fill = FILL_HEADER
-                cell.alignment = Alignment(horizontal="center")
-                cell.border = BORDER_THIN
+            # 全 sheet 最大欄數，供合併用
+            max_cols = max((len(r) for r in rows), default=1) or 1
+            handler_counter: dict[str, int] = {}
+            # 紀錄目前 section 的 handler 色（資料列使用）
+            current_section_fill: str | None = None
+            # 第一個「正規 header」（有 col_count >= 2 的）row index，用於凍結
+            first_data_header_idx: int | None = None
+            # 「卡幾天」欄索引（每次 header 重設）
+            days_col_idx: int | None = None
 
-            # Data rows
-            for row_idx, row in enumerate(rows[1:], 2):
+            for row_idx, row in enumerate(rows, 1):
+                if not row:
+                    continue
+
+                # ── 大標題列（單格、含表情符號）─────────────────────
+                if _is_title_row(rows, row_idx - 1):
+                    cell = ws.cell(row=row_idx, column=1, value=str(row[0]))
+                    cell.font = FONT_TITLE
+                    cell.fill = FILL_TITLE
+                    cell.alignment = Alignment(horizontal="left", vertical="center")
+                    if max_cols > 1:
+                        ws.merge_cells(
+                            start_row=row_idx, start_column=1,
+                            end_row=row_idx, end_column=max_cols,
+                        )
+                    ws.row_dimensions[row_idx].height = 24
+                    continue
+
+                # ── Section 分隔列（━━ jill — ... ━━）─────────────
+                if _is_section_divider(row):
+                    s = str(row[0])
+                    handler_lc = _extract_handler_from_divider(s)
+                    fill_color = _handler_fill_color(handler_lc, handler_counter)
+                    current_section_fill = fill_color
+                    cell = ws.cell(row=row_idx, column=1, value=s)
+                    cell.font = FONT_HANDLER_HEADER
+                    cell.fill = PatternFill(start_color=fill_color, end_color=fill_color, fill_type="solid")
+                    # 多行內容需開啟 wrap_text；垂直置中
+                    cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+                    if max_cols > 1:
+                        ws.merge_cells(
+                            start_row=row_idx, start_column=1,
+                            end_row=row_idx, end_column=max_cols,
+                        )
+                    # 依行數調整列高（每行約 18px）
+                    line_count = s.count("\n") + 1
+                    ws.row_dimensions[row_idx].height = max(22, line_count * 20)
+                    continue
+
+                # ── 編號 section 標題（1./2./3.）─────────────────────
+                if _is_numbered_section(row):
+                    current_section_fill = None  # 重設 handler 色
+                    cell = ws.cell(row=row_idx, column=1, value=str(row[0]))
+                    cell.font = FONT_SECTION
+                    cell.fill = FILL_SECTION
+                    cell.alignment = Alignment(horizontal="left", vertical="center")
+                    if max_cols > 1:
+                        ws.merge_cells(
+                            start_row=row_idx, start_column=1,
+                            end_row=row_idx, end_column=max_cols,
+                        )
+                    ws.row_dimensions[row_idx].height = 20
+                    continue
+
+                # ── Header 列（第一個非特殊列、或剛剛遇到 section 後的第一個一般列）─
+                # 在 sheet 內，每個 section 之後第一個「多格」列當 header
+                is_first_row_of_sheet = first_data_header_idx is None and row_idx == 1
+                # 簡化：sheet 第一列若非特殊則一定是 header
+                # 後續若想偵測新 section 的 header，可由 numbered_section 重設
+                if is_first_row_of_sheet or (first_data_header_idx is None):
+                    first_data_header_idx = row_idx
+                    days_col_idx = None
+                    for col, value in enumerate(row, 1):
+                        if str(value) == "卡幾天":
+                            days_col_idx = col
+                        if isinstance(value, HyperlinkCell):
+                            cell = ws.cell(row=row_idx, column=col, value=value.text)
+                            escaped = value.target_sheet.replace("'", "''")
+                            cell.hyperlink = Hyperlink(ref=cell.coordinate, location=f"'{escaped}'!A1")
+                            cell.font = Font(name="微軟正黑體", size=11, bold=True, color="0563C1", underline="single")
+                        else:
+                            cell = ws.cell(row=row_idx, column=col, value=value)
+                            cell.font = FONT_HEADER
+                            cell.fill = FILL_HEADER
+                        cell.alignment = Alignment(horizontal="center")
+                        cell.border = BORDER_THIN
+                    continue
+
+                # Section 後的子表頭（如「案件編號 公司 主旨 卡幾天 回覆次數」）
+                # 偵測：列內 >= 2 格、所有格都是非空字串
+                is_subheader = (
+                    len(row) >= 2
+                    and all(isinstance(v, str) and v for v in row)
+                )
+                if is_subheader:
+                    days_col_idx = None
+                    for col, value in enumerate(row, 1):
+                        if str(value) == "卡幾天":
+                            days_col_idx = col
+                        cell = ws.cell(row=row_idx, column=col, value=value)
+                        cell.font = FONT_HEADER
+                        cell.fill = FILL_HEADER
+                        cell.alignment = Alignment(horizontal="center")
+                        cell.border = BORDER_THIN
+                    continue
+
+                # ── 一般資料列 ─────────────────────────────────────
+                # 判斷是否要套用超時色彩
+                overdue_fill: str | None = None
+                if days_col_idx is not None and days_col_idx <= len(row):
+                    raw_days = row[days_col_idx - 1]
+                    if isinstance(raw_days, int):
+                        overdue_fill = _overdue_fill_color(raw_days)
+
                 for col, value in enumerate(row, 1):
                     if isinstance(value, HyperlinkCell):
                         cell = ws.cell(row=row_idx, column=col, value=value.text)
                         escaped = value.target_sheet.replace("'", "''")
                         cell.hyperlink = Hyperlink(
-                            ref=cell.coordinate,
-                            location=f"'{escaped}'!A1",
+                            ref=cell.coordinate, location=f"'{escaped}'!A1",
                         )
                         cell.font = Font(name="微軟正黑體", size=10, color="0563C1", underline="single")
                     else:
                         cell = ws.cell(row=row_idx, column=col, value=value)
                     cell.border = BORDER_THIN
-                    if row_idx % 2 == 0 and not isinstance(value, HyperlinkCell):
+                    # 優先順序：超時 > handler section > 交替
+                    if overdue_fill and not isinstance(value, HyperlinkCell):
+                        cell.fill = PatternFill(
+                            start_color=overdue_fill, end_color=overdue_fill, fill_type="solid")
+                    elif current_section_fill and not isinstance(value, HyperlinkCell):
+                        # 較淡的 section 色（資料列）
+                        cell.fill = PatternFill(
+                            start_color=current_section_fill,
+                            end_color=current_section_fill, fill_type="solid")
+                    elif row_idx % 2 == 0 and not isinstance(value, HyperlinkCell):
                         cell.fill = FILL_ALT_ROW
+
+            # 凍結首個 header 列下方
+            if first_data_header_idx:
+                ws.freeze_panes = f"A{first_data_header_idx + 1}"
 
         # 自動調整欄寬（依內容最大長度，上限 50 字元）
         for ws in wb.worksheets:
             for col_cells in ws.columns:
                 max_length = 0
                 for cell in col_cells:
-                    if cell.value:
+                    # 合併儲存格的「跟隨格」會是 MergedCell 沒 value，略過
+                    if hasattr(cell, "value") and cell.value:
                         max_length = max(max_length, len(str(cell.value)))
                 adjusted = min(max_length + 2, 50)
                 if adjusted > 0:
-                    col_letter = col_cells[0].column_letter
-                    ws.column_dimensions[col_letter].width = adjusted
+                    # 跳過合併儲存格的副欄
+                    try:
+                        col_letter = col_cells[0].column_letter
+                        ws.column_dimensions[col_letter].width = adjusted
+                    except AttributeError:
+                        continue
 
         wb.save(str(path))
 

@@ -242,8 +242,10 @@ class ReportView(QWidget):
                     for row_idx, row in enumerate(rows[1:]):
                         for col_idx, value in enumerate(row):
                             item = QTableWidgetItem(str(value) if value else "")
-                            # 快速連結欄：藍色文字提示可點擊
-                            if str(rows[0][col_idx]) == "快速連結" and value:
+                            # 快速連結欄：藍色文字提示可點擊（防越界：標題列欄數可能少於資料列）
+                            if (col_idx < len(rows[0])
+                                    and str(rows[0][col_idx]) == "快速連結"
+                                    and value):
                                 item.setForeground(Qt.GlobalColor.cyan)
                             table.setItem(row_idx, col_idx, item)
                     # 「快速連結」欄 index

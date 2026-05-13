@@ -169,6 +169,151 @@ class TestCaseRepository:
         assert result.status == "已完成"
         assert result.updated_at is not None
 
+    def test_list_overdue_excludes_completed(self, db: DatabaseManager) -> None:
+        """已完成案件不應出現在超時清單，即使 sent_time 很久。"""
+        from datetime import datetime, timedelta
+        repo = CaseRepository(db.connection)
+        long_ago = (datetime.now() - timedelta(days=30)).strftime("%Y/%m/%d %H:%M:%S")
+        repo.insert(Case(case_id="CS-OLD-DONE", subject="完成的", status="已完成", sent_time=long_ago))
+        overdue = repo.list_overdue(days=7)
+        assert not any(c.case_id == "CS-OLD-DONE" for c in overdue)
+
+    def test_list_overdue_returns_stuck_in_progress(self, db: DatabaseManager) -> None:
+        """處理中且 sent_time 超過 N 天的案件應出現在超時清單。"""
+        from datetime import datetime, timedelta
+        repo = CaseRepository(db.connection)
+        ten_days_ago = (datetime.now() - timedelta(days=10)).strftime("%Y/%m/%d %H:%M:%S")
+        three_days_ago = (datetime.now() - timedelta(days=3)).strftime("%Y/%m/%d %H:%M:%S")
+        repo.insert(Case(case_id="CS-STUCK-10", subject="卡 10 天", status="處理中", sent_time=ten_days_ago))
+        repo.insert(Case(case_id="CS-RECENT-3", subject="才 3 天", status="處理中", sent_time=three_days_ago))
+        overdue = repo.list_overdue(days=7)
+        ids = [c.case_id for c in overdue]
+        assert "CS-STUCK-10" in ids
+        assert "CS-RECENT-3" not in ids
+
+    def test_list_overdue_sorted_by_oldest_first(self, db: DatabaseManager) -> None:
+        """超時清單按 sent_time 升序（最舊在最前）。"""
+        from datetime import datetime, timedelta
+        repo = CaseRepository(db.connection)
+        days_30 = (datetime.now() - timedelta(days=30)).strftime("%Y/%m/%d %H:%M:%S")
+        days_15 = (datetime.now() - timedelta(days=15)).strftime("%Y/%m/%d %H:%M:%S")
+        days_8 = (datetime.now() - timedelta(days=8)).strftime("%Y/%m/%d %H:%M:%S")
+        repo.insert(Case(case_id="CS-A", subject="8天", status="處理中", sent_time=days_8))
+        repo.insert(Case(case_id="CS-B", subject="30天", status="處理中", sent_time=days_30))
+        repo.insert(Case(case_id="CS-C", subject="15天", status="處理中", sent_time=days_15))
+        overdue = repo.list_overdue(days=7)
+        ids = [c.case_id for c in overdue]
+        assert ids.index("CS-B") < ids.index("CS-C") < ids.index("CS-A")
+
+    def test_list_unassigned_returns_empty_handler(self, db: DatabaseManager) -> None:
+        """handler 為 NULL 或空字串的案件應出現，已完成的排除。"""
+        repo = CaseRepository(db.connection)
+        repo.insert(Case(case_id="CS-NULL", subject="無 handler", status="處理中", handler=None))
+        repo.insert(Case(case_id="CS-EMPTY", subject="空 handler", status="處理中", handler=""))
+        repo.insert(Case(case_id="CS-DONE-NULL", subject="完成無 handler", status="已完成", handler=None))
+        repo.insert(Case(case_id="CS-HAS", subject="有 handler", status="處理中", handler="jill"))
+        unassigned = repo.list_unassigned()
+        ids = [c.case_id for c in unassigned]
+        assert "CS-NULL" in ids
+        assert "CS-EMPTY" in ids
+        assert "CS-DONE-NULL" not in ids
+        assert "CS-HAS" not in ids
+
+    def test_list_unassigned_excludes_system_companies(self, db: DatabaseManager) -> None:
+        """資通電腦、Mantis 的案件即使 handler 為空，也不算未指派（內部 / 系統案件）。"""
+        company_repo = CompanyRepository(db.connection)
+        company_repo.insert(Company(
+            company_id="COMP-ARES", name="資通電腦", domain="ares.com.tw"))
+        company_repo.insert(Company(
+            company_id="COMP-MANTIS", name="Mantis", domain="mantis"))
+        company_repo.insert(Company(
+            company_id="COMP-CUST", name="一般客戶", domain="cust.com"))
+
+        repo = CaseRepository(db.connection)
+        repo.insert(Case(
+            case_id="CS-ARES", subject="資通內部", status="處理中",
+            handler=None, company_id="COMP-ARES",
+        ))
+        repo.insert(Case(
+            case_id="CS-MANTIS", subject="Mantis 通知", status="處理中",
+            handler=None, company_id="COMP-MANTIS",
+        ))
+        repo.insert(Case(
+            case_id="CS-NORMAL", subject="一般客戶未指派", status="處理中",
+            handler=None, company_id="COMP-CUST",
+        ))
+        unassigned = repo.list_unassigned()
+        ids = [c.case_id for c in unassigned]
+        assert "CS-ARES" not in ids, "資通電腦案件不應算未指派"
+        assert "CS-MANTIS" not in ids, "Mantis 案件不應算未指派"
+        assert "CS-NORMAL" in ids, "一般客戶未指派案件應出現"
+
+    def test_list_by_handler_case_insensitive(self, db: DatabaseManager) -> None:
+        """list_by_handler 應採大小寫不敏感比對（既有資料含 jill / JILL）。"""
+        repo = CaseRepository(db.connection)
+        repo.insert(Case(case_id="CS-LOW", subject="小寫", handler="jill"))
+        repo.insert(Case(case_id="CS-UP", subject="大寫", handler="JILL"))
+        repo.insert(Case(case_id="CS-MIX", subject="混合", handler="Jill"))
+        repo.insert(Case(case_id="CS-OTHER", subject="他人", handler="YOGA"))
+        result = repo.list_by_handler("jill")
+        ids = {c.case_id for c in result}
+        assert {"CS-LOW", "CS-UP", "CS-MIX"} <= ids
+        assert "CS-OTHER" not in ids
+
+    def test_list_by_reply_count_filters_correctly(self, db: DatabaseManager) -> None:
+        """list_by_reply_count(1) 只回傳 reply_count=1 的案件。"""
+        repo = CaseRepository(db.connection)
+        repo.insert(Case(case_id="CS-R1", subject="回覆 1 次", reply_count=1))
+        repo.insert(Case(case_id="CS-R2", subject="回覆 2 次", reply_count=2))
+        repo.insert(Case(case_id="CS-R0", subject="未回覆", reply_count=0))
+        result = repo.list_by_reply_count(1)
+        ids = {c.case_id for c in result}
+        assert "CS-R1" in ids
+        assert "CS-R2" not in ids
+        assert "CS-R0" not in ids
+
+    def test_list_by_reply_count_sorted_by_cs_staff(self, db: DatabaseManager) -> None:
+        """list_by_reply_count 依公司的 cs_staff_id 分組排序，組內按 sent_time。"""
+        from hcp_cms.data.models import Company
+
+        company_repo = CompanyRepository(db.connection)
+        # 建立公司並指派 cs_staff_id
+        company_repo.insert(Company(company_id="C-A", name="A 公司", domain="a.com", cs_staff_id="STAFF-jill"))
+        company_repo.insert(Company(company_id="C-B", name="B 公司", domain="b.com", cs_staff_id="STAFF-YOGA"))
+        company_repo.insert(Company(company_id="C-C", name="C 公司", domain="c.com", cs_staff_id=None))
+
+        repo = CaseRepository(db.connection)
+        repo.insert(Case(
+            case_id="CS-A1", subject="A1", company_id="C-A", reply_count=1,
+            sent_time="2026/05/01 10:00:00",
+        ))
+        repo.insert(Case(
+            case_id="CS-B1", subject="B1", company_id="C-B", reply_count=1,
+            sent_time="2026/05/02 10:00:00",
+        ))
+        repo.insert(Case(
+            case_id="CS-A2", subject="A2", company_id="C-A", reply_count=1,
+            sent_time="2026/05/03 10:00:00",
+        ))
+        repo.insert(Case(
+            case_id="CS-C1", subject="C1", company_id="C-C", reply_count=1,
+            sent_time="2026/05/04 10:00:00",
+        ))
+        repo.insert(Case(
+            case_id="CS-X", subject="X", company_id="C-A", reply_count=2,
+            sent_time="2026/05/05 10:00:00",
+        ))
+
+        result = repo.list_by_reply_count(1)
+        ids = [c.case_id for c in result]
+        # CS-X 不在內（reply_count=2）
+        assert "CS-X" not in ids
+        # 同客服（C-A: jill）的案件應相鄰；CS-A1、CS-A2 同組，組內按 sent_time
+        a1_idx = ids.index("CS-A1")
+        a2_idx = ids.index("CS-A2")
+        assert abs(a1_idx - a2_idx) == 1, f"同客服案件應相鄰，實際順序：{ids}"
+        assert a1_idx < a2_idx, f"組內應按 sent_time 升序，實際：{ids}"
+
     def test_update(self, db: DatabaseManager) -> None:
         repo = CaseRepository(db.connection)
         case = Case(case_id="CS-2026-040", subject="Original subject")
@@ -221,8 +366,12 @@ class TestQARepository:
         assert parts[2] == "001"
 
     def test_next_qa_id_sequential(self, db: DatabaseManager) -> None:
+        # next_qa_id() 以當月為前綴（datetime.now().strftime("%Y%m")），
+        # 測試必須與當月對齊，否則 MAX 查詢落空會回傳當月首號。
+        from datetime import datetime
+
         repo = QARepository(db.connection)
-        ym = "202603"
+        ym = datetime.now().strftime("%Y%m")
         qa1 = QAKnowledge(qa_id=f"QA-{ym}-001", question="Q1", answer="A1")
         qa2 = QAKnowledge(qa_id=f"QA-{ym}-002", question="Q2", answer="A2")
         repo.insert(qa1)
