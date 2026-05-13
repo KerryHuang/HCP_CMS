@@ -306,3 +306,71 @@ def test_push_fails_when_company_has_empty_name(setup) -> None:
     assert success is False
     assert "格式不完整" in payload
     client.create_issue.assert_not_called()
+
+
+# ============= description 用客戶來信 + custom_fields =============
+
+
+def test_push_description_uses_first_customer_log(setup) -> None:
+    """description 應為第一筆 direction=客戶來信 的 case_log content（list_by_case 為 ASC，第一筆是最舊）。"""
+    from hcp_cms.data.models import CaseLog
+    from hcp_cms.data.repositories import CaseLogRepository
+    db = setup
+    log_repo = CaseLogRepository(db.connection)
+    log_repo.insert(CaseLog(
+        log_id=log_repo.next_log_id(),
+        case_id="C-1",
+        direction="客戶來信",
+        content="原始來信內容",
+        logged_at="2026/05/04 09:00:00",
+    ))
+    log_repo.insert(CaseLog(
+        log_id=log_repo.next_log_id(),
+        case_id="C-1",
+        direction="客戶來信",
+        content="第二封補充來信",
+        logged_at="2026/05/05 10:00:00",
+    ))
+
+    client = MagicMock()
+    client.create_issue.return_value = "100"
+    mgr = MantisPushManager(db.connection, client=client, project_id="218")
+    mgr.push_case_as_new_ticket("C-1", "S-YOGA")
+
+    description = client.create_issue.call_args.kwargs["description"]
+    assert "原始來信內容" in description
+    assert "第二封補充來信" not in description
+    assert "[HCP-CMS: C-1]" in description
+
+
+def test_push_sends_contact_person_as_custom_field(setup) -> None:
+    """contact_person 應作為 custom_field '客戶提問人員' 送進 SOAP。"""
+    db = setup
+    case_repo = CaseRepository(db.connection)
+    case = case_repo.get_by_id("C-1")
+    case.contact_person = "customer@xyz.com"
+    case_repo.update(case)
+
+    client = MagicMock()
+    client.create_issue.return_value = "101"
+    mgr = MantisPushManager(db.connection, client=client, project_id="218")
+    mgr.push_case_as_new_ticket("C-1", "S-YOGA")
+
+    custom_fields = client.create_issue.call_args.kwargs.get("custom_fields")
+    assert custom_fields == {"客戶提問人員": "customer@xyz.com"}
+
+
+def test_push_omits_custom_field_when_no_contact_person(setup) -> None:
+    """無 contact_person → 不送 custom_fields。"""
+    db = setup
+    case_repo = CaseRepository(db.connection)
+    case = case_repo.get_by_id("C-1")
+    case.contact_person = None
+    case_repo.update(case)
+
+    client = MagicMock()
+    client.create_issue.return_value = "102"
+    mgr = MantisPushManager(db.connection, client=client, project_id="218")
+    mgr.push_case_as_new_ticket("C-1", "S-YOGA")
+
+    assert client.create_issue.call_args.kwargs.get("custom_fields") is None

@@ -90,6 +90,10 @@ class MantisPushManager:
             priority=_PRIORITY_MAP.get(case.priority or "中", "normal"),
             severity="minor",
             handler=case.handler if case.handler else None,
+            custom_fields=(
+                {"客戶提問人員": case.contact_person}
+                if case.contact_person else None
+            ),
         )
         if ticket_id is None:
             return False, getattr(self._client, "last_error", "未知 Mantis SOAP 錯誤")
@@ -180,7 +184,18 @@ class MantisPushManager:
     # ---- 內部組裝 ----
 
     def _build_description(self, case: Case) -> str:
-        """組裝 Mantis description：[HCP-CMS] header + 主旨 + 本文 + 進度。"""
+        """description 用第一筆「客戶來信」case_log 內容，加 [HCP-CMS] header。
+
+        若該案件無「客戶來信」case_log（如手動建案），fallback 為舊版結構化 description。
+        list_by_case 排序為 logged_at ASC，第一筆 [0] 是最舊（原始來信）。
+        """
+        logs = self._log_repo.list_by_case(case.case_id)
+        customer_logs = [log for log in logs if log.direction == "客戶來信"]
+
+        if customer_logs:
+            original = customer_logs[0]
+            return f"[HCP-CMS: {case.case_id}]\n\n{original.content or ''}"
+
         parts = [f"[HCP-CMS: {case.case_id}]"]
         if case.subject:
             parts.append(f"【主旨】{case.subject}")
