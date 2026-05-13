@@ -11,11 +11,13 @@ from __future__ import annotations
 
 import sqlite3
 
+from hcp_cms.core.case_formatter import format_case_header
 from hcp_cms.data.models import Case, CaseMantisLink, MantisTicket
 from hcp_cms.data.repositories import (
     CaseLogRepository,
     CaseMantisRepository,
     CaseRepository,
+    CompanyRepository,
     MantisRepository,
 )
 from hcp_cms.services.mantis.base import MantisClient
@@ -43,6 +45,7 @@ class MantisPushManager:
         self._link_repo = CaseMantisRepository(conn)
         self._log_repo = CaseLogRepository(conn)
         self._mantis_repo = MantisRepository(conn)
+        self._company_repo = CompanyRepository(conn)
         self._auditor = AuditLogger(conn)
 
     # ---- 模式 (a) 單筆建新 ticket ----
@@ -69,9 +72,19 @@ class MantisPushManager:
                 f"案件已連結 Mantis ticket #{existing_links[0].ticket_id}，請改用 push_as_bugnote",
             )
 
+        # 取公司名稱（format_case_header 需要）
+        company = self._company_repo.get_by_id(case.company_id) if case.company_id else None
+        company_name = company.name if company else None
+
+        # 格式化 summary（缺漏會拋 ValueError）
+        try:
+            summary = format_case_header(case, company_name)
+        except ValueError as e:
+            return False, f"案件格式不完整：{e}"
+
         ticket_id = self._client.create_issue(
             project_id=self._project_id,
-            summary=case.subject or f"HCP CMS 案件 {case_id}",
+            summary=summary,
             description=self._build_description(case),
             category=self._category,
             priority=_PRIORITY_MAP.get(case.priority or "中", "normal"),
@@ -180,8 +193,18 @@ class MantisPushManager:
         return "\n\n".join(parts)
 
     def _build_bugnote_text(self, case: Case) -> str:
-        """組裝 bugnote 文字：當前狀態 + 進度 + 最新 case_log。"""
-        parts = [f"[HCP-CMS: {case.case_id}] 更新"]
+        """組裝 bugnote 文字：第一行用 format_case_header（失敗則 fallback 舊格式）。"""
+        # 取公司名稱
+        company = self._company_repo.get_by_id(case.company_id) if case.company_id else None
+        company_name = company.name if company else None
+
+        # 嘗試新格式 header，失敗 fallback 舊格式（bugnote 容忍度高，已有 ticket）
+        try:
+            header = format_case_header(case, company_name)
+        except ValueError:
+            header = f"[HCP-CMS: {case.case_id}] 更新"
+
+        parts = [header]
         if case.status:
             parts.append(f"【當前狀態】{case.status}")
         if case.progress:

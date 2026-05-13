@@ -6,10 +6,11 @@ import pytest
 
 from hcp_cms.core.mantis_push import MantisPushManager
 from hcp_cms.data.database import DatabaseManager
-from hcp_cms.data.models import Case, CaseMantisLink, MantisTicket
+from hcp_cms.data.models import Case, CaseMantisLink, Company, MantisTicket
 from hcp_cms.data.repositories import (
     CaseMantisRepository,
     CaseRepository,
+    CompanyRepository,
     MantisRepository,
 )
 
@@ -26,6 +27,10 @@ def _link_with_ticket(conn, case_id: str, ticket_id: str) -> None:
 def setup(tmp_path: Path):
     db = DatabaseManager(tmp_path / "t.db")
     db.initialize()
+    # 補 Company（format_case_header 需要 company name）
+    CompanyRepository(db.connection).insert(
+        Company(company_id="CO-1", name="測試公司", domain="test.com")
+    )
     CaseRepository(db.connection).insert(
         Case(
             case_id="C-1",
@@ -33,6 +38,8 @@ def setup(tmp_path: Path):
             progress="已聯絡客戶確認",
             priority="高",
             handler="YOGA",
+            company_id="CO-1",
+            sent_time="2026/05/04 16:46:00",
         )
     )
     yield db
@@ -60,7 +67,9 @@ def test_push_case_as_new_ticket_success(setup) -> None:
     # 確認 SOAP 帶入正確欄位
     call_kwargs = client.create_issue.call_args.kwargs
     assert call_kwargs["project_id"] == "218"
-    assert call_kwargs["summary"] == "印表機異常"
+    # summary 為 format_case_header 輸出（含日期/星期/公司/主旨）
+    assert "印表機異常" in call_kwargs["summary"]
+    assert "【測試公司】" in call_kwargs["summary"]
     assert "[HCP-CMS: C-1]" in call_kwargs["description"]
     assert "已聯絡客戶確認" in call_kwargs["description"]
     assert call_kwargs["priority"] == "high"  # 高→high
@@ -74,11 +83,17 @@ def test_push_case_as_new_ticket_priority_mapping(setup) -> None:
     client.create_issue.return_value = "1"
     mgr = MantisPushManager(db.connection, client=client, project_id="218")
 
-    CaseRepository(db.connection).insert(Case(case_id="C-M", subject="中", priority="中", handler="YOGA"))
+    CaseRepository(db.connection).insert(Case(
+        case_id="C-M", subject="中", priority="中", handler="YOGA",
+        company_id="CO-1", sent_time="2026/05/04 16:46:00",
+    ))
     mgr.push_case_as_new_ticket("C-M", "S-YOGA")
     assert client.create_issue.call_args.kwargs["priority"] == "normal"
 
-    CaseRepository(db.connection).insert(Case(case_id="C-L", subject="低", priority="低", handler="YOGA"))
+    CaseRepository(db.connection).insert(Case(
+        case_id="C-L", subject="低", priority="低", handler="YOGA",
+        company_id="CO-1", sent_time="2026/05/04 16:46:00",
+    ))
     mgr.push_case_as_new_ticket("C-L", "S-YOGA")
     assert client.create_issue.call_args.kwargs["priority"] == "low"
 
@@ -186,8 +201,14 @@ def test_push_case_as_bugnote_soap_failure(setup) -> None:
 
 def test_push_cases_batch_mixed_results(setup) -> None:
     db = setup
-    CaseRepository(db.connection).insert(Case(case_id="C-2", subject="A", handler="YOGA"))
-    CaseRepository(db.connection).insert(Case(case_id="C-3", subject="B", handler="YOGA"))
+    CaseRepository(db.connection).insert(Case(
+        case_id="C-2", subject="A", handler="YOGA",
+        company_id="CO-1", sent_time="2026/05/04 16:46:00",
+    ))
+    CaseRepository(db.connection).insert(Case(
+        case_id="C-3", subject="B", handler="YOGA",
+        company_id="CO-1", sent_time="2026/05/04 16:46:00",
+    ))
 
     # C-3 已連結 → 應 skip
     _link_with_ticket(db.connection, case_id="C-3", ticket_id="EXISTING-1")
@@ -218,4 +239,70 @@ def test_push_cases_batch_empty_list(setup) -> None:
     mgr = MantisPushManager(db.connection, client=client, project_id="218")
     results = mgr.push_cases_batch([], "S-YOGA")
     assert results == []
+    client.create_issue.assert_not_called()
+
+
+# ============= format_case_header 整合 =============
+
+
+def test_push_uses_formatted_summary(setup) -> None:
+    """推送時 SOAP 收到的 summary 應為 format_case_header 的輸出。"""
+    db = setup
+    client = MagicMock()
+    client.create_issue.return_value = "777"
+
+    mgr = MantisPushManager(db.connection, client=client, project_id="218")
+    success, _ = mgr.push_case_as_new_ticket("C-1", "S-YOGA")
+    assert success is True
+
+    sent_summary = client.create_issue.call_args.kwargs["summary"]
+    assert "2026/5/4" in sent_summary
+    assert "(週一)" in sent_summary
+    assert "下午 04:46" in sent_summary
+    assert "【測試公司】" in sent_summary
+    assert "印表機異常" in sent_summary
+
+
+def test_push_fails_when_case_has_no_company_link(setup) -> None:
+    """case.company_id 為 None → format_case_header 拋例外 → push 失敗。"""
+    db = setup
+    CaseRepository(db.connection).insert(
+        Case(
+            case_id="C-NO-COMPANY",
+            subject="無公司案件",
+            handler="YOGA",
+            sent_time="2026/05/04 10:00:00",
+        )
+    )
+    client = MagicMock()
+    mgr = MantisPushManager(db.connection, client=client, project_id="218")
+    success, payload = mgr.push_case_as_new_ticket("C-NO-COMPANY", "S-YOGA")
+
+    assert success is False
+    assert "格式不完整" in payload
+    client.create_issue.assert_not_called()
+
+
+def test_push_fails_when_company_has_empty_name(setup) -> None:
+    """case 指向 company 但 company.name 為空 → 格式不完整失敗。"""
+    db = setup
+    # 補一個 name 為空的 Company
+    CompanyRepository(db.connection).insert(
+        Company(company_id="CO-NONAME", name="", domain="noname.com")
+    )
+    CaseRepository(db.connection).insert(
+        Case(
+            case_id="C-NONAME",
+            subject="無公司名案件",
+            handler="YOGA",
+            company_id="CO-NONAME",
+            sent_time="2026/05/04 10:00:00",
+        )
+    )
+    client = MagicMock()
+    mgr = MantisPushManager(db.connection, client=client, project_id="218")
+    success, payload = mgr.push_case_as_new_ticket("C-NONAME", "S-YOGA")
+
+    assert success is False
+    assert "格式不完整" in payload
     client.create_issue.assert_not_called()
