@@ -277,6 +277,25 @@ class CaseDetailManager:
             pulled += 1
         return pulled, 0
 
+    def sync_bugnotes_bidirectional(
+        self,
+        case_id: str,
+        ticket_id: str,
+        client: MantisClient,
+    ) -> dict:
+        """雙向同步 case_logs ↔ Mantis bugnotes。
+
+        Returns:
+            {"pushed": int, "pulled": int, "fail": int}
+        """
+        push_success, push_fail = self.sync_bugnotes_outbound(case_id, ticket_id, client)
+        pull_success, pull_fail = self.sync_bugnotes_inbound(case_id, ticket_id, client)
+        return {
+            "pushed": push_success,
+            "pulled": pull_success,
+            "fail": push_fail + pull_fail,
+        }
+
     def get_mantis_ticket(self, ticket_id: str) -> MantisTicket | None:
         """依 ticket_id 取得本地快取的 Ticket 資料。"""
         return self._mantis_repo.get_by_id(ticket_id)

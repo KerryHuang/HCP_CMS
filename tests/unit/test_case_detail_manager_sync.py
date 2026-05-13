@@ -344,3 +344,36 @@ def test_sync_inbound_handles_get_issue_failure(db_with_case_and_ticket):
 
     assert pulled == 0
     assert fail == 1
+
+
+# ============= sync_bugnotes_bidirectional 整合 =============
+
+
+def test_sync_bidirectional_returns_summary(db_with_case_and_ticket):
+    """整合：1 筆出向成功 + 1 筆出向 fail + 1 筆入向新 → summary 正確。"""
+    db, _case, _link = db_with_case_and_ticket
+    log_repo = CaseLogRepository(db.connection)
+    log_repo.insert(CaseLog(
+        log_id=log_repo.next_log_id(),
+        case_id="C-1", direction="內部討論", content="會成功",
+        logged_at="2026/05/13 10:00:00",
+    ))
+    log_repo.insert(CaseLog(
+        log_id=log_repo.next_log_id(),
+        case_id="C-1", direction="內部討論", content="會失敗",
+        logged_at="2026/05/13 10:01:00",
+    ))
+
+    client = MagicMock()
+    client.add_note.side_effect = ["N-X", None]
+    client.last_error = "Issue locked"
+    client.get_issue.return_value = MantisIssue(
+        id="9999", summary="x",
+        notes_list=[MantisNote(note_id="N-Y", reporter="RD", text="新留言", date_submitted="2026/05/13")],
+        notes_count=1,
+    )
+
+    mgr = CaseDetailManager(db.connection)
+    summary = mgr.sync_bugnotes_bidirectional("C-1", "9999", client)
+
+    assert summary == {"pushed": 1, "pulled": 1, "fail": 1}
