@@ -129,8 +129,69 @@ class MantisSoapClient(MantisClient):
         severity: str = "minor",
         handler: str | None = None,
     ) -> str | None:
-        """Stub — Task 6 實作。"""
-        raise NotImplementedError("Task 6 將實作此方法")
+        if not self._connected:
+            self.last_error = "尚未連線，請先呼叫 connect()"
+            return None
+
+        handler_block = (
+            f"<man:handler><man:name>{self._escape_xml(handler)}</man:name></man:handler>"
+            if handler else ""
+        )
+        category_block = (
+            f"<man:category>{self._escape_xml(category)}</man:category>"
+            if category else ""
+        )
+
+        soap_body = f"""<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+                  xmlns:man="http://futureware.biz/mantisconnect">
+    <soapenv:Body>
+        <man:mc_issue_add>
+            <man:username>{self._escape_xml(self._username)}</man:username>
+            <man:password>{self._escape_xml(self._password)}</man:password>
+            <man:issue>
+                <man:project><man:id>{self._escape_xml(project_id)}</man:id></man:project>
+                <man:summary>{self._escape_xml(summary)}</man:summary>
+                <man:description>{self._escape_xml(description)}</man:description>
+                {category_block}
+                <man:priority><man:name>{self._escape_xml(priority)}</man:name></man:priority>
+                <man:severity><man:name>{self._escape_xml(severity)}</man:name></man:severity>
+                {handler_block}
+            </man:issue>
+        </man:mc_issue_add>
+    </soapenv:Body>
+</soapenv:Envelope>"""
+
+        try:
+            resp = requests.post(
+                f"{self._base_url}/api/soap/mantisconnect.php",
+                data=soap_body.encode("utf-8"),
+                headers={"Content-Type": "text/xml; charset=utf-8"},
+                timeout=30,
+                verify=False,
+            )
+            if resp.status_code != 200:
+                self.last_error = f"HTTP {resp.status_code}: {resp.text[:200]}"
+                return None
+            text = resp.text
+            if "<faultstring>" in text:
+                fault = self._extract_xml(text, "faultstring") or "未知錯誤"
+                self.last_error = f"SOAP 錯誤：{fault}"
+                return None
+            ticket_id = self._extract_xml(text, "return")
+            if not ticket_id or not ticket_id.strip().isdigit():
+                self.last_error = f"回應解析失敗：{text[:200]}"
+                return None
+            return ticket_id.strip()
+        except requests.exceptions.ConnectionError as e:
+            self.last_error = f"連線失敗：{e}"
+            return None
+        except requests.exceptions.Timeout:
+            self.last_error = "連線逾時（30 秒）"
+            return None
+        except Exception as e:
+            self.last_error = f"未知錯誤：{e}"
+            return None
 
     def add_note(
         self,
@@ -140,6 +201,20 @@ class MantisSoapClient(MantisClient):
     ) -> str | None:
         """Stub — Task 7 實作。"""
         raise NotImplementedError("Task 7 將實作此方法")
+
+    @staticmethod
+    def _escape_xml(value: str | None) -> str:
+        """XML escape: &, <, >, ", '"""
+        if value is None:
+            return ""
+        return (
+            str(value)
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace('"', "&quot;")
+            .replace("'", "&apos;")
+        )
 
     def get_users_hcp_version(self) -> list[dict]:
         """透過 Web 登入取得客戶帳號（*-USER）的 HcpVersion 自訂欄位。
