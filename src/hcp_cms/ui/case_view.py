@@ -342,7 +342,18 @@ class CaseView(QWidget):
         layout.addWidget(self._tracker_status)
 
     def _update_status_bar(self, cases: list) -> None:
-        """更新底部追蹤狀態列：總筆數 / 處理中 / 超時 7+ / 未指派。"""
+        """更新底部追蹤狀態列：總筆數 / 處理中 / 超時 7+ / 未指派。
+
+        未指派計數排除「系統公司」案件（資通電腦、Mantis）— 這些不需分派 handler。
+        """
+        from hcp_cms.data.repositories import SYSTEM_COMPANY_NAMES, CompanyRepository
+        # 取得系統公司 ID
+        system_company_ids: set[str] = set()
+        if self._conn:
+            for c in CompanyRepository(self._conn).list_all():
+                if c.name in SYSTEM_COMPANY_NAMES:
+                    system_company_ids.add(c.company_id)
+
         total = len(cases)
         in_progress = sum(1 for c in cases if c.status == "處理中")
         overdue = sum(
@@ -351,13 +362,15 @@ class CaseView(QWidget):
         )
         unassigned = sum(
             1 for c in cases
-            if (not c.handler or c.handler == "") and c.status != "已完成"
+            if (not c.handler or c.handler == "")
+            and c.status != "已完成"
+            and c.company_id not in system_company_ids
         )
         self._tracker_status.setText(
             f"📋 顯示 {total} 筆"
             f"   |   ⏳ 處理中 {in_progress}"
             f"   |   🚨 超時 7+ 天 {overdue}"
-            f"   |   ❓ 未指派 {unassigned}"
+            f"   |   ❓ 未指派 {unassigned}（已排除資通/Mantis）"
         )
 
     def refresh(self) -> None:

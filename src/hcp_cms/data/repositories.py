@@ -28,6 +28,10 @@ from hcp_cms.data.models import (
 _COL_KEY_RE = _re.compile(r"^cx_\d+$")
 _PREFIX_RE = _re.compile(r"^(RE:|FW:|FWD:|回覆:|轉寄:|答覆:)\s*", _re.IGNORECASE)
 
+# 內部 / 系統公司：這些公司的案件不算「未指派 handler」（不需分派客服）
+# 用於：CaseRepository.list_unassigned、報表追蹤、案件管理篩選的未指派 count
+SYSTEM_COMPANY_NAMES: tuple[str, ...] = ("資通電腦", "Mantis")
+
 
 def _clean_subject(subject: str) -> str:
     """遞迴去除主旨前綴（RE:/FW:/回覆: 等），供 Python 側比對使用。"""
@@ -410,12 +414,21 @@ class CaseRepository:
         return [self._row_to_case(r) for r in rows]
 
     def list_unassigned(self) -> list[Case]:
-        """查詢 handler 為空且尚未完成的案件，按 sent_time ASC。"""
+        """查詢 handler 為空且尚未完成的案件，按 sent_time ASC。
+
+        排除「內部 / 系統公司」案件（資通電腦、Mantis）— 這些案件不算需要分派 handler。
+        參見 SYSTEM_COMPANY_NAMES 常數。
+        """
+        placeholders = ",".join("?" for _ in SYSTEM_COMPANY_NAMES)
         rows = self._conn.execute(
             self._build_select()
             + " WHERE (handler IS NULL OR handler = '')"
             + " AND status != '已完成'"
+            + " AND (company_id IS NULL OR company_id NOT IN ("
+            + f"   SELECT company_id FROM companies WHERE name IN ({placeholders})"
+            + " ))"
             + " ORDER BY sent_time ASC",
+            tuple(SYSTEM_COMPANY_NAMES),
         ).fetchall()
         return [self._row_to_case(r) for r in rows]
 

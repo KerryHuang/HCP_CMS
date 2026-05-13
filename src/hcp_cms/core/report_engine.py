@@ -9,6 +9,7 @@ from typing import Any
 from hcp_cms.core.mantis_classifier import MantisClassifier
 from hcp_cms.core.report_writer import HyperlinkCell, ReportWriter
 from hcp_cms.data.repositories import (
+    SYSTEM_COMPANY_NAMES,
     CaseMantisRepository,
     CaseRepository,
     CompanyRepository,
@@ -57,6 +58,48 @@ def _fmt_last_updated(raw: str | None) -> str:
 def _clean_row(row: list[Any]) -> list[Any]:
     """對整列每個值套用 _clean()。"""
     return [_clean(v) for v in row]
+
+
+# 超時案件 5 級分類（與 case_view._overdue_color 對齊）
+# 標籤、最小天數（>=）：3-4 / 5-6 / 7-9 / 10-29 / 30+
+_OVERDUE_TIERS: list[tuple[str, int, int | None]] = [
+    ("3-4 天", 3, 5),
+    ("5-6 天", 5, 7),
+    ("7-9 天", 7, 10),
+    ("10-29 天", 10, 30),
+    ("30+ 天", 30, None),
+]
+
+
+def _urgency_sort_key(case) -> tuple:
+    """案件緊急度排序鍵：
+
+    1. reply_count == 1 排最前（代表還沒實質回覆過客戶）
+    2. 同組內按 sent_time 距今天數降序（卡最久在前）
+    """
+    rc = case.reply_count if case.reply_count is not None else 0
+    reply1_first = 0 if rc == 1 else 1
+    days = _days_since_today(case.sent_time)
+    return (reply1_first, -days)
+
+
+def _days_since_today(sent_time: str | None) -> int:
+    """計算 sent_time 距「今天」幾天（B 方案：截至產報日）。無法解析回傳 0。"""
+    if not sent_time:
+        return 0
+    try:
+        s = datetime.strptime(sent_time[:16], "%Y/%m/%d %H:%M")
+        return max(0, (datetime.now() - s).days)
+    except Exception:
+        return 0
+
+
+def _classify_overdue_tier(days_stuck: int) -> int | None:
+    """回傳 5 級分級索引 (0-4)；< 3 天回傳 None（不算超時）。"""
+    for idx, (_, lo, hi) in enumerate(_OVERDUE_TIERS):
+        if days_stuck >= lo and (hi is None or days_stuck < hi):
+            return idx
+    return None
 
 
 def _reply_elapsed(sent: str | None, replied: str | None) -> str:
@@ -445,6 +488,32 @@ class ReportEngine:
             summary_rows.append(["已結案", mantis_counts["closed"]])
             summary_rows.append(["合計", len(mantis_rows_all)])
 
+        # ── 超時案件分布（B 方案：截至產報日算卡天數）─────────────────
+        # 範圍：報表期間建案、目前仍為「處理中」者
+        # 月報 = 該月新建案件的狀況快照（不含跨月舊案，每月獨立可比較）
+        in_progress_cases = [c for c in cases if c.status == "處理中"]
+        tier_counts = [0] * len(_OVERDUE_TIERS)
+        normal_count = 0  # 0-2 天，未超時
+        for c in in_progress_cases:
+            days = _days_since_today(c.sent_time)
+            tier_idx = _classify_overdue_tier(days)
+            if tier_idx is None:
+                normal_count += 1
+            else:
+                tier_counts[tier_idx] += 1
+        overdue_total = sum(tier_counts)
+        if in_progress_cases:
+            summary_rows.append([])
+            summary_rows.append(["⏰ 超時案件分布（處理中 / 截至產報日）"])
+            summary_rows.append(["卡幾天", "件數", "佔比"])
+            for (label, _, _), n in zip(_OVERDUE_TIERS, tier_counts):
+                pct = (n / len(in_progress_cases) * 100) if in_progress_cases else 0
+                summary_rows.append([label, n, f"{pct:.1f}%"])
+            pct_normal = (normal_count / len(in_progress_cases) * 100)
+            summary_rows.append(["0-2 天（正常）", normal_count, f"{pct_normal:.1f}%"])
+            summary_rows.append(["小計（超時 3+ 天）", overdue_total,
+                                 f"{(overdue_total / len(in_progress_cases) * 100):.1f}%"])
+
         result["📊 月報摘要"] = summary_rows
 
         # ── Sheet 2: 案件明細 ──────────────────────────────────────────
@@ -485,6 +554,291 @@ class ReportEngine:
             total_c = stat["replied"] + stat["pending"]
             analysis_rows.append(_clean_row([cname, stat["replied"], stat["pending"], total_c]))
         result["🏢 客戶分析"] = analysis_rows
+
+        # ── Sheet 4: 案件追蹤（超時 / 未指派 / 回覆 1 次）─────────────
+        tracking_rows: list[list] = [
+            [f"⏰ 案件追蹤 — {start_date} ～ {end_date}（卡天數截至產報日 {datetime.now().strftime('%Y/%m/%d')}）"],
+            [],
+        ]
+
+        # 取 staff 名稱對照（給 handler 分組顯示用）
+        staff_map: dict[str, str] = {
+            s.staff_id: s.name for s in self._staff_repo.list_all()
+        }
+
+        # ─ Section 1: 超時 5 級分布
+        tracking_rows.append(["1. 處理中案件超時分布"])
+        tracking_rows.append(["卡幾天", "件數", "佔比"])
+        if in_progress_cases:
+            for (label, _, _), n in zip(_OVERDUE_TIERS, tier_counts):
+                pct = (n / len(in_progress_cases) * 100)
+                tracking_rows.append([label, n, f"{pct:.1f}%"])
+            tracking_rows.append([
+                "0-2 天（正常）", normal_count,
+                f"{(normal_count / len(in_progress_cases) * 100):.1f}%"
+            ])
+            tracking_rows.append(["合計（處理中）", len(in_progress_cases), "100.0%"])
+        else:
+            tracking_rows.append(["（期間內無處理中案件）", 0, "0.0%"])
+        tracking_rows.append([])
+
+        # 取得系統公司 ID（資通電腦、Mantis），這些案件不算「未指派」
+        system_company_ids: set[str] = set()
+        for c in companies:
+            if c.name in SYSTEM_COMPANY_NAMES:
+                system_company_ids.add(c.company_id)
+
+        # ─ Section 2: 各 handler 工作量（5 級分布 + 緊急度 + 雙效率指標）
+        # 註：handler 為空且公司為系統公司（資通電腦/Mantis）的案件不列入「未指派」
+        # 「平均首回」= sent_time → actual_reply 平均（小數天）
+        # 「平均處理」= sent_time → updated_at 平均（小數天）
+        tracking_rows.append([
+            "2. 各處理人 (handler) 工作量（限報表期間建案；卡天數截至產報日）"
+        ])
+        tracking_rows.append([
+            "處理人", "處理中",
+            "3-4 天", "5-6 天", "7-9 天", "10-29 天", "30+ 天",
+            "回覆 1 次", "最久卡天", "本期完成", "平均首回", "平均處理",
+        ])
+        handler_stats: dict[str, dict] = {}
+        for c in in_progress_cases:
+            # 系統公司案件且無 handler → 跳過（不算未指派）
+            if not c.handler and c.company_id in system_company_ids:
+                continue
+            key = (c.handler or "（未指派）").lower() if c.handler else "（未指派）"
+            display = c.handler if c.handler else "（未指派）"
+            if key not in handler_stats:
+                handler_stats[key] = {
+                    "display": display, "total": 0,
+                    "t0": 0, "t1": 0, "t2": 0, "t3": 0, "t4": 0,
+                    "reply1": 0, "max_days": 0,
+                    "period_done": 0,
+                    "frt_days_sum": 0.0, "frt_count": 0,
+                    "tot_days_sum": 0.0, "tot_count": 0,
+                }
+            stat = handler_stats[key]
+            stat["total"] += 1
+            days = _days_since_today(c.sent_time)
+            stat["max_days"] = max(stat["max_days"], days)
+            tier_idx = _classify_overdue_tier(days)
+            if tier_idx is not None:
+                stat[f"t{tier_idx}"] += 1
+            if c.reply_count == 1:
+                stat["reply1"] += 1
+
+        # 累計效率指標：本期完成 / 平均首回 / 平均處理（小數天）
+        closed_statuses_set = {"已完成", "已回覆", "Closed"}
+
+        def _days_between_frac(start_str: str, end_str: str) -> float | None:
+            """計算兩個時戳之間的天數（小數，精度到秒換算）。"""
+            try:
+                s_dt = datetime.strptime(start_str[:16], "%Y/%m/%d %H:%M")
+                e_dt = datetime.strptime(end_str[:16], "%Y/%m/%d %H:%M")
+                return max(0.0, (e_dt - s_dt).total_seconds() / 86400)
+            except Exception:
+                return None
+
+        # 先建 case_id → 首次 HCP 回覆時間 對照表（用 case_logs.direction LIKE 'HCP%'）
+        first_hcp_reply_map: dict[str, str] = {}
+        try:
+            rows = self._conn.execute(
+                "SELECT case_id, MIN(logged_at) AS first_reply "
+                "FROM case_logs "
+                "WHERE direction LIKE 'HCP%' "
+                "GROUP BY case_id"
+            ).fetchall()
+            for r in rows:
+                cid = r[0] if not hasattr(r, "keys") else r["case_id"]
+                ft = r[1] if not hasattr(r, "keys") else r["first_reply"]
+                if cid and ft:
+                    first_hcp_reply_map[cid] = ft
+        except Exception:
+            pass
+
+        for c in cases:
+            if c.status not in closed_statuses_set:
+                continue
+            # 系統公司無 handler 案件不算
+            if not c.handler and c.company_id in system_company_ids:
+                continue
+            key = (c.handler or "（未指派）").lower() if c.handler else "（未指派）"
+            display = c.handler if c.handler else "（未指派）"
+            if key not in handler_stats:
+                handler_stats[key] = {
+                    "display": display, "total": 0,
+                    "t0": 0, "t1": 0, "t2": 0, "t3": 0, "t4": 0,
+                    "reply1": 0, "max_days": 0,
+                    "period_done": 0,
+                    "frt_days_sum": 0.0, "frt_count": 0,
+                    "tot_days_sum": 0.0, "tot_count": 0,
+                }
+            stat = handler_stats[key]
+            stat["period_done"] += 1
+            # 平均首回 FRT：sent_time → 首次 HCP 回覆 logged_at（case_logs）
+            first_reply = first_hcp_reply_map.get(c.case_id)
+            if c.sent_time and first_reply:
+                d = _days_between_frac(c.sent_time, first_reply)
+                if d is not None:
+                    stat["frt_days_sum"] += d
+                    stat["frt_count"] += 1
+            # 平均處理：sent_time → updated_at
+            if c.sent_time and c.updated_at:
+                d = _days_between_frac(c.sent_time, c.updated_at)
+                if d is not None:
+                    stat["tot_days_sum"] += d
+                    stat["tot_count"] += 1
+
+        # 按 total 降序、未指派排最後
+        for _key, stat in sorted(
+            handler_stats.items(),
+            key=lambda x: (x[1]["display"] == "（未指派）", -x[1]["total"]),
+        ):
+            frt_avg = (
+                f"{stat['frt_days_sum'] / stat['frt_count']:.2f}"
+                if stat["frt_count"] else "-"
+            )
+            tot_avg = (
+                f"{stat['tot_days_sum'] / stat['tot_count']:.2f}"
+                if stat["tot_count"] else "-"
+            )
+            tracking_rows.append([
+                stat["display"], stat["total"],
+                stat["t0"], stat["t1"], stat["t2"], stat["t3"], stat["t4"],
+                stat["reply1"], stat["max_days"],
+                stat["period_done"], frt_avg, tot_avg,
+            ])
+        tracking_rows.append([])
+
+        # ─ Section 3: 嚴重超時案件明細（30+ 天，前 50 筆）
+        # 排序：reply_count=1 在最前（未實質回覆客戶），組內按卡天數降序
+        severe = [
+            (c, _days_since_today(c.sent_time)) for c in in_progress_cases
+            if _days_since_today(c.sent_time) >= 30
+        ]
+        severe.sort(key=lambda x: _urgency_sort_key(x[0]))
+        tracking_rows.append([f"3. 嚴重超時案件（30+ 天，共 {len(severe)} 筆，顯示前 50；reply_count=1 與卡最久優先）"])
+        tracking_rows.append(["案件編號", "公司", "主旨", "處理人", "卡幾天", "回覆次數"])
+        for c, days in severe[:50]:
+            comp = company_map.get(c.company_id or "")
+            cname = comp.name if comp else (c.company_id or "")
+            tracking_rows.append(_clean_row([
+                c.case_id, cname, (c.subject or "")[:60], c.handler or "（未指派）",
+                days, c.reply_count or 0,
+            ]))
+        tracking_rows.append([])
+
+        # ─ Section 4: 未指派案件統計（排除系統公司資通電腦/Mantis）
+        unassigned = [
+            c for c in cases
+            if (not c.handler or c.handler == "")
+            and c.status != "已完成"
+            and c.company_id not in system_company_ids
+        ]
+        # 排序：reply_count=1 在最前（未實質回覆客戶），組內按卡天數降序
+        unassigned.sort(key=_urgency_sort_key)
+        tracking_rows.append([
+            f"4. 未指派 handler 案件（共 {len(unassigned)} 筆，已排除資通電腦 / Mantis；"
+            f"reply_count=1 與卡最久優先）"
+        ])
+        tracking_rows.append(["案件編號", "公司", "主旨", "狀態", "卡幾天", "回覆次數"])
+        for c in unassigned[:50]:
+            comp = company_map.get(c.company_id or "")
+            cname = comp.name if comp else (c.company_id or "")
+            tracking_rows.append(_clean_row([
+                c.case_id, cname, (c.subject or "")[:60], c.status,
+                _days_since_today(c.sent_time), c.reply_count or 0,
+            ]))
+        tracking_rows.append([])
+
+        # ─ Section 5: 回覆 1 次案件（依客服分組）
+        reply1_cases = [c for c in cases if c.reply_count == 1]
+        tracking_rows.append([f"5. 回覆 1 次案件 — 依客服分組（共 {len(reply1_cases)} 筆）"])
+        tracking_rows.append(["所屬客服", "件數"])
+        # 用公司的 cs_staff_id 分組
+        cs_group: dict[str, int] = {}
+        for c in reply1_cases:
+            comp = company_map.get(c.company_id or "")
+            staff_name = staff_map.get(comp.cs_staff_id or "", "") if comp else ""
+            display = staff_name or "（未指派）"
+            cs_group[display] = cs_group.get(display, 0) + 1
+        for display, n in sorted(cs_group.items(), key=lambda x: (x[0] == "（未指派）", -x[1])):
+            tracking_rows.append([display, n])
+
+        result["⏰ 案件追蹤"] = tracking_rows
+
+        # ── Sheet 5: 各客服案件（依 handler 分組列出處理中案件）─────────
+        per_handler_rows: list[list] = [
+            [f"👥 各客服案件 — {start_date} ～ {end_date}（處理中，依 handler 分組）"],
+            [],
+        ]
+
+        # 收集 handler → cases（大小寫不敏感分組，排除系統公司的無 handler 案件）
+        handler_groups: dict[str, dict] = {}
+        for c in in_progress_cases:
+            # 系統公司 + 無 handler → 跳過
+            if not c.handler and c.company_id in system_company_ids:
+                continue
+            key = (c.handler or "").lower() if c.handler else "（未指派）"
+            display = c.handler if c.handler else "（未指派）"
+            if key not in handler_groups:
+                handler_groups[key] = {"display": display, "cases": []}
+            handler_groups[key]["cases"].append(c)
+
+        # 排序：按案件數降序；未指派固定排最後
+        sorted_handlers = sorted(
+            handler_groups.items(),
+            key=lambda x: (x[0] == "（未指派）", -len(x[1]["cases"])),
+        )
+
+        for _key, group in sorted_handlers:
+            display = group["display"]
+            handler_cases = group["cases"]
+            # 統計 5 級分布、回覆 1 次、最久卡天
+            tiers = [0, 0, 0, 0, 0]
+            reply1 = 0
+            max_days = 0
+            for c in handler_cases:
+                days = _days_since_today(c.sent_time)
+                max_days = max(max_days, days)
+                tier_idx = _classify_overdue_tier(days)
+                if tier_idx is not None:
+                    tiers[tier_idx] += 1
+                if c.reply_count == 1:
+                    reply1 += 1
+            # 從 handler_stats 取效率指標（已於 Section 2 計算過）
+            handler_key = (display or "").lower() if display != "（未指派）" else "（未指派）"
+            hstat = handler_stats.get(handler_key, {})
+            period_done = hstat.get("period_done", 0)
+            frt_avg_str = (
+                f"{hstat['frt_days_sum'] / hstat['frt_count']:.2f} 天"
+                if hstat.get("frt_count") else "-"
+            )
+            tot_avg_str = (
+                f"{hstat['tot_days_sum'] / hstat['tot_count']:.2f} 天"
+                if hstat.get("tot_count") else "-"
+            )
+            # 多行 section divider：4 行（總計 / 5 級分布 / 緊急度 / 效率指標）
+            divider = (
+                f"━━ {display} — 處理中 {len(handler_cases)} 筆 ━━\n"
+                f"超時：3-4 天 {tiers[0]}  │  5-6 天 {tiers[1]}  │  7-9 天 {tiers[2]}"
+                f"  │  10-29 天 {tiers[3]}  │  30+ 天 {tiers[4]}\n"
+                f"回覆 1 次 {reply1}  │  最久卡 {max_days} 天\n"
+                f"本期完成 {period_done} 件  │  平均首回 {frt_avg_str}  │  平均處理 {tot_avg_str}"
+            )
+            per_handler_rows.append([divider])
+            per_handler_rows.append(["案件編號", "公司", "主旨", "卡幾天", "回覆次數"])
+            # 排序：reply_count=1 在最前（未實質回覆客戶），組內按卡幾天降序
+            handler_cases.sort(key=_urgency_sort_key)
+            for c in handler_cases:
+                comp = company_map.get(c.company_id or "")
+                cname = comp.name if comp else (c.company_id or "")
+                per_handler_rows.append(_clean_row([
+                    c.case_id, cname, (c.subject or "")[:60],
+                    _days_since_today(c.sent_time), c.reply_count or 0,
+                ]))
+            per_handler_rows.append([])  # 空行分隔
+
+        result["👥 各客服案件"] = per_handler_rows
 
         return result
 

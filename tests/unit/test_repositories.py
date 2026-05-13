@@ -219,6 +219,35 @@ class TestCaseRepository:
         assert "CS-DONE-NULL" not in ids
         assert "CS-HAS" not in ids
 
+    def test_list_unassigned_excludes_system_companies(self, db: DatabaseManager) -> None:
+        """資通電腦、Mantis 的案件即使 handler 為空，也不算未指派（內部 / 系統案件）。"""
+        company_repo = CompanyRepository(db.connection)
+        company_repo.insert(Company(
+            company_id="COMP-ARES", name="資通電腦", domain="ares.com.tw"))
+        company_repo.insert(Company(
+            company_id="COMP-MANTIS", name="Mantis", domain="mantis"))
+        company_repo.insert(Company(
+            company_id="COMP-CUST", name="一般客戶", domain="cust.com"))
+
+        repo = CaseRepository(db.connection)
+        repo.insert(Case(
+            case_id="CS-ARES", subject="資通內部", status="處理中",
+            handler=None, company_id="COMP-ARES",
+        ))
+        repo.insert(Case(
+            case_id="CS-MANTIS", subject="Mantis 通知", status="處理中",
+            handler=None, company_id="COMP-MANTIS",
+        ))
+        repo.insert(Case(
+            case_id="CS-NORMAL", subject="一般客戶未指派", status="處理中",
+            handler=None, company_id="COMP-CUST",
+        ))
+        unassigned = repo.list_unassigned()
+        ids = [c.case_id for c in unassigned]
+        assert "CS-ARES" not in ids, "資通電腦案件不應算未指派"
+        assert "CS-MANTIS" not in ids, "Mantis 案件不應算未指派"
+        assert "CS-NORMAL" in ids, "一般客戶未指派案件應出現"
+
     def test_list_by_handler_case_insensitive(self, db: DatabaseManager) -> None:
         """list_by_handler 應採大小寫不敏感比對（既有資料含 jill / JILL）。"""
         repo = CaseRepository(db.connection)
