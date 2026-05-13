@@ -23,6 +23,7 @@ from hcp_cms.data.models import (
     ReleaseKeyword,
     Staff,
     Synonym,
+    WebAuditLog,
 )
 
 _COL_KEY_RE = _re.compile(r"^cx_\d+$")
@@ -1624,3 +1625,61 @@ class ReleaseItemRepository:
             client_name=r[4], note=r[5], status=r[6], month_str=r[7],
             patch_id=r[8], created_at=r[9], modifier=modifier, sort_order=sort_order,
         )
+
+
+# ---------------------------------------------------------------------------
+# WebAuditLogRepository
+# ---------------------------------------------------------------------------
+
+
+class WebAuditLogRepository:
+    """Web Portal 稽核紀錄 — INSERT / list 操作。"""
+
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self._conn = conn
+
+    def _row_to_model(self, row: sqlite3.Row) -> WebAuditLog:
+        d = dict(row)
+        return WebAuditLog(
+            id=d["id"],
+            staff_id=d["staff_id"],
+            occurred_at=d["occurred_at"],
+            case_id=d["case_id"],
+            field_name=d["field_name"],
+        )
+
+    def insert(self, staff_id: str, case_id: str, field_name: str) -> None:
+        self._conn.execute(
+            """
+            INSERT INTO web_audit_log (staff_id, occurred_at, case_id, field_name)
+            VALUES (:staff_id, :occurred_at, :case_id, :field_name)
+            """,
+            {
+                "staff_id": staff_id,
+                "occurred_at": _now(),
+                "case_id": case_id,
+                "field_name": field_name,
+            },
+        )
+        self._conn.commit()
+
+    def list_by_case_id(self, case_id: str) -> list[WebAuditLog]:
+        rows = self._conn.execute(
+            "SELECT * FROM web_audit_log WHERE case_id = ? ORDER BY occurred_at DESC",
+            (case_id,),
+        ).fetchall()
+        return [self._row_to_model(r) for r in rows]
+
+    def list_by_staff_id(self, staff_id: str) -> list[WebAuditLog]:
+        rows = self._conn.execute(
+            "SELECT * FROM web_audit_log WHERE staff_id = ? ORDER BY occurred_at DESC",
+            (staff_id,),
+        ).fetchall()
+        return [self._row_to_model(r) for r in rows]
+
+    def list_all(self, limit: int = 100) -> list[WebAuditLog]:
+        rows = self._conn.execute(
+            "SELECT * FROM web_audit_log ORDER BY id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        return [self._row_to_model(r) for r in rows]

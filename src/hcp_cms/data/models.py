@@ -165,12 +165,22 @@ class CaseLog:
     """補充記錄 — case_logs table."""
     log_id: str               # LOG-YYYYMMDD-NNN
     case_id: str
-    direction: str            # '客戶來信' | 'HCP 信件回覆' | 'HCP 線上回覆' | '內部討論'
+    direction: str            # '客戶來信' | 'HCP 信件回覆' | 'HCP 線上回覆' | '內部討論' | 'Mantis 推送'
     content: str
     mantis_ref: str | None = None   # Mantis Issue 編號（可空）
     logged_by: str | None = None    # 記錄人
     logged_at: str = ""             # YYYY/MM/DD HH:MM:SS
     reply_time: str | None = None   # 回覆時間（YYYY/MM/DD HH:MM）
+
+
+@dataclass
+class WebAuditLog:
+    """Web Portal 操作稽核紀錄 — web_audit_log table."""
+    id: int | None = None
+    staff_id: str = ""
+    occurred_at: str = ""
+    case_id: str = ""
+    field_name: str = ""
 
 
 @dataclass
