@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from datetime import datetime
+from enum import Enum
 
 from hcp_cms.core.case_manager import CaseManager, _calc_elapsed_str
 from hcp_cms.data.models import Case, CaseLog, CaseMantisLink, MantisTicket
@@ -15,6 +16,14 @@ from hcp_cms.data.repositories import (
     MantisRepository,
 )
 from hcp_cms.services.mantis.base import MantisClient
+from hcp_cms.services.mantis.error_detector import is_ticket_not_found
+
+
+class SyncResult(Enum):
+    """sync_mantis_ticket 三態返回。"""
+    SUCCESS = "success"
+    NOT_FOUND = "not_found"  # Mantis 找不到此 ticket（可能已被刪除）
+    ERROR = "error"          # 連線失敗 / SOAP 一般錯誤 / client 未提供
 
 
 class CaseDetailManager:
@@ -116,13 +125,22 @@ class CaseDetailManager:
         self,
         ticket_id: str,
         client: MantisClient | None = None,
-    ) -> MantisTicket | None:
-        """呼叫 MantisClient 同步單一 ticket，更新本地快取。"""
+    ) -> tuple[SyncResult, MantisTicket | None]:
+        """呼叫 MantisClient 同步單一 ticket，更新本地快取。
+
+        Returns:
+            (SUCCESS, ticket) — 成功
+            (NOT_FOUND, None) — Mantis 找不到此 ticket（可能已被刪除）
+            (ERROR, None) — 連線失敗 / 其他錯誤 / client=None
+        """
         if client is None:
-            return None
+            return SyncResult.ERROR, None
         issue = client.get_issue(ticket_id)
         if issue is None:
-            return None
+            last_err = getattr(client, "last_error", "")
+            if is_ticket_not_found(last_err):
+                return SyncResult.NOT_FOUND, None
+            return SyncResult.ERROR, None
 
         synced_at = datetime.now().strftime("%Y/%m/%d %H:%M:%S")
 
@@ -154,7 +172,31 @@ class CaseDetailManager:
             synced_at=synced_at,
         )
         self._mantis_repo.upsert(ticket)
-        return self._mantis_repo.get_by_id(ticket_id)
+        return SyncResult.SUCCESS, self._mantis_repo.get_by_id(ticket_id)
+
+    def unlink_mantis_with_audit(
+        self,
+        case_id: str,
+        ticket_id: str,
+        reason: str,
+    ) -> None:
+        """解除 Mantis 連結並在 case_logs 留下紀錄。
+
+        與既有 unlink_mantis 不同：本方法寫入 case_log 記錄 reason，
+        用於同步偵測自動 unlink 等需要追溯的情境。
+        """
+        self._case_mantis_repo.unlink(case_id, ticket_id)
+        now = datetime.now().strftime("%Y/%m/%d %H:%M:%S")
+        log = CaseLog(
+            log_id=self._log_repo.next_log_id(),
+            case_id=case_id,
+            direction="內部討論",
+            content=f"自動解除 Mantis 連結 #{ticket_id}：{reason}",
+            mantis_ref=ticket_id,
+            logged_by="system",
+            logged_at=now,
+        )
+        self._log_repo.insert(log)
 
     def get_mantis_ticket(self, ticket_id: str) -> MantisTicket | None:
         """依 ticket_id 取得本地快取的 Ticket 資料。"""
