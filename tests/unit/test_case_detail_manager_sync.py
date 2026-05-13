@@ -264,3 +264,83 @@ def test_sync_outbound_handles_soap_failure(db_with_case_and_ticket):
     logs = log_repo.list_by_case("C-1")
     push_logs = [log for log in logs if log.direction == "內部討論"]
     assert push_logs[0].bugnote_id is None
+
+
+# ============= sync_bugnotes_inbound =============
+
+
+def test_sync_inbound_pulls_new_bugnotes(db_with_case_and_ticket):
+    """Mantis 端有的 note_id 不在 case_logs.bugnote_id → 插入新 case_log。"""
+    db, _case, _link = db_with_case_and_ticket
+
+    client = MagicMock()
+    client.get_issue.return_value = MantisIssue(
+        id="9999",
+        summary="x",
+        notes_list=[
+            MantisNote(note_id="N-200", reporter="RD 王", text="RD 已修", date_submitted="2026/05/13"),
+            MantisNote(note_id="N-201", reporter="RD 林", text="測試通過", date_submitted="2026/05/13"),
+        ],
+        notes_count=2,
+    )
+
+    mgr = CaseDetailManager(db.connection)
+    pulled, fail = mgr.sync_bugnotes_inbound("C-1", "9999", client)
+
+    assert pulled == 2
+    assert fail == 0
+
+    logs = CaseLogRepository(db.connection).list_by_case("C-1")
+    inbound_logs = [log for log in logs if log.direction == "Mantis bugnote"]
+    assert len(inbound_logs) == 2
+    contents = {log.content for log in inbound_logs}
+    assert "RD 已修" in contents
+    assert "測試通過" in contents
+    ids = {log.bugnote_id for log in inbound_logs}
+    assert ids == {"N-200", "N-201"}
+
+
+def test_sync_inbound_skips_existing_bugnote_id(db_with_case_and_ticket):
+    """已有對應 bugnote_id 的 case_log 不重複插入。"""
+    db, _case, _link = db_with_case_and_ticket
+    log_repo = CaseLogRepository(db.connection)
+    log_repo.insert(CaseLog(
+        log_id=log_repo.next_log_id(),
+        case_id="C-1",
+        direction="Mantis bugnote",
+        content="先前已存在",
+        bugnote_id="N-300",
+        logged_at="2026/05/12 09:00:00",
+    ))
+
+    client = MagicMock()
+    client.get_issue.return_value = MantisIssue(
+        id="9999", summary="x",
+        notes_list=[
+            MantisNote(note_id="N-300", reporter="RD", text="重複", date_submitted="2026/05/12"),
+            MantisNote(note_id="N-301", reporter="RD", text="新的", date_submitted="2026/05/13"),
+        ],
+        notes_count=2,
+    )
+
+    mgr = CaseDetailManager(db.connection)
+    pulled, fail = mgr.sync_bugnotes_inbound("C-1", "9999", client)
+
+    assert pulled == 1
+    inbound_logs = [log for log in log_repo.list_by_case("C-1") if log.direction == "Mantis bugnote"]
+    assert len(inbound_logs) == 2
+    new_log = next(log for log in inbound_logs if log.bugnote_id == "N-301")
+    assert new_log.content == "新的"
+
+
+def test_sync_inbound_handles_get_issue_failure(db_with_case_and_ticket):
+    """client.get_issue 回 None → fail += 1，pulled = 0。"""
+    db, _case, _link = db_with_case_and_ticket
+    client = MagicMock()
+    client.get_issue.return_value = None
+
+    mgr = CaseDetailManager(db.connection)
+    pulled, fail = mgr.sync_bugnotes_inbound("C-1", "9999", client)
+
+    assert pulled == 0
+    assert fail == 1

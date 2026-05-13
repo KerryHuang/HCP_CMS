@@ -237,6 +237,46 @@ class CaseDetailManager:
             success += 1
         return success, fail
 
+    def sync_bugnotes_inbound(
+        self,
+        case_id: str,
+        ticket_id: str,
+        client: MantisClient,
+    ) -> tuple[int, int]:
+        """從 Mantis 拉新 bugnotes 為 case_logs。
+
+        過濾規則：
+        - 從 client.get_issue(ticket_id) 取 notes_list
+        - note_id 不在現有 case_logs.bugnote_id → 新增
+
+        Returns:
+            (pulled_count, fail_count)
+        """
+        issue = client.get_issue(ticket_id)
+        if issue is None:
+            return 0, 1
+
+        existing_logs = self._log_repo.list_by_case(case_id)
+        existing_ids = {log.bugnote_id for log in existing_logs if log.bugnote_id}
+
+        pulled = 0
+        now = datetime.now().strftime("%Y/%m/%d %H:%M:%S")
+        for note in issue.notes_list:
+            if not note.note_id or note.note_id in existing_ids:
+                continue
+            new_log = CaseLog(
+                log_id=self._log_repo.next_log_id(),
+                case_id=case_id,
+                direction="Mantis bugnote",
+                content=note.text or "",
+                bugnote_id=note.note_id,
+                logged_by=note.reporter,
+                logged_at=note.date_submitted or now,
+            )
+            self._log_repo.insert(new_log)
+            pulled += 1
+        return pulled, 0
+
     def get_mantis_ticket(self, ticket_id: str) -> MantisTicket | None:
         """依 ticket_id 取得本地快取的 Ticket 資料。"""
         return self._mantis_repo.get_by_id(ticket_id)
