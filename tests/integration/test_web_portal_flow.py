@@ -46,7 +46,6 @@ def test_full_flow_login_to_mantis_push(full_setup) -> None:
     db = full_setup
     auth = WebAuthManager(db.connection)
     visibility = CaseVisibilityFilter(db.connection)
-    audit = AuditLogger(db.connection)
 
     # 1. 登入
     staff = auth.get_staff_by_id("S-YOGA")

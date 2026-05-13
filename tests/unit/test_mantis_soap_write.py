@@ -1,5 +1,5 @@
 """MantisSoapClient.create_issue / add_note 測試（mock 網路）。"""
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 

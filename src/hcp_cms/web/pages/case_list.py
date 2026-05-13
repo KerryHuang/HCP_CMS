@@ -11,7 +11,6 @@ from hcp_cms.services.mantis.base import MantisClient
 from hcp_cms.web.mantis_push import MantisPushManager
 from hcp_cms.web.visibility import CaseVisibilityFilter
 
-
 STATUS_COLORS = {
     "處理中": ("amber", "amber-100"),
     "已回覆": ("blue", "blue-100"),

@@ -185,7 +185,7 @@ class MantisPushManager:
 
         # 抓最新一筆非 Mantis 推送 case_log
         logs = self._log_repo.list_by_case(case.case_id)
-        non_push_logs = [l for l in logs if l.direction != "Mantis 推送"]
+        non_push_logs = [log for log in logs if log.direction != "Mantis 推送"]
         if non_push_logs:
             latest = non_push_logs[0]
             parts.append(f"【最新記錄 ({latest.direction})】\n{latest.content or ''}")
