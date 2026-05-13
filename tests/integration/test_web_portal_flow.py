@@ -35,6 +35,7 @@ def full_setup(tmp_path: Path):
             handler="YOGA",
             company_id="CO-A",
             priority="高",
+            sent_time="2026/05/04 16:46:00",
         )
     )
     yield db
