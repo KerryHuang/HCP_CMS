@@ -734,12 +734,96 @@ class CaseView(QWidget):
 
     def _on_push_to_mantis(self) -> None:
         """推到 Mantis 按鈕 handler — 將選取案件批次推送建新 ticket。"""
+        from PySide6.QtCore import Qt as _Qt
+        from PySide6.QtWidgets import QApplication, QMessageBox
+
         rows = self._table.selectionModel().selectedRows()
-        if not rows or not hasattr(self, '_cases'):
+        if not rows or not hasattr(self, '_cases') or not self._conn:
             return
-        case_ids = [self._cases[r.row()].case_id for r in rows if r.row() < len(self._cases)]
-        # Task 3 補確認 dialog；Task 4 補執行邏輯
-        QMessageBox.information(self, "待實作", f"選取 {len(case_ids)} 筆案件，待 Task 3 / 4 實作完整流程")
+        case_ids = [
+            self._cases[r.row()].case_id
+            for r in rows
+            if r.row() < len(self._cases)
+        ]
+
+        # 確認對話框
+        from hcp_cms.ui.mantis_push_dialog import PushToMantisConfirmDialog
+        palette = self._theme_mgr.current_palette() if self._theme_mgr else None
+        dlg = PushToMantisConfirmDialog(
+            self._conn,
+            case_ids,
+            project_label="HCPSERVICE_測試 (project 218)",
+            parent=self,
+            palette=palette,
+        )
+        if dlg.exec() != PushToMantisConfirmDialog.DialogCode.Accepted:
+            return
+
+        target_ids = dlg.confirmed_case_ids()
+        if not target_ids:
+            QMessageBox.information(self, "推到 Mantis", "沒有可推送的案件。")
+            return
+
+        # 準備 Mantis client（從 keyring）
+        from hcp_cms.services.credential import CredentialManager
+        from hcp_cms.services.mantis.soap import MantisSoapClient
+        creds = CredentialManager()
+        url = creds.retrieve("mantis_url") or ""
+        user = creds.retrieve("mantis_user") or ""
+        pwd = creds.retrieve("mantis_password") or ""
+        if not all([url, user, pwd]):
+            QMessageBox.warning(
+                self, "Mantis 設定不完整",
+                "請先到「設定」分頁填寫 Mantis URL / 帳號 / 密碼。"
+            )
+            return
+
+        client = MantisSoapClient(url, user, pwd)
+        if not client.connect():
+            QMessageBox.critical(
+                self, "Mantis 連線失敗", f"無法連線：{client.last_error}"
+            )
+            return
+
+        # 取 operator staff_id（自己）— 桌面 App 為 Jill
+        from hcp_cms.data.repositories import StaffRepository
+        jill = None
+        for s in StaffRepository(self._conn).list_by_role("cs"):
+            if s.name.lower() == "jill":
+                jill = s
+                break
+        operator_staff_id = jill.staff_id if jill else "jill"
+
+        # 執行批次推送
+        from hcp_cms.core.mantis_push import MantisPushManager
+        QApplication.setOverrideCursor(_Qt.CursorShape.WaitCursor)
+        try:
+            mgr = MantisPushManager(self._conn, client, project_id="218")
+            results = mgr.push_cases_batch(target_ids, operator_staff_id)
+        finally:
+            QApplication.restoreOverrideCursor()
+
+        # 結果摘要
+        ok = sum(1 for r in results if r[1] == "success")
+        fail = sum(1 for r in results if r[1] == "failed")
+        skip = sum(1 for r in results if r[1] == "skipped")
+
+        summary = f"✓ 成功 {ok} 筆 / ✗ 失敗 {fail} 筆 / ⊘ 略過 {skip} 筆"
+        msg = QMessageBox(self)
+        msg.setWindowTitle("推到 Mantis 完成")
+        msg.setIcon(QMessageBox.Icon.Information if fail == 0 else QMessageBox.Icon.Warning)
+        msg.setText(summary)
+
+        if fail > 0:
+            failures = [r for r in results if r[1] == "failed"]
+            detail = "\n".join(f"{r[0]}: {r[2]}" for r in failures)
+            msg.setDetailedText(detail)
+
+        msg.exec()
+
+        # 重新整理清單（顯示新連結狀態）
+        self.refresh()
+        self.cases_changed.emit()
 
     def _on_delete_single_case(self) -> None:
         """單筆刪除目前選取的案件。"""
