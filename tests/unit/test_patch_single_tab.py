@@ -2,14 +2,11 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
 from hcp_cms.data.database import DatabaseManager
-from hcp_cms.data.models import PatchRecord
-from hcp_cms.data.repositories import PatchRepository
 
 
 @pytest.fixture
@@ -51,6 +48,7 @@ def test_generate_buttons_disabled_initially(qtbot, db):
 
 def test_archive_browse_sets_path_and_version_tag(qtbot, db, tmp_path, monkeypatch):
     from PySide6.QtWidgets import QFileDialog
+
     from hcp_cms.ui.patch_single_tab import SinglePatchTab
 
     fake_archive = str(tmp_path / "IP_合併_20261101_HCP.7z")
@@ -67,6 +65,7 @@ def test_archive_browse_sets_path_and_version_tag(qtbot, db, tmp_path, monkeypat
 
 def test_output_dir_browse_sets_path(qtbot, db, tmp_path, monkeypatch):
     from PySide6.QtWidgets import QFileDialog
+
     from hcp_cms.ui.patch_single_tab import SinglePatchTab
 
     monkeypatch.setattr(
@@ -113,8 +112,8 @@ def test_load_result_error_keeps_buttons_disabled(qtbot, db):
 
 
 def test_load_done_signal_emitted(qtbot, db, tmp_path):
-    from hcp_cms.ui.patch_single_tab import SinglePatchTab
     from hcp_cms.core.patch_engine import SinglePatchEngine
+    from hcp_cms.ui.patch_single_tab import SinglePatchTab
 
     tab = SinglePatchTab(conn=db)
     qtbot.addWidget(tab)
@@ -140,8 +139,8 @@ def test_generate_result_appends_to_output_list(qtbot, db):
 
 
 def test_generate_done_signal_emitted(qtbot, db, tmp_path):
-    from hcp_cms.ui.patch_single_tab import SinglePatchTab
     from hcp_cms.core.patch_engine import SinglePatchEngine
+    from hcp_cms.ui.patch_single_tab import SinglePatchTab
 
     tab = SinglePatchTab(conn=db)
     qtbot.addWidget(tab)

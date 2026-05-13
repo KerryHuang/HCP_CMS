@@ -1,10 +1,11 @@
 # tests/unit/test_kms_from_case.py
 """測試從案件建立 KMS 條目與相似搜尋輔助函式。"""
 import pytest
+
+from hcp_cms.core.kms_engine import KMSEngine
 from hcp_cms.data.database import DatabaseManager
 from hcp_cms.data.models import Case, CaseLog
-from hcp_cms.data.repositories import CaseRepository, CaseLogRepository
-from hcp_cms.core.kms_engine import KMSEngine
+from hcp_cms.data.repositories import CaseLogRepository, CaseRepository
 
 
 @pytest.fixture

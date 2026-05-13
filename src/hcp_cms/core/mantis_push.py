@@ -2,6 +2,10 @@
 
 ⚠ Live POC（2026-05-13）確認：Mantis project 強制要 category，
    MVP 預設 category='General'（HCPSERVICE_測試 project 唯一可用 category）。
+
+⚠ 技術債（TODO）：本模組在 Core 層卻依賴 hcp_cms.web.audit.AuditLogger，
+   違反 6 層架構 Law 2。MVP 階段接受，後續應把 AuditLogger 也搬到 Core，
+   或改為依賴注入（DI）由呼叫端傳入。
 """
 from __future__ import annotations
 

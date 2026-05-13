@@ -597,8 +597,9 @@ class TestFetchSupplements:
     def test_stores_supplement_in_mantis_detail(self, conn, tmp_path):
         import json
         from unittest.mock import MagicMock, patch
+
+        from hcp_cms.data.models import PatchIssue, PatchRecord
         from hcp_cms.data.repositories import PatchRepository
-        from hcp_cms.data.models import PatchRecord, PatchIssue
 
         repo = PatchRepository(conn)
         pid = repo.insert_patch(PatchRecord(type="monthly", month_str="202604", patch_dir=str(tmp_path)))
@@ -637,8 +638,8 @@ class TestFetchSupplements:
         assert detail["supplement"]["修改原因"] == "原因"
 
     def test_returns_zero_when_no_mantis(self, conn, tmp_path):
+        from hcp_cms.data.models import PatchIssue, PatchRecord
         from hcp_cms.data.repositories import PatchRepository
-        from hcp_cms.data.models import PatchRecord, PatchIssue
 
         repo = PatchRepository(conn)
         pid = repo.insert_patch(PatchRecord(type="monthly", month_str="202604", patch_dir=str(tmp_path)))
@@ -692,8 +693,9 @@ class TestRunS2T:
 class TestVerifyPatchLinks:
     def test_all_links_valid(self, conn, tmp_path):
         import json
+
+        from hcp_cms.data.models import PatchIssue, PatchRecord
         from hcp_cms.data.repositories import PatchRepository
-        from hcp_cms.data.models import PatchRecord, PatchIssue
 
         repo = PatchRepository(conn)
         pid = repo.insert_patch(PatchRecord(type="monthly", month_str="202604", patch_dir=str(tmp_path)))
@@ -716,8 +718,9 @@ class TestVerifyPatchLinks:
 
     def test_detects_broken_link(self, conn, tmp_path):
         import json
+
+        from hcp_cms.data.models import PatchIssue, PatchRecord
         from hcp_cms.data.repositories import PatchRepository
-        from hcp_cms.data.models import PatchRecord, PatchIssue
 
         repo = PatchRepository(conn)
         pid = repo.insert_patch(PatchRecord(type="monthly", month_str="202604", patch_dir=str(tmp_path)))

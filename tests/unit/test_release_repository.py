@@ -1,9 +1,9 @@
 """ReleaseItemRepository / ReleaseKeywordRepository 單元測試。"""
-import sqlite3
 import pytest
+
 from hcp_cms.data.database import DatabaseManager
-from hcp_cms.data.repositories import ReleaseItemRepository, ReleaseKeywordRepository
 from hcp_cms.data.models import ReleaseItem, ReleaseKeyword
+from hcp_cms.data.repositories import ReleaseItemRepository, ReleaseKeywordRepository
 
 
 @pytest.fixture
