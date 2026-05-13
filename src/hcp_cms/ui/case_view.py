@@ -187,6 +187,12 @@ class CaseView(QWidget):
         self._assign_company_btn.clicked.connect(self._on_assign_company)
         header.addWidget(self._assign_company_btn)
 
+        self._mantis_push_btn = QPushButton("🚀 推到 Mantis")
+        self._mantis_push_btn.setToolTip("將選取案件推送到 Mantis 建立新 ticket（已連結的案件會自動略過）")
+        self._mantis_push_btn.setEnabled(False)
+        self._mantis_push_btn.clicked.connect(self._on_push_to_mantis)
+        header.addWidget(self._mantis_push_btn)
+
         self._delete_btn = QPushButton("🗑 批次刪除")
         self._delete_btn.setObjectName("dangerBtn")
         self._delete_btn.setToolTip("依日期範圍批次刪除案件")
@@ -509,6 +515,10 @@ class CaseView(QWidget):
         rows = self._table.selectionModel().selectedRows()
         self._delete_selected_btn.setEnabled(bool(rows))
         self._assign_company_btn.setEnabled(bool(rows))
+        self._mantis_push_btn.setEnabled(bool(rows))
+        self._mantis_push_btn.setText(
+            f"🚀 推到 Mantis ({len(rows)} 筆)" if rows else "🚀 推到 Mantis"
+        )
         if not rows or not hasattr(self, '_cases'):
             return
         row = rows[0].row()
@@ -719,6 +729,15 @@ class CaseView(QWidget):
         )
         self.refresh()
         self.cases_changed.emit()
+
+    def _on_push_to_mantis(self) -> None:
+        """推到 Mantis 按鈕 handler — 將選取案件批次推送建新 ticket。"""
+        rows = self._table.selectionModel().selectedRows()
+        if not rows or not hasattr(self, '_cases'):
+            return
+        case_ids = [self._cases[r.row()].case_id for r in rows if r.row() < len(self._cases)]
+        # Task 3 補確認 dialog；Task 4 補執行邏輯
+        QMessageBox.information(self, "待實作", f"選取 {len(case_ids)} 筆案件，待 Task 3 / 4 實作完整流程")
 
     def _on_delete_single_case(self) -> None:
         """單筆刪除目前選取的案件。"""
