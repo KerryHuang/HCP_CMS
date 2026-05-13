@@ -1,4 +1,4 @@
-"""測試 CaseDetailManager.sync_mantis_ticket() 新欄位映射。"""
+"""測試 CaseDetailManager.sync_mantis_ticket() — 三態返回 + 欄位映射。"""
 from __future__ import annotations
 
 import json
@@ -6,8 +6,15 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from hcp_cms.core.case_detail_manager import CaseDetailManager
+from hcp_cms.core.case_detail_manager import CaseDetailManager, SyncResult
 from hcp_cms.data.database import DatabaseManager
+from hcp_cms.data.models import Case, CaseMantisLink, MantisTicket
+from hcp_cms.data.repositories import (
+    CaseLogRepository,
+    CaseMantisRepository,
+    CaseRepository,
+    MantisRepository,
+)
 from hcp_cms.services.mantis.base import MantisIssue, MantisNote
 
 
@@ -18,6 +25,29 @@ def manager(tmp_path):
     mgr.initialize()
     yield CaseDetailManager(mgr.connection)
     mgr.close()
+
+
+@pytest.fixture
+def db_with_case_and_ticket(tmp_path):
+    """提供：DB + 一個 Case(C-1) + 連結到 ticket #9999。"""
+    db = DatabaseManager(tmp_path / "t.db")
+    db.initialize()
+    case = Case(
+        case_id="C-1",
+        subject="測試案件",
+        company_id=None,
+        sent_time="2026/05/04 10:00:00",
+    )
+    CaseRepository(db.connection).insert(case)
+    # mantis_tickets（case_mantis FK 依賴）
+    MantisRepository(db.connection).upsert(MantisTicket(ticket_id="9999", summary=""))
+    link = CaseMantisLink(case_id="C-1", ticket_id="9999")
+    CaseMantisRepository(db.connection).insert(link)
+    yield db, case, link
+    db.close()
+
+
+# ============= 既有 SUCCESS 路徑（升級為 tuple unpack） =============
 
 
 def test_sync_maps_new_fields(manager):
@@ -39,8 +69,9 @@ def test_sync_maps_new_fields(manager):
     mock_client = MagicMock()
     mock_client.get_issue.return_value = issue
 
-    ticket = manager.sync_mantis_ticket("99001", client=mock_client)
+    result, ticket = manager.sync_mantis_ticket("99001", client=mock_client)
 
+    assert result == SyncResult.SUCCESS
     assert ticket is not None
     assert ticket.severity == "major"
     assert ticket.reporter == "林美麗"
@@ -51,3 +82,76 @@ def test_sync_maps_new_fields(manager):
     notes = json.loads(ticket.notes_json or "[]")
     assert notes[0]["text"] == "已修復"
     assert notes[0]["date_submitted"] == "2026-01-20"
+
+
+# ============= SyncResult 三態 =============
+
+
+def test_sync_returns_not_found_when_last_error_says_not_found(
+    db_with_case_and_ticket,
+):
+    """client.get_issue 回 None 且 last_error 含 'not found' → NOT_FOUND。"""
+    db, _case, _link = db_with_case_and_ticket
+    mgr = CaseDetailManager(db.connection)
+    client = MagicMock()
+    client.get_issue.return_value = None
+    client.last_error = "SOAP 錯誤：Issue #9999 not found"
+
+    result, ticket = mgr.sync_mantis_ticket("9999", client=client)
+
+    assert result == SyncResult.NOT_FOUND
+    assert ticket is None
+
+
+def test_sync_returns_error_when_connection_fails(db_with_case_and_ticket):
+    """client.get_issue 回 None 且 last_error 為連線錯誤 → ERROR。"""
+    db, _case, _link = db_with_case_and_ticket
+    mgr = CaseDetailManager(db.connection)
+    client = MagicMock()
+    client.get_issue.return_value = None
+    client.last_error = "連線失敗：HTTPSConnectionPool..."
+
+    result, ticket = mgr.sync_mantis_ticket("9999", client=client)
+
+    assert result == SyncResult.ERROR
+    assert ticket is None
+
+
+def test_sync_returns_error_when_client_is_none(db_with_case_and_ticket):
+    """client=None → ERROR。"""
+    db, _case, _link = db_with_case_and_ticket
+    mgr = CaseDetailManager(db.connection)
+    result, ticket = mgr.sync_mantis_ticket("9999", client=None)
+    assert result == SyncResult.ERROR
+    assert ticket is None
+
+
+# ============= unlink_mantis_with_audit =============
+
+
+def test_unlink_mantis_with_audit_removes_link_and_logs(
+    db_with_case_and_ticket,
+):
+    """解除連結 + case_log 寫入 reason。"""
+    db, case, _link = db_with_case_and_ticket
+    mgr = CaseDetailManager(db.connection)
+
+    # 先確認連結存在
+    links_before = CaseMantisRepository(db.connection).get_tickets_for_case(case.case_id)
+    assert "9999" in links_before
+
+    mgr.unlink_mantis_with_audit(
+        case.case_id, "9999",
+        reason="Mantis 找不到此 ticket（同步時偵測）",
+    )
+
+    # 連結移除
+    links_after = CaseMantisRepository(db.connection).get_tickets_for_case(case.case_id)
+    assert "9999" not in links_after
+
+    # case_log 多一筆
+    logs = CaseLogRepository(db.connection).list_by_case(case.case_id)
+    sync_logs = [log for log in logs if "Mantis" in (log.content or "") and "找不到" in (log.content or "")]
+    assert len(sync_logs) == 1
+    assert sync_logs[0].mantis_ref == "9999"
+    assert sync_logs[0].logged_by == "system"

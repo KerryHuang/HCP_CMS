@@ -129,6 +129,7 @@ class TestLinkUnlinkMantis:
 class TestSyncMantisTicket:
     def test_sync_updates_local(self, db: DatabaseManager):
         mock_client = MagicMock()
+        from hcp_cms.core.case_detail_manager import SyncResult
         from hcp_cms.services.mantis.base import MantisIssue
         mock_client.get_issue.return_value = MantisIssue(
             id="0001", summary="遠端摘要", status="已修復", priority="高",
@@ -136,12 +137,15 @@ class TestSyncMantisTicket:
             date_submitted="2026/03/01",
         )
         manager = CaseDetailManager(db.connection)
-        ticket = manager.sync_mantis_ticket("0001", client=mock_client)
+        result, ticket = manager.sync_mantis_ticket("0001", client=mock_client)
+        assert result == SyncResult.SUCCESS
         assert ticket is not None
         assert ticket.summary == "遠端摘要"
         assert ticket.status == "已修復"
 
-    def test_sync_without_client_returns_none(self, db: DatabaseManager):
+    def test_sync_without_client_returns_error(self, db: DatabaseManager):
+        from hcp_cms.core.case_detail_manager import SyncResult
         manager = CaseDetailManager(db.connection)
-        result = manager.sync_mantis_ticket("0001", client=None)
-        assert result is None
+        result, ticket = manager.sync_mantis_ticket("0001", client=None)
+        assert result == SyncResult.ERROR
+        assert ticket is None
