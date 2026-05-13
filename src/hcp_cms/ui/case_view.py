@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sqlite3
 from datetime import datetime
 from pathlib import Path
@@ -734,8 +735,7 @@ class CaseView(QWidget):
 
     def _on_push_to_mantis(self) -> None:
         """推到 Mantis 按鈕 handler — 將選取案件批次推送建新 ticket。"""
-        from PySide6.QtCore import Qt as _Qt
-        from PySide6.QtWidgets import QApplication, QMessageBox
+        from PySide6.QtWidgets import QApplication
 
         rows = self._table.selectionModel().selectedRows()
         if not rows or not hasattr(self, '_cases') or not self._conn:
@@ -748,11 +748,19 @@ class CaseView(QWidget):
 
         # 確認對話框
         from hcp_cms.ui.mantis_push_dialog import PushToMantisConfirmDialog
+
+        # 從環境變數取得 Mantis project_id 與 label（fallback 為預設值）
+        project_id = os.environ.get("HCP_CMS_MANTIS_PROJECT", "218")
+        project_label = os.environ.get(
+            "HCP_CMS_MANTIS_PROJECT_LABEL",
+            f"Mantis (project {project_id})"
+        )
+
         palette = self._theme_mgr.current_palette() if self._theme_mgr else None
         dlg = PushToMantisConfirmDialog(
             self._conn,
             case_ids,
-            project_label="HCPSERVICE_測試 (project 218)",
+            project_label=project_label,
             parent=self,
             palette=palette,
         )
@@ -796,9 +804,9 @@ class CaseView(QWidget):
 
         # 執行批次推送
         from hcp_cms.core.mantis_push import MantisPushManager
-        QApplication.setOverrideCursor(_Qt.CursorShape.WaitCursor)
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
-            mgr = MantisPushManager(self._conn, client, project_id="218")
+            mgr = MantisPushManager(self._conn, client, project_id=project_id)
             results = mgr.push_cases_batch(target_ids, operator_staff_id)
         finally:
             QApplication.restoreOverrideCursor()
