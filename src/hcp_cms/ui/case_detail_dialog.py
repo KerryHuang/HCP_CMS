@@ -679,17 +679,38 @@ class CaseDetailDialog(QDialog):
             return None
 
     def _on_sync_mantis(self) -> None:
+        from hcp_cms.core.case_detail_manager import SyncResult
+
         rows = self._mantis_table.selectionModel().selectedRows()
         if not rows:
             QMessageBox.information(self, "提示", "請先選取要同步的 Ticket。")
             return
         ticket_id = self._mantis_table.item(rows[0].row(), 0).text()
         client = self._build_mantis_client()
-        result = self._manager.sync_mantis_ticket(ticket_id, client=client)
-        if result is None:
-            QMessageBox.warning(self, "同步失敗", "無法連線至 Mantis，或 Mantis 設定未完成。")
-        else:
+        result, _ticket = self._manager.sync_mantis_ticket(ticket_id, client=client)
+
+        if result == SyncResult.SUCCESS:
             self._refresh_mantis_table()
+        elif result == SyncResult.NOT_FOUND:
+            reply = QMessageBox.question(
+                self,
+                "Ticket 已不存在",
+                f"Mantis ticket #{ticket_id} 已不存在（可能已被刪除）。\n\n"
+                "是否要從本案件解除連結？",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.Yes,
+            )
+            if reply == QMessageBox.StandardButton.Yes:
+                self._manager.unlink_mantis_with_audit(
+                    self._case_id, ticket_id,
+                    reason="Mantis 找不到此 ticket（同步時偵測）",
+                )
+                self._refresh_mantis_table()
+                QMessageBox.information(
+                    self, "已解除連結", f"Ticket #{ticket_id} 連結已移除。"
+                )
+        else:  # SyncResult.ERROR
+            QMessageBox.warning(self, "同步失敗", "無法連線至 Mantis，或 Mantis 設定未完成。")
 
     # ------------------------------------------------------------------
     # 資料載入
