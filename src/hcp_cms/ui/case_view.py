@@ -494,6 +494,8 @@ class CaseView(QWidget):
         """清空下方詳細資訊面板。"""
         self._delete_selected_btn.setEnabled(False)
         self._assign_company_btn.setEnabled(False)
+        self._mantis_push_btn.setEnabled(False)
+        self._mantis_push_btn.setText("🚀 推到 Mantis")
         self._detail_id.clear()
         self._detail_subject.clear()
         self._detail_status.clear()
