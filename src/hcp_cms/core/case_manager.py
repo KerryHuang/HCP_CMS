@@ -6,6 +6,7 @@ from datetime import datetime
 from pathlib import Path
 
 from hcp_cms.core.classifier import Classifier
+from hcp_cms.core.email_cleaner import clean_email_body
 from hcp_cms.core.thread_tracker import ThreadTracker
 from hcp_cms.data.fts import FTSManager
 from hcp_cms.data.models import Case, CaseLog, CaseMantisLink, MantisTicket
@@ -134,6 +135,7 @@ class CaseManager:
             (case, action) — action 為 'created' 或 'merged'
         """
         recipients = to_recipients or []
+        body = clean_email_body(body)
 
         # Find-or-Create：先以分類器取得 company_id
         classification = self._classifier.classify(subject, body, sender_email, recipients)
@@ -268,6 +270,7 @@ class CaseManager:
         in_reply_to: str | None = None,
     ) -> Case:
         """Create a new case from email data, with auto-classification and thread detection."""
+        body = clean_email_body(body)
         # Classify
         classification = self._classifier.classify(subject, body, sender_email, to_recipients or [])
 

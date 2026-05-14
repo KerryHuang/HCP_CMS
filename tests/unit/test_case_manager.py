@@ -107,6 +107,41 @@ class TestCaseManager:
         updated = CaseRepository(seeded_db.connection).get_by_id(case.case_id)
         assert updated.status == "已完成"
 
+    def test_create_case_strips_disclaimer_before_logging(self, seeded_db):
+        """create_case 應在存入 case_log 前清除常見 disclaimer boilerplate。"""
+        from hcp_cms.data.repositories import CaseLogRepository
+        mgr = CaseManager(seeded_db.connection)
+        body_with_disclaimer = (
+            "客戶詢問加班費計算\n"
+            "----- ASE Confidentiality Notice -----\n"
+            "Disclaimer body\n"
+            "----- ASE Confidentiality Notice -----\n"
+        )
+        case = mgr.create_case(subject="加班費問題", body=body_with_disclaimer)
+
+        logs = CaseLogRepository(seeded_db.connection).list_by_case(case.case_id)
+        assert len(logs) == 1
+        assert "客戶詢問加班費計算" in logs[0].content
+        assert "ASE Confidentiality Notice" not in logs[0].content
+
+    def test_import_email_strips_disclaimer(self, seeded_db):
+        """import_email 應在存入 case_log 前清除常見 disclaimer boilerplate（新建路徑）。"""
+        from hcp_cms.data.repositories import CaseLogRepository
+        mgr = CaseManager(seeded_db.connection)
+        body = (
+            "Dear Jill,\n"
+            "請協助處理\n"
+            '[附件檔 "X.docx" 已被 user/Kinsus 刪除]\n'
+        )
+        case, action = mgr.import_email(
+            subject="新案", body=body, sender_email="user@aseglobal.com",
+        )
+        assert action == "created"
+
+        logs = CaseLogRepository(seeded_db.connection).list_by_case(case.case_id)
+        assert "Dear Jill" in logs[0].content
+        assert "[附件檔" not in logs[0].content
+
     def test_dashboard_stats(self, seeded_db):
         mgr = CaseManager(seeded_db.connection)
         # Create cases
