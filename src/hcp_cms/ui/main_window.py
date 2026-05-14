@@ -146,6 +146,9 @@ class MainWindow(QMainWindow):
         # 信件匯入完成後跳轉至案件管理（選「最近匯入」篩選）
         self._views["email"].navigate_to_cases.connect(self._on_navigate_to_recent_cases)
 
+        # 點儀表板月份統計表 → 跳轉至案件管理、只看該月
+        self._views["dashboard"].navigate_to_month.connect(self._on_navigate_to_month)
+
         layout.addWidget(self._stack)
 
         # Status bar
@@ -204,6 +207,11 @@ class MainWindow(QMainWindow):
         if idx >= 0:
             case_view._filter_combo.setCurrentIndex(idx)
         case_view.refresh()
+
+    def _on_navigate_to_month(self, year: int, month: int) -> None:
+        """切換至案件管理頁，只顯示指定月份案件（dashboard drill-down）。"""
+        self._nav_list.setCurrentRow(1)  # 案件管理 = index 1
+        self._views["cases"].show_month(year, month)
 
     def _setup_shortcuts(self) -> None:
         """Set up global keyboard shortcuts for page navigation."""

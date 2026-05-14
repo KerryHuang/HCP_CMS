@@ -5,6 +5,7 @@ from __future__ import annotations
 import sqlite3
 from datetime import datetime
 
+from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QFrame,
     QGridLayout,
@@ -63,6 +64,9 @@ class KPICard(QFrame):
 class DashboardView(QWidget):
     """Dashboard with KPI cards and recent cases."""
 
+    # 點月份統計表的某列 → 轉跳到案件管理、只看該月案件
+    navigate_to_month = Signal(int, int)  # (year, month)
+
     def __init__(self, conn: sqlite3.Connection | None = None, theme_mgr: ThemeManager | None = None) -> None:
         super().__init__()
         self._conn = conn
@@ -108,6 +112,8 @@ class DashboardView(QWidget):
         self._monthly_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self._monthly_table.verticalHeader().setVisible(False)
         self._monthly_table.setMaximumHeight(150)
+        self._monthly_table.setToolTip("點任一列 → 切到案件管理頁、只看該月份案件")
+        self._monthly_table.cellClicked.connect(self._on_monthly_row_clicked)
         layout.addWidget(self._monthly_table)
 
         # Action 區
@@ -178,6 +184,21 @@ class DashboardView(QWidget):
                 self._table.setItem(i, 4, QTableWidgetItem(case.sent_time or ""))
         except Exception:
             pass
+
+    def _on_monthly_row_clicked(self, row: int, _col: int) -> None:
+        """點月份統計表的某列 → emit navigate_to_month(year, month)。"""
+        item = self._monthly_table.item(row, 0)
+        if not item:
+            return
+        # 月份格式 "YYYY/MM"
+        parts = item.text().split("/")
+        if len(parts) != 2:
+            return
+        try:
+            year, month = int(parts[0]), int(parts[1])
+        except ValueError:
+            return
+        self.navigate_to_month.emit(year, month)
 
     _STALENESS_THRESHOLD_HOURS = 48.0
 

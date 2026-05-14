@@ -114,6 +114,9 @@ class CaseView(QWidget):
         self._conn = conn
         self._db_path = db_path
         self._theme_mgr = theme_mgr
+        # 外部觸發的月份篩選（如 dashboard 點某月）。設定後 refresh() 改用 list_by_month，
+        # 使用者改 filter combo 或輸入關鍵字時自動清除。
+        self._month_filter: tuple[int, int] | None = None
         from hcp_cms.core.custom_column_manager import CustomColumnManager
         self._custom_col_mgr = CustomColumnManager(conn) if conn else None
         self._setup_ui()
@@ -133,7 +136,7 @@ class CaseView(QWidget):
         self._search_input = QLineEdit()
         self._search_input.setPlaceholderText("搜尋案件...")
         self._search_input.setFixedWidth(300)
-        self._search_input.returnPressed.connect(self.refresh)
+        self._search_input.returnPressed.connect(self._on_search_submitted)
         header.addWidget(self._search_input)
 
         self._filter_combo = QComboBox()
@@ -155,7 +158,7 @@ class CaseView(QWidget):
                 item = model.item(sep_idx)
                 if item is not None:
                     item.setEnabled(False)
-        self._filter_combo.currentTextChanged.connect(lambda _: self.refresh())
+        self._filter_combo.currentTextChanged.connect(self._on_filter_combo_changed)
         header.addWidget(self._filter_combo)
 
         refresh_btn = QPushButton("🔄 重新整理")
@@ -387,6 +390,31 @@ class CaseView(QWidget):
             f"   |   ❓ 未指派 {unassigned}（已排除資通/Mantis）"
         )
 
+    def show_month(self, year: int, month: int) -> None:
+        """外部呼叫（如 dashboard 點某月）：切到此頁、只看指定月份案件。
+
+        會清空搜尋關鍵字；不動 filter combo（記住使用者偏好）。
+        使用者改 filter combo 或輸入搜尋後自動清除 month filter。
+        """
+        self._month_filter = (year, month)
+        self._search_input.clear()
+        self._search_input.setPlaceholderText(
+            f"📅 已篩選 {year}/{month:02d} — 清空 / 改篩選器可恢復"
+        )
+        self.refresh()
+
+    def _on_filter_combo_changed(self, _text: str) -> None:
+        """使用者改 filter combo → 取消 month filter，回歸常規流程。"""
+        self._month_filter = None
+        self._search_input.setPlaceholderText("搜尋案件...")
+        self.refresh()
+
+    def _on_search_submitted(self) -> None:
+        """使用者按 Enter 搜尋 → 取消 month filter，回歸常規流程。"""
+        self._month_filter = None
+        self._search_input.setPlaceholderText("搜尋案件...")
+        self.refresh()
+
     def refresh(self) -> None:
         if not self._conn:
             return
@@ -413,6 +441,9 @@ class CaseView(QWidget):
                     or c.company_id in matched_company_ids
                     or all(p in (c.subject or "").lower() for p in kw_parts)
                 ]
+            elif self._month_filter is not None:
+                year, month = self._month_filter
+                cases = repo.list_by_month(year, month)
             elif status_filter == "全部":
                 cases = repo.list_all()
             elif status_filter == "最近匯入":
