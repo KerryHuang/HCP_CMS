@@ -667,7 +667,7 @@ class CaseView(QWidget):
         )
 
     def _on_manual_link(self, rows) -> None:
-        """手動串接所選案件：依 sent_time 排序，最早當 root。"""
+        """手動串接所選案件：依 sent_time 排序，最早當 root，強制覆蓋既有串接。"""
         if not self._conn or not hasattr(self, "_cases"):
             return
         selected_cases = [self._cases[r.row()] for r in rows if 0 <= r.row() < len(self._cases)]
@@ -683,12 +683,28 @@ class CaseView(QWidget):
         company_ids = {c.company_id for c in selected_cases if c.company_id}
         cross_company = len(company_ids) > 1
 
+        # 既有串接警告（被覆蓋的案件清單）
+        override_lines = []
+        for c in others:
+            if c.linked_case_id and c.linked_case_id != root.case_id:
+                override_lines.append(
+                    f"  • {c.case_id} 將從 {c.linked_case_id} 改串至 {root.case_id}"
+                )
+
         # 組合確認訊息
         root_label = f"{root.case_id}　{(root.subject or '')[:40]}"
         others_lines = "\n".join(
             f"  • {c.case_id}　{(c.subject or '')[:40]}" for c in others
         )
-        warning = "\n\n⚠ 注意：所選案件分屬不同公司，請確認是否真為同一對話串。" if cross_company else ""
+        warning_parts = []
+        if cross_company:
+            warning_parts.append("⚠ 所選案件分屬不同公司，請確認是否真為同一對話串。")
+        if override_lines:
+            warning_parts.append(
+                "⚠ 以下案件既有串接將被覆蓋：\n" + "\n".join(override_lines)
+            )
+        warning = ("\n\n" + "\n\n".join(warning_parts)) if warning_parts else ""
+
         msg = (
             f"將以下 {len(others)} 筆案件串接到 root：\n\n"
             f"【root】{root_label}\n\n"
@@ -705,8 +721,8 @@ class CaseView(QWidget):
         self.refresh()
         QMessageBox.information(
             self, "完成",
-            f"新建關聯：{result['linked']} 筆\n"
-            f"已串接而跳過：{result['skipped']} 筆"
+            f"新建/重串關聯：{result['linked']} 筆\n"
+            f"已串至相同 root：{result['already']} 筆"
         )
 
     def _on_new_case(self) -> None:

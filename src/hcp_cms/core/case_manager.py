@@ -432,33 +432,42 @@ class CaseManager:
         return {"updated": updated, "merged": merged}
 
     def manual_link_cases(self, case_ids: list[str]) -> dict[str, int]:
-        """手動串接多筆案件成一串 thread。
+        """手動串接多筆案件成一串 thread（強制覆蓋既有 linked_case_id）。
 
         依 sent_time（再以 case_id）排序，最早當 root；若最早者本身已串到別人，
-        則追溯到實際 root。其餘案件以 link_to_parent 串接到 root。
-        已有 linked_case_id 的案件跳過（避免破壞既有串）。
+        則追溯到實際 root。其餘案件強制串接到該 root：
+        - 已串到目標 root → 不重複串接，計入 already
+        - 已串到別處 → 覆蓋為新 root（既有 linked_case_id 被清掉再重設）
+        - 未串接 → 直接串接
+
+        ⚠ 覆蓋既有串接時，舊 root 的 reply_count 不會回減
+        （reply_count 為軟性計數，回減易因資料不一致變負數，故保守不動）。
 
         Returns:
-            {"linked": 本次新建關聯數, "skipped": 已有關聯而跳過數}
+            {"linked": 本次新建/重串的關聯數, "already": 已串到目標 root 而跳過數}
         """
         cases = [c for c in (self._case_repo.get_by_id(cid) for cid in case_ids) if c]
         if len(cases) < 2:
-            return {"linked": 0, "skipped": 0}
+            return {"linked": 0, "already": 0}
 
         sorted_cases = sorted(cases, key=lambda c: (c.sent_time or "", c.case_id))
         root = self._tracker._find_root(sorted_cases[0])
 
         linked = 0
-        skipped = 0
+        already = 0
         for case in sorted_cases:
             if case.case_id == root.case_id:
                 continue
-            if case.linked_case_id:
-                skipped += 1
+            if case.linked_case_id == root.case_id:
+                already += 1
                 continue
+            # 已串到別處 → 先清掉舊串接，再讓 link_to_parent 重新設
+            if case.linked_case_id:
+                case.linked_case_id = None
+                self._case_repo.update(case)
             self._tracker.link_to_parent(case.case_id, root.case_id)
             linked += 1
-        return {"linked": linked, "skipped": skipped}
+        return {"linked": linked, "already": already}
 
     def reopen_case(self, case_id: str, reason: str = "") -> None:
         """Reopen a replied case back to processing.
