@@ -222,6 +222,8 @@ class CaseView(QWidget):
         self._table.horizontalHeader().setStretchLastSection(True)
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        # 多列選取（Ctrl+點 / Shift+點）→ 支援批次操作（推到 Mantis / 指定公司 / 手動串接）
+        self._table.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection)
         self._table.itemSelectionChanged.connect(self._on_selection_changed)
         self._table.itemDoubleClicked.connect(self._on_row_double_clicked)
         self._table.setMinimumHeight(250)
