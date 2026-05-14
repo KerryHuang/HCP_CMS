@@ -185,6 +185,67 @@ class TestCaseManager:
         assert stats["pending"] == 1  # c3 is still open
         assert stats["reply_rate"] == 66.7
 
+    def test_dashboard_stats_includes_completed_count(self, seeded_db):
+        """get_dashboard_stats 應含「已完成」案件數。"""
+        mgr = CaseManager(seeded_db.connection)
+        c1 = mgr.create_case(subject="A", body="", sent_time="2026/03/10 09:00")
+        c2 = mgr.create_case(subject="B", body="", sent_time="2026/03/15 10:00")
+        mgr.create_case(subject="C", body="", sent_time="2026/03/20 14:00")
+
+        mgr.close_case(c1.case_id)  # 已完成
+        mgr.mark_replied(c2.case_id, "2026/03/16 10:00")  # 已回覆
+
+        stats = mgr.get_dashboard_stats(2026, 3)
+        assert stats["completed"] == 1
+        assert stats["replied"] == 1
+        assert stats["pending"] == 1
+        assert stats["total"] == 3
+
+    def test_get_monthly_stats_range_returns_n_months(self, seeded_db):
+        """get_monthly_stats_range 回傳近 N 個月，最近的在最前面。"""
+        mgr = CaseManager(seeded_db.connection)
+        # 跨 3 個月建案件
+        mgr.create_case(subject="Jan", body="", sent_time="2026/01/15 09:00")
+        mgr.create_case(subject="Feb", body="", sent_time="2026/02/15 09:00")
+        mgr.create_case(subject="Mar1", body="", sent_time="2026/03/10 09:00")
+        mgr.create_case(subject="Mar2", body="", sent_time="2026/03/20 09:00")
+
+        results = mgr.get_monthly_stats_range(months_back=3, ref_year=2026, ref_month=3)
+
+        assert len(results) == 3
+        # 最近的在前
+        assert results[0]["month"] == "2026/03"
+        assert results[0]["total"] == 2
+        assert results[1]["month"] == "2026/02"
+        assert results[1]["total"] == 1
+        assert results[2]["month"] == "2026/01"
+        assert results[2]["total"] == 1
+
+    def test_get_monthly_stats_range_crosses_year_boundary(self, seeded_db):
+        """跨年正確處理：1 月往前 2 個月 → 11 月、12 月（前一年）。"""
+        mgr = CaseManager(seeded_db.connection)
+        mgr.create_case(subject="Nov", body="", sent_time="2025/11/15 09:00")
+        mgr.create_case(subject="Dec", body="", sent_time="2025/12/15 09:00")
+        mgr.create_case(subject="Jan", body="", sent_time="2026/01/15 09:00")
+
+        results = mgr.get_monthly_stats_range(months_back=3, ref_year=2026, ref_month=1)
+
+        assert [r["month"] for r in results] == ["2026/01", "2025/12", "2025/11"]
+        assert results[0]["total"] == 1
+        assert results[1]["total"] == 1
+        assert results[2]["total"] == 1
+
+    def test_get_monthly_stats_range_includes_zero_months(self, seeded_db):
+        """無案件月份也要列出（total=0），避免時間軸不連續。"""
+        mgr = CaseManager(seeded_db.connection)
+        mgr.create_case(subject="Only", body="", sent_time="2026/03/15 09:00")
+
+        results = mgr.get_monthly_stats_range(months_back=3, ref_year=2026, ref_month=3)
+        assert len(results) == 3
+        assert results[0]["total"] == 1  # 3 月
+        assert results[1]["total"] == 0  # 2 月
+        assert results[2]["total"] == 0  # 1 月
+
     def test_frt_calculation(self, seeded_db):
         mgr = CaseManager(seeded_db.connection)
         c = mgr.create_case(subject="X", body="", sent_time="2026/03/20 09:00")

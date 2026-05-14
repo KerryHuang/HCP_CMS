@@ -569,6 +569,7 @@ class CaseManager:
         total = len(cases)
         replied = sum(1 for c in cases if c.status == "已回覆")
         pending = sum(1 for c in cases if c.status == "處理中")
+        completed = sum(1 for c in cases if c.status in ("已完成", "已結案", "Closed"))
         reply_rate = (replied / total * 100) if total > 0 else 0.0
 
         # FRT calculation
@@ -584,9 +585,36 @@ class CaseManager:
             "total": total,
             "replied": replied,
             "pending": pending,
+            "completed": completed,
             "reply_rate": round(reply_rate, 1),
             "avg_frt": round(avg_frt, 1) if avg_frt is not None else None,
         }
+
+    def get_monthly_stats_range(
+        self, months_back: int, ref_year: int, ref_month: int
+    ) -> list[dict]:
+        """近 N 個月的統計（含 ref month 本身，最近的排在最前）。
+
+        Args:
+            months_back: 包含 ref month 在內的月份數
+            ref_year: 起算年（含此月）
+            ref_month: 起算月（1-12）
+
+        Returns:
+            list of stats dict（含 'month' 鍵，格式 "YYYY/MM"），按時間倒序
+            無案件月份也會列出（total=0），保持時間軸連續
+        """
+        results: list[dict] = []
+        year, month = ref_year, ref_month
+        for _ in range(months_back):
+            stats = self.get_dashboard_stats(year, month)
+            stats["month"] = f"{year}/{month:02d}"
+            results.append(stats)
+            month -= 1
+            if month == 0:
+                month = 12
+                year -= 1
+        return results
 
     def relink_threads(self) -> dict[str, int]:
         """重新掃描所有案件，依 company_id + subjects_match 建立 linked_case_id 關聯，

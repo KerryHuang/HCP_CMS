@@ -95,6 +95,21 @@ class DashboardView(QWidget):
         kpi_layout.addWidget(self._kpi_frt, 0, 3)
         layout.addLayout(kpi_layout)
 
+        # 近 3 個月統計表
+        self._monthly_label = QLabel("📅 近 3 個月案件統計")
+        layout.addWidget(self._monthly_label)
+
+        self._monthly_table = QTableWidget(0, 7)
+        self._monthly_table.setHorizontalHeaderLabels(
+            ["月份", "總案件", "已回覆", "處理中", "已完成", "回覆率", "平均 FRT"]
+        )
+        self._monthly_table.horizontalHeader().setStretchLastSection(True)
+        self._monthly_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self._monthly_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self._monthly_table.verticalHeader().setVisible(False)
+        self._monthly_table.setMaximumHeight(150)
+        layout.addWidget(self._monthly_table)
+
         # Action 區
         action_row = QHBoxLayout()
         self._staleness_btn = QPushButton("⚠ 警示未結清單")
@@ -132,6 +147,24 @@ class DashboardView(QWidget):
             self._kpi_pending.set_value(str(stats["pending"]))
             frt = stats.get("avg_frt")
             self._kpi_frt.set_value(f"{frt}h" if frt is not None else "---")
+
+            # 近 3 個月統計表
+            monthly = mgr.get_monthly_stats_range(
+                months_back=3, ref_year=now.year, ref_month=now.month,
+            )
+            self._monthly_table.setRowCount(len(monthly))
+            for i, m in enumerate(monthly):
+                frt_m = m.get("avg_frt")
+                self._monthly_table.setItem(i, 0, QTableWidgetItem(m["month"]))
+                self._monthly_table.setItem(i, 1, QTableWidgetItem(str(m["total"])))
+                self._monthly_table.setItem(i, 2, QTableWidgetItem(str(m["replied"])))
+                self._monthly_table.setItem(i, 3, QTableWidgetItem(str(m["pending"])))
+                self._monthly_table.setItem(i, 4, QTableWidgetItem(str(m["completed"])))
+                self._monthly_table.setItem(i, 5, QTableWidgetItem(f"{m['reply_rate']}%"))
+                self._monthly_table.setItem(
+                    i, 6, QTableWidgetItem(f"{frt_m}h" if frt_m is not None else "—"),
+                )
+            self._monthly_table.resizeColumnsToContents()
 
             # Recent cases
             repo = CaseRepository(self._conn)
@@ -269,6 +302,7 @@ class DashboardView(QWidget):
     def _apply_theme(self, p: ColorPalette) -> None:
         """套用主題色彩。"""
         self._title.setStyleSheet(f"font-size: 18px; font-weight: bold; color: {p.text_primary};")
+        self._monthly_label.setStyleSheet(f"color: {p.text_tertiary}; font-weight: bold; margin-top: 16px;")
         self._recent_label.setStyleSheet(f"color: {p.text_tertiary}; font-weight: bold; margin-top: 16px;")
         self._kpi_total.apply_theme(p)
         self._kpi_reply_rate.apply_theme(p)
