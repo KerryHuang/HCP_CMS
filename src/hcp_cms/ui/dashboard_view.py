@@ -97,10 +97,10 @@ class DashboardView(QWidget):
 
         # Action 區
         action_row = QHBoxLayout()
-        self._staleness_btn = QPushButton("⏰ 檢查超時案件（>48 工時無 HCP 回覆）")
+        self._staleness_btn = QPushButton("⚠ 警示未結清單")
         self._staleness_btn.setToolTip(
-            "找出處理中、超過 48 工作小時無 HCP 回覆的案件，"
-            "並透過 Exchange 寄送提醒給 handler。"
+            "找出處理中、超過 48 工作小時無 HCP 回覆的未結案件，"
+            "並透過 Exchange 寄送警示通知給 handler。"
         )
         self._staleness_btn.clicked.connect(self._on_check_staleness)
         action_row.addWidget(self._staleness_btn)
@@ -158,8 +158,8 @@ class DashboardView(QWidget):
 
         if not stale:
             QMessageBox.information(
-                self, "檢查超時案件",
-                f"目前沒有超過 {int(self._STALENESS_THRESHOLD_HOURS)} 工作小時無 HCP 回覆的案件。"
+                self, "警示未結清單",
+                f"目前沒有需警示的未結案件（>{int(self._STALENESS_THRESHOLD_HOURS)} 工作小時無 HCP 回覆）。"
             )
             return
 
@@ -174,7 +174,7 @@ class DashboardView(QWidget):
 
         selected = dlg.selected_cases()
         if not selected:
-            QMessageBox.information(self, "發送提醒", "未勾選任何案件。")
+            QMessageBox.information(self, "發送警示", "未勾選任何案件。")
             return
 
         # 連線 Exchange（沿用既有 keyring 帳密）
@@ -220,18 +220,18 @@ class DashboardView(QWidget):
                 fail += 1
 
         QMessageBox.information(
-            self, "發送提醒完成",
+            self, "警示通知發送完成",
             f"✓ 成功 {ok} 封 / ✗ 失敗 {fail} 封\n"
-            f"涵蓋 {len(selected)} 件案件"
+            f"涵蓋 {len(selected)} 件未結案件"
         )
 
     @staticmethod
     def _build_reminder_email(cases: list[dict]) -> tuple[str, str]:
-        """組裝提醒 email 的 subject 與 body。"""
-        subject = f"[HCP CMS] 超時案件提醒：{len(cases)} 件待追蹤"
+        """組裝警示通知 email 的 subject 與 body。"""
+        subject = f"[HCP CMS] 警示未結清單：{len(cases)} 件待追蹤"
 
         lines = [
-            f"您有 {len(cases)} 件案件已超過 48 工作小時無 HCP 回覆，請追蹤：",
+            f"以下 {len(cases)} 件未結案件已超過 48 工作小時無 HCP 回覆，請追蹤：",
             "",
         ]
         for i, c in enumerate(cases, 1):

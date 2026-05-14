@@ -1,4 +1,4 @@
-"""超時案件提醒確認對話框。"""
+"""警示未結清單確認對話框。"""
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
@@ -18,7 +18,7 @@ from hcp_cms.ui.theme import DARK_PALETTE, ColorPalette
 
 
 class StalenessReminderDialog(QDialog):
-    """顯示超時案件清單，使用者勾選後發送提醒 email。
+    """顯示警示未結清單，使用者勾選後發送警示通知 email。
 
     案件依 handler_email 自動分組，每位 handler 收到一封 email。
     handler_email 為 None 的 case 預設不勾選（無收件人）。
@@ -36,7 +36,7 @@ class StalenessReminderDialog(QDialog):
         self._threshold_hours = threshold_hours
         self._palette = palette or DARK_PALETTE
         self._checkboxes: list[QCheckBox] = []
-        self.setWindowTitle("超時案件提醒")
+        self.setWindowTitle("警示未結清單")
         self.setMinimumWidth(820)
         self._setup_ui()
 
@@ -44,8 +44,8 @@ class StalenessReminderDialog(QDialog):
         layout = QVBoxLayout(self)
 
         header = QLabel(
-            f"找到 {len(self._stale_cases)} 筆案件超過 {int(self._threshold_hours)} 工作小時無 HCP 回覆。\n"
-            "勾選要寄送提醒的項目，同 handler 會合併為一封 email 寄出。"
+            f"找到 {len(self._stale_cases)} 件未結案件超過 {int(self._threshold_hours)} 工作小時無 HCP 回覆。\n"
+            "勾選要發送警示通知的項目，同 handler 會合併為一封 email 寄出。"
         )
         header.setStyleSheet(f"color: {self._palette.text_primary}; font-size: 12px;")
         header.setWordWrap(True)
@@ -87,7 +87,7 @@ class StalenessReminderDialog(QDialog):
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
         self.send_button = buttons.button(QDialogButtonBox.StandardButton.Ok)
-        self.send_button.setText("📧 發送提醒")
+        self.send_button.setText("📧 發送警示通知")
         buttons.button(QDialogButtonBox.StandardButton.Cancel).setText("取消")
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
