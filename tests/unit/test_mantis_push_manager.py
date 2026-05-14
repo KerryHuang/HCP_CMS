@@ -352,3 +352,222 @@ def test_push_omits_custom_field_when_no_contact_person(setup) -> None:
     mgr.push_case_as_new_ticket("C-1", "S-YOGA")
 
     assert client.create_issue.call_args.kwargs.get("custom_fields") is None
+
+
+# ============= thread-aware 批次推送 =============
+
+
+class TestPushCasesThreadAware:
+    """以 thread 為單位推送：root 建新 ticket，子案件成為 bugnote。"""
+
+    def _make_thread(self, conn, root_id: str = "T-ROOT", child_ids: list[str] | None = None) -> None:
+        """Helper：建立一個 thread（root + 多個 children）。"""
+        case_repo = CaseRepository(conn)
+        case_repo.insert(Case(
+            case_id=root_id, subject="原始客戶問題", company_id="CO-1",
+            sent_time="2026/05/01 09:00:00",
+        ))
+        for cid in (child_ids or []):
+            case_repo.insert(Case(
+                case_id=cid, subject="RE: 原始客戶問題", company_id="CO-1",
+                sent_time="2026/05/05 14:30:00",
+                linked_case_id=root_id,
+            ))
+
+    def test_single_case_no_thread_pushes_as_new_ticket(self, setup) -> None:
+        """獨立案件（無 linked_case_id 也無子案件）→ 推為新 ticket，不產生 bugnote。"""
+        db = setup
+        client = MagicMock()
+        client.create_issue.return_value = "9001"
+        mgr = MantisPushManager(db.connection, client=client, project_id="218")
+
+        results = mgr.push_cases_thread_aware(["C-1"], "S-YOGA")
+
+        assert client.create_issue.call_count == 1
+        assert client.add_note.call_count == 0
+        assert any(r["action"] == "new_ticket" and r["case_id"] == "C-1" for r in results)
+
+    def test_root_plus_children_one_ticket_plus_bugnotes(self, setup) -> None:
+        """root + 2 個 children 同時選 → 1 張新 ticket + 2 則 bugnote。"""
+        db = setup
+        self._make_thread(db.connection, "T-ROOT", ["T-A", "T-B"])
+        client = MagicMock()
+        client.create_issue.return_value = "9002"
+        client.add_note.return_value = "note-1"
+        mgr = MantisPushManager(db.connection, client=client, project_id="218")
+
+        mgr.push_cases_thread_aware(["T-ROOT", "T-A", "T-B"], "S-YOGA")
+
+        assert client.create_issue.call_count == 1
+        assert client.add_note.call_count == 2
+        # 子案件也記為已連結 ticket（後續可同步、查 case_mantis）
+        for cid in ("T-ROOT", "T-A", "T-B"):
+            links = CaseMantisRepository(db.connection).list_by_case_id(cid)
+            assert any(lk.ticket_id == "9002" for lk in links), f"{cid} 未連結 9002"
+
+    def test_select_only_child_auto_includes_root(self, setup) -> None:
+        """只選子案件，未選 root → 自動把 root 推為 ticket，子案件成 bugnote。"""
+        db = setup
+        self._make_thread(db.connection, "T-ROOT", ["T-A"])
+        client = MagicMock()
+        client.create_issue.return_value = "9003"
+        client.add_note.return_value = "note-1"
+        mgr = MantisPushManager(db.connection, client=client, project_id="218")
+
+        results = mgr.push_cases_thread_aware(["T-A"], "S-YOGA")
+
+        # root 自動推
+        new_ticket_results = [r for r in results if r["action"] == "new_ticket"]
+        assert len(new_ticket_results) == 1
+        assert new_ticket_results[0]["case_id"] == "T-ROOT"
+        # 子案件成 bugnote
+        bugnote_results = [r for r in results if r["action"] == "bugnote"]
+        assert len(bugnote_results) == 1
+        assert bugnote_results[0]["case_id"] == "T-A"
+
+    def test_root_already_linked_children_become_bugnotes_on_existing(self, setup) -> None:
+        """root 已連結 Mantis ticket → 不重推 root，子案件附到既有 ticket。"""
+        db = setup
+        self._make_thread(db.connection, "T-ROOT", ["T-A"])
+        _link_with_ticket(db.connection, "T-ROOT", "9999")
+        client = MagicMock()
+        client.add_note.return_value = "note-1"
+        mgr = MantisPushManager(db.connection, client=client, project_id="218")
+
+        mgr.push_cases_thread_aware(["T-ROOT", "T-A"], "S-YOGA")
+
+        # 不再建新 ticket
+        assert client.create_issue.call_count == 0
+        # 子案件附到 9999
+        assert client.add_note.call_count == 1
+        assert client.add_note.call_args.kwargs["issue_id"] == "9999"
+        # 子案件也建立 case_mantis 連結到 9999
+        a_links = CaseMantisRepository(db.connection).list_by_case_id("T-A")
+        assert any(lk.ticket_id == "9999" for lk in a_links)
+
+    def test_skip_already_linked_child(self, setup) -> None:
+        """子案件本身已連結別的 Mantis ticket → 跳過，不重推也不重 bugnote。"""
+        db = setup
+        self._make_thread(db.connection, "T-ROOT", ["T-A"])
+        _link_with_ticket(db.connection, "T-A", "8888")  # T-A 已連結到別張 ticket
+        client = MagicMock()
+        client.create_issue.return_value = "9004"
+        mgr = MantisPushManager(db.connection, client=client, project_id="218")
+
+        results = mgr.push_cases_thread_aware(["T-ROOT", "T-A"], "S-YOGA")
+
+        # root 仍推新
+        assert client.create_issue.call_count == 1
+        # T-A 跳過（不 add_note）
+        assert client.add_note.call_count == 0
+        skipped = [r for r in results if r["action"] == "skipped" and r["case_id"] == "T-A"]
+        assert len(skipped) == 1
+
+    def test_multiple_independent_threads(self, setup) -> None:
+        """選兩個不同 thread 的案件 → 各建一張 ticket（不混在一起）。"""
+        db = setup
+        self._make_thread(db.connection, "T-ROOT-A", ["T-A1"])
+        self._make_thread(db.connection, "T-ROOT-B", ["T-B1"])
+        client = MagicMock()
+        client.create_issue.side_effect = ["9005", "9006"]
+        client.add_note.return_value = "note-x"
+        mgr = MantisPushManager(db.connection, client=client, project_id="218")
+
+        mgr.push_cases_thread_aware(
+            ["T-ROOT-A", "T-A1", "T-ROOT-B", "T-B1"], "S-YOGA"
+        )
+
+        # 兩張新 ticket，兩則 bugnote
+        assert client.create_issue.call_count == 2
+        assert client.add_note.call_count == 2
+
+    def test_empty_input_returns_empty(self, setup) -> None:
+        db = setup
+        client = MagicMock()
+        mgr = MantisPushManager(db.connection, client=client, project_id="218")
+        assert mgr.push_cases_thread_aware([], "S-YOGA") == []
+        client.create_issue.assert_not_called()
+        client.add_note.assert_not_called()
+
+
+# ============= bugnote 文字格式 =============
+
+
+class TestBugnoteText:
+    """_build_bugnote_text 應含寄件者/收件者/內容等對話資訊。"""
+
+    def test_bugnote_includes_contact_person(self, setup) -> None:
+        """bugnote 應含 case.contact_person。"""
+        db = setup
+        case_repo = CaseRepository(db.connection)
+        case = case_repo.get_by_id("C-1")
+        case.contact_person = '"Jill" <jill@test.com>'
+        case_repo.update(case)
+        _link_with_ticket(db.connection, "C-1", "9999")
+        client = MagicMock()
+        client.add_note.return_value = "n-1"
+
+        mgr = MantisPushManager(db.connection, client=client, project_id="218")
+        mgr.push_case_as_bugnote("C-1", "S-YOGA")
+
+        text = client.add_note.call_args.kwargs["text"]
+        assert "Jill" in text
+        assert "jill@test.com" in text
+
+    def test_bugnote_includes_all_case_logs(self, setup) -> None:
+        """bugnote 應含所有 case_logs（不只最新一筆），按時間排序顯示。"""
+        from hcp_cms.data.models import CaseLog
+        from hcp_cms.data.repositories import CaseLogRepository
+        db = setup
+        log_repo = CaseLogRepository(db.connection)
+        log_repo.insert(CaseLog(
+            log_id=log_repo.next_log_id(), case_id="C-1",
+            direction="客戶來信", content="原始客戶問題：印表機無法列印",
+            logged_at="2026/05/01 09:00:00",
+        ))
+        log_repo.insert(CaseLog(
+            log_id=log_repo.next_log_id(), case_id="C-1",
+            direction="HCP 信件回覆", content="已協助處理，請確認",
+            logged_at="2026/05/04 16:46:00",
+        ))
+        _link_with_ticket(db.connection, "C-1", "9999")
+        client = MagicMock()
+        client.add_note.return_value = "n-1"
+
+        mgr = MantisPushManager(db.connection, client=client, project_id="218")
+        mgr.push_case_as_bugnote("C-1", "S-YOGA")
+
+        text = client.add_note.call_args.kwargs["text"]
+        # 兩筆 log 都要出現
+        assert "原始客戶問題：印表機無法列印" in text
+        assert "已協助處理，請確認" in text
+        # direction 標籤都要出現
+        assert "客戶來信" in text
+        assert "HCP 信件回覆" in text
+
+    def test_bugnote_excludes_mantis_push_logs(self, setup) -> None:
+        """direction=Mantis 推送 的 log 不顯示（避免無限循環推送內容）。"""
+        from hcp_cms.data.models import CaseLog
+        from hcp_cms.data.repositories import CaseLogRepository
+        db = setup
+        log_repo = CaseLogRepository(db.connection)
+        log_repo.insert(CaseLog(
+            log_id=log_repo.next_log_id(), case_id="C-1",
+            direction="Mantis 推送", content="不應顯示的內容",
+            logged_at="2026/05/04 17:00:00",
+        ))
+        log_repo.insert(CaseLog(
+            log_id=log_repo.next_log_id(), case_id="C-1",
+            direction="客戶來信", content="應顯示的客戶內容",
+            logged_at="2026/05/01 09:00:00",
+        ))
+        _link_with_ticket(db.connection, "C-1", "9999")
+        client = MagicMock()
+        client.add_note.return_value = "n-1"
+
+        mgr = MantisPushManager(db.connection, client=client, project_id="218")
+        mgr.push_case_as_bugnote("C-1", "S-YOGA")
+
+        text = client.add_note.call_args.kwargs["text"]
+        assert "應顯示的客戶內容" in text
+        assert "不應顯示的內容" not in text

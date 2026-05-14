@@ -877,29 +877,35 @@ class CaseView(QWidget):
                 break
         operator_staff_id = jill.staff_id if jill else "jill"
 
-        # 執行批次推送
+        # 執行 thread-aware 批次推送（每串只建一張 ticket，子案件以 bugnote 附加）
         from hcp_cms.core.mantis_push import MantisPushManager
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
             mgr = MantisPushManager(self._conn, client, project_id=project_id)
-            results = mgr.push_cases_batch(target_ids, operator_staff_id)
+            results = mgr.push_cases_thread_aware(target_ids, operator_staff_id)
         finally:
             QApplication.restoreOverrideCursor()
 
         # 結果摘要
-        ok = sum(1 for r in results if r[1] == "success")
-        fail = sum(1 for r in results if r[1] == "failed")
-        skip = sum(1 for r in results if r[1] == "skipped")
+        new_ticket = sum(1 for r in results if r["action"] == "new_ticket")
+        bugnote = sum(1 for r in results if r["action"] == "bugnote")
+        skipped = sum(1 for r in results if r["action"] in ("skipped", "already_linked"))
+        failed = sum(1 for r in results if r["action"] == "failed")
 
-        summary = f"✓ 成功 {ok} 筆 / ✗ 失敗 {fail} 筆 / ⊘ 略過 {skip} 筆"
+        summary = (
+            f"✓ 新建 ticket {new_ticket} 筆 / "
+            f"+ bugnote {bugnote} 筆 / "
+            f"⊘ 略過 {skipped} 筆 / "
+            f"✗ 失敗 {failed} 筆"
+        )
         msg = QMessageBox(self)
         msg.setWindowTitle("推到 Mantis 完成")
-        msg.setIcon(QMessageBox.Icon.Information if fail == 0 else QMessageBox.Icon.Warning)
+        msg.setIcon(QMessageBox.Icon.Information if failed == 0 else QMessageBox.Icon.Warning)
         msg.setText(summary)
 
-        if fail > 0:
-            failures = [r for r in results if r[1] == "failed"]
-            detail = "\n".join(f"{r[0]}: {r[2]}" for r in failures)
+        if failed > 0:
+            failures = [r for r in results if r["action"] == "failed"]
+            detail = "\n".join(f"{r['case_id']}: {r['payload']}" for r in failures)
             msg.setDetailedText(detail)
 
         msg.exec()
