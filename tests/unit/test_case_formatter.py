@@ -20,9 +20,18 @@ def _case(**overrides) -> Case:
 
 
 def test_full_format_with_all_fields() -> None:
+    """主旨優先 — 不再前加【公司名】。"""
     case = _case()
-    assert format_case_header(case, "欣興") == (
-        "2026/5/4 (週一) 下午 04:46【欣興】加班取小值確認"
+    assert format_case_header(case) == (
+        "2026/5/4 (週一) 下午 04:46 加班取小值確認"
+    )
+
+
+def test_subject_with_company_prefix_in_brackets() -> None:
+    """主旨本身已有【公司】前綴時，原樣呈現（不再重複加公司名）。"""
+    case = _case(subject="【景碩科技】班別津貼時薪計算評估")
+    assert format_case_header(case) == (
+        "2026/5/4 (週一) 下午 04:46 【景碩科技】班別津貼時薪計算評估"
     )
 
 
@@ -31,12 +40,12 @@ def test_full_format_with_all_fields() -> None:
 
 def test_strips_re_prefix() -> None:
     case = _case(subject="RE: 加班取小值確認")
-    assert "RE:" not in format_case_header(case, "欣興")
+    assert "RE:" not in format_case_header(case)
 
 
 def test_strips_multiple_prefixes() -> None:
     case = _case(subject="RE: FW: 加班取小值確認")
-    result = format_case_header(case, "欣興")
+    result = format_case_header(case)
     assert "RE:" not in result
     assert "FW:" not in result
     assert "加班取小值確認" in result
@@ -50,7 +59,7 @@ def test_weekday_each_day() -> None:
     expected = ["週一", "週二", "週三", "週四", "週五", "週六", "週日"]
     for day, weekday in enumerate(expected, start=4):
         case = _case(sent_time=f"2026/05/{day:02d} 10:00:00")
-        result = format_case_header(case, "欣興")
+        result = format_case_header(case)
         assert f"({weekday})" in result, f"day {day} expected {weekday} in {result}"
 
 
@@ -59,23 +68,23 @@ def test_weekday_each_day() -> None:
 
 def test_morning() -> None:
     case = _case(sent_time="2026/05/04 09:00:00")
-    assert "上午 09:00" in format_case_header(case, "欣興")
+    assert "上午 09:00" in format_case_header(case)
 
 
 def test_noon_is_pm() -> None:
     case = _case(sent_time="2026/05/04 12:00:00")
-    assert "下午 12:00" in format_case_header(case, "欣興")
+    assert "下午 12:00" in format_case_header(case)
 
 
 def test_afternoon() -> None:
     case = _case(sent_time="2026/05/04 16:46:00")
-    assert "下午 04:46" in format_case_header(case, "欣興")
+    assert "下午 04:46" in format_case_header(case)
 
 
 def test_midnight() -> None:
     """00:30 應顯示「上午 12:30」（12h 制 0 點 = 12 點）。"""
     case = _case(sent_time="2026/05/04 00:30:00")
-    assert "上午 12:30" in format_case_header(case, "欣興")
+    assert "上午 12:30" in format_case_header(case)
 
 
 # ============= 日期 / 時間格式 =============
@@ -83,25 +92,25 @@ def test_midnight() -> None:
 
 def test_no_leading_zero_on_month_day() -> None:
     case = _case(sent_time="2026/05/04 16:46:00")
-    result = format_case_header(case, "欣興")
+    result = format_case_header(case)
     assert result.startswith("2026/5/4 ")  # 5/4 不是 05/04
 
 
 def test_leading_zero_on_hour() -> None:
     """16:46 → 「04:46」（hour 前導 0）。"""
     case = _case(sent_time="2026/05/04 16:46:00")
-    assert "04:46" in format_case_header(case, "欣興")
+    assert "04:46" in format_case_header(case)
 
 
 def test_accepts_sent_time_with_seconds() -> None:
     case = _case(sent_time="2026/05/04 16:46:30")
-    result = format_case_header(case, "欣興")
+    result = format_case_header(case)
     assert "下午 04:46" in result  # 秒不顯示
 
 
 def test_accepts_sent_time_without_seconds() -> None:
     case = _case(sent_time="2026/05/04 16:46")
-    result = format_case_header(case, "欣興")
+    result = format_case_header(case)
     assert "下午 04:46" in result
 
 
@@ -111,47 +120,35 @@ def test_accepts_sent_time_without_seconds() -> None:
 def test_raises_when_sent_time_missing() -> None:
     case = _case(sent_time=None)
     with pytest.raises(ValueError, match="sent_time"):
-        format_case_header(case, "欣興")
+        format_case_header(case)
 
 
 def test_raises_when_sent_time_empty() -> None:
     case = _case(sent_time="")
     with pytest.raises(ValueError, match="sent_time"):
-        format_case_header(case, "欣興")
+        format_case_header(case)
 
 
 def test_raises_when_sent_time_invalid_format() -> None:
     case = _case(sent_time="not a date")
     with pytest.raises(ValueError, match="sent_time"):
-        format_case_header(case, "欣興")
-
-
-def test_raises_when_company_name_missing() -> None:
-    case = _case()
-    with pytest.raises(ValueError, match="company_name"):
-        format_case_header(case, None)
-
-
-def test_raises_when_company_name_empty() -> None:
-    case = _case()
-    with pytest.raises(ValueError, match="company_name"):
-        format_case_header(case, "")
+        format_case_header(case)
 
 
 def test_raises_when_subject_missing() -> None:
     case = _case(subject=None)
     with pytest.raises(ValueError, match="subject"):
-        format_case_header(case, "欣興")
+        format_case_header(case)
 
 
 def test_raises_when_subject_empty() -> None:
     case = _case(subject="")
     with pytest.raises(ValueError, match="subject"):
-        format_case_header(case, "欣興")
+        format_case_header(case)
 
 
 def test_raises_when_subject_only_prefixes() -> None:
     """主旨全部是 RE:/FW: 等前綴，clean 後為空 → ValueError。"""
     case = _case(subject="RE: FW: ")
     with pytest.raises(ValueError, match="subject"):
-        format_case_header(case, "欣興")
+        format_case_header(case)

@@ -162,10 +162,13 @@ class CaseView(QWidget):
         refresh_btn.clicked.connect(self.refresh)
         header.addWidget(refresh_btn)
 
-        relink_btn = QPushButton("🔗 串接對話串")
-        relink_btn.setToolTip("重新掃描所有案件，自動補齊遺漏的回覆串關聯")
-        relink_btn.clicked.connect(self._on_relink_threads)
-        header.addWidget(relink_btn)
+        self._relink_btn = QPushButton("🔗 串接對話串")
+        self._relink_btn.setToolTip(
+            "未選取：重新掃描所有案件，自動補齊遺漏的回覆串關聯\n"
+            "選取 2 筆以上：手動串接所選案件（最早當 root）"
+        )
+        self._relink_btn.clicked.connect(self._on_relink_threads)
+        header.addWidget(self._relink_btn)
 
         new_btn = QPushButton("➕ 手動建案")
         new_btn.clicked.connect(self._on_new_case)
@@ -219,6 +222,8 @@ class CaseView(QWidget):
         self._table.horizontalHeader().setStretchLastSection(True)
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        # 多列選取（Ctrl+點 / Shift+點）→ 支援批次操作（推到 Mantis / 指定公司 / 手動串接）
+        self._table.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection)
         self._table.itemSelectionChanged.connect(self._on_selection_changed)
         self._table.itemDoubleClicked.connect(self._on_row_double_clicked)
         self._table.setMinimumHeight(250)
@@ -522,6 +527,10 @@ class CaseView(QWidget):
         self._mantis_push_btn.setText(
             f"🚀 推到 Mantis ({len(rows)} 筆)" if rows else "🚀 推到 Mantis"
         )
+        # 串接按鈕依選取數量切換行為：選 2 筆以上 → 手動串接所選
+        self._relink_btn.setText(
+            f"🔗 串接 {len(rows)} 筆" if len(rows) >= 2 else "🔗 串接對話串"
+        )
         if not rows or not hasattr(self, '_cases'):
             return
         row = rows[0].row()
@@ -638,6 +647,13 @@ class CaseView(QWidget):
     def _on_relink_threads(self) -> None:
         if not self._conn:
             return
+        rows = self._table.selectionModel().selectedRows()
+        if len(rows) >= 2:
+            self._on_manual_link(rows)
+        else:
+            self._on_auto_relink_threads()
+
+    def _on_auto_relink_threads(self) -> None:
         reply = QMessageBox.question(
             self, "串接對話串",
             "將重新掃描所有案件，自動補齊遺漏的回覆串關聯（不刪除任何資料）。\n\n確定執行？",
@@ -650,6 +666,65 @@ class CaseView(QWidget):
             self, "完成",
             f"建立對話串關聯：{result['linked']} 筆\n"
             f"同步結案狀態：{result['status_synced']} 筆"
+        )
+
+    def _on_manual_link(self, rows) -> None:
+        """手動串接所選案件：依 sent_time 排序，最早當 root，強制覆蓋既有串接。"""
+        if not self._conn or not hasattr(self, "_cases"):
+            return
+        selected_cases = [self._cases[r.row()] for r in rows if 0 <= r.row() < len(self._cases)]
+        if len(selected_cases) < 2:
+            return
+
+        # 排序預覽（最早當 root）
+        sorted_cases = sorted(selected_cases, key=lambda c: (c.sent_time or "", c.case_id))
+        root = sorted_cases[0]
+        others = sorted_cases[1:]
+
+        # 跨公司警告（信任使用者判斷，僅提示）
+        company_ids = {c.company_id for c in selected_cases if c.company_id}
+        cross_company = len(company_ids) > 1
+
+        # 既有串接警告（被覆蓋的案件清單）
+        override_lines = []
+        for c in others:
+            if c.linked_case_id and c.linked_case_id != root.case_id:
+                override_lines.append(
+                    f"  • {c.case_id} 將從 {c.linked_case_id} 改串至 {root.case_id}"
+                )
+
+        # 組合確認訊息
+        root_label = f"{root.case_id}　{(root.subject or '')[:40]}"
+        others_lines = "\n".join(
+            f"  • {c.case_id}　{(c.subject or '')[:40]}" for c in others
+        )
+        warning_parts = []
+        if cross_company:
+            warning_parts.append("⚠ 所選案件分屬不同公司，請確認是否真為同一對話串。")
+        if override_lines:
+            warning_parts.append(
+                "⚠ 以下案件既有串接將被覆蓋：\n" + "\n".join(override_lines)
+            )
+        warning = ("\n\n" + "\n\n".join(warning_parts)) if warning_parts else ""
+
+        msg = (
+            f"將以下 {len(others)} 筆案件串接到 root：\n\n"
+            f"【root】{root_label}\n\n"
+            f"{others_lines}"
+            f"{warning}\n\n"
+            f"確定執行？"
+        )
+        reply = QMessageBox.question(self, "手動串接", msg)
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        case_ids = [c.case_id for c in selected_cases]
+        result = CaseManager(self._conn).manual_link_cases(case_ids)
+        self.refresh()
+        QMessageBox.information(
+            self, "完成",
+            f"新建/重串關聯：{result['linked']} 筆\n"
+            f"已串至相同 root：{result['already']} 筆"
         )
 
     def _on_new_case(self) -> None:
@@ -802,29 +877,35 @@ class CaseView(QWidget):
                 break
         operator_staff_id = jill.staff_id if jill else "jill"
 
-        # 執行批次推送
+        # 執行 thread-aware 批次推送（每串只建一張 ticket，子案件以 bugnote 附加）
         from hcp_cms.core.mantis_push import MantisPushManager
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
             mgr = MantisPushManager(self._conn, client, project_id=project_id)
-            results = mgr.push_cases_batch(target_ids, operator_staff_id)
+            results = mgr.push_cases_thread_aware(target_ids, operator_staff_id)
         finally:
             QApplication.restoreOverrideCursor()
 
         # 結果摘要
-        ok = sum(1 for r in results if r[1] == "success")
-        fail = sum(1 for r in results if r[1] == "failed")
-        skip = sum(1 for r in results if r[1] == "skipped")
+        new_ticket = sum(1 for r in results if r["action"] == "new_ticket")
+        bugnote = sum(1 for r in results if r["action"] == "bugnote")
+        skipped = sum(1 for r in results if r["action"] in ("skipped", "already_linked"))
+        failed = sum(1 for r in results if r["action"] == "failed")
 
-        summary = f"✓ 成功 {ok} 筆 / ✗ 失敗 {fail} 筆 / ⊘ 略過 {skip} 筆"
+        summary = (
+            f"✓ 新建 ticket {new_ticket} 筆 / "
+            f"+ bugnote {bugnote} 筆 / "
+            f"⊘ 略過 {skipped} 筆 / "
+            f"✗ 失敗 {failed} 筆"
+        )
         msg = QMessageBox(self)
         msg.setWindowTitle("推到 Mantis 完成")
-        msg.setIcon(QMessageBox.Icon.Information if fail == 0 else QMessageBox.Icon.Warning)
+        msg.setIcon(QMessageBox.Icon.Information if failed == 0 else QMessageBox.Icon.Warning)
         msg.setText(summary)
 
-        if fail > 0:
-            failures = [r for r in results if r[1] == "failed"]
-            detail = "\n".join(f"{r[0]}: {r[2]}" for r in failures)
+        if failed > 0:
+            failures = [r for r in results if r["action"] == "failed"]
+            detail = "\n".join(f"{r['case_id']}: {r['payload']}" for r in failures)
             msg.setDetailedText(detail)
 
         msg.exec()

@@ -6,6 +6,7 @@ from datetime import datetime
 from pathlib import Path
 
 from hcp_cms.core.classifier import Classifier
+from hcp_cms.core.email_cleaner import clean_email_body
 from hcp_cms.core.thread_tracker import ThreadTracker
 from hcp_cms.data.fts import FTSManager
 from hcp_cms.data.models import Case, CaseLog, CaseMantisLink, MantisTicket
@@ -136,6 +137,7 @@ class CaseManager:
         """
         recipients = to_recipients or []
         cc_list = cc_recipients or []
+        body = clean_email_body(body)
 
         # Find-or-Create：先以分類器取得 company_id
         classification = self._classifier.classify(subject, body, sender_email, recipients, cc_list)
@@ -272,6 +274,7 @@ class CaseManager:
         in_reply_to: str | None = None,
     ) -> Case:
         """Create a new case from email data, with auto-classification and thread detection."""
+        body = clean_email_body(body)
         # Classify
         classification = self._classifier.classify(
             subject, body, sender_email, to_recipients or [], cc_recipients or []
@@ -436,6 +439,44 @@ class CaseManager:
                 merged += 1
 
         return {"updated": updated, "merged": merged}
+
+    def manual_link_cases(self, case_ids: list[str]) -> dict[str, int]:
+        """手動串接多筆案件成一串 thread（強制覆蓋既有 linked_case_id）。
+
+        依 sent_time（再以 case_id）排序，最早當 root；若最早者本身已串到別人，
+        則追溯到實際 root。其餘案件強制串接到該 root：
+        - 已串到目標 root → 不重複串接，計入 already
+        - 已串到別處 → 覆蓋為新 root（既有 linked_case_id 被清掉再重設）
+        - 未串接 → 直接串接
+
+        ⚠ 覆蓋既有串接時，舊 root 的 reply_count 不會回減
+        （reply_count 為軟性計數，回減易因資料不一致變負數，故保守不動）。
+
+        Returns:
+            {"linked": 本次新建/重串的關聯數, "already": 已串到目標 root 而跳過數}
+        """
+        cases = [c for c in (self._case_repo.get_by_id(cid) for cid in case_ids) if c]
+        if len(cases) < 2:
+            return {"linked": 0, "already": 0}
+
+        sorted_cases = sorted(cases, key=lambda c: (c.sent_time or "", c.case_id))
+        root = self._tracker._find_root(sorted_cases[0])
+
+        linked = 0
+        already = 0
+        for case in sorted_cases:
+            if case.case_id == root.case_id:
+                continue
+            if case.linked_case_id == root.case_id:
+                already += 1
+                continue
+            # 已串到別處 → 先清掉舊串接，再讓 link_to_parent 重新設
+            if case.linked_case_id:
+                case.linked_case_id = None
+                self._case_repo.update(case)
+            self._tracker.link_to_parent(case.case_id, root.case_id)
+            linked += 1
+        return {"linked": linked, "already": already}
 
     def reopen_case(self, case_id: str, reason: str = "") -> None:
         """Reopen a replied case back to processing.

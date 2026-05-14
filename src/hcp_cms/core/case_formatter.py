@@ -1,7 +1,9 @@
 """案件 header 格式化工具 — 對齊客服專區提問格式。
 
 範例：
-    "2026/5/4 (週一) 下午 04:46【欣興】加班取小值確認"
+    "2026/5/4 (週一) 下午 04:46 加班取小值確認"
+    "2026/5/4 (週一) 下午 04:46 【景碩科技】班別津貼時薪計算評估"
+        （主旨本身有【】時原樣呈現，不再重複加公司名）
 
 使用場景：
     - MantisPushManager 推送 ticket summary
@@ -22,18 +24,21 @@ _SUPPORTED_FORMATS = (
 )
 
 
-def format_case_header(case: Case, company_name: str | None) -> str:
+def format_case_header(case: Case) -> str:
     """格式化案件 header。
+
+    主旨優先策略：不再前加【公司名】，主旨本身的內容（含可能的【公司】前綴）
+    視為權威來源直接呈現。避免「【景碩科技股份有限公司】【景碩科技】...」
+    這類重複前綴的視覺冗餘。
 
     Args:
         case: 含 sent_time + subject 的案件
-        company_name: 公司名稱（caller 從 CompanyRepository 查好傳入）
 
     Returns:
-        例如 "2026/5/4 (週一) 下午 04:46【欣興】加班取小值確認"
+        例如 "2026/5/4 (週一) 下午 04:46 加班取小值確認"
 
     Raises:
-        ValueError: sent_time / company_name / subject 任一缺漏或無法解析
+        ValueError: sent_time / subject 任一缺漏或無法解析
     """
     if not case.sent_time:
         raise ValueError("sent_time is empty")
@@ -41,9 +46,6 @@ def format_case_header(case: Case, company_name: str | None) -> str:
     dt = _parse_sent_time(case.sent_time)
     if dt is None:
         raise ValueError(f"sent_time is not a parseable format: {case.sent_time!r}")
-
-    if not company_name:
-        raise ValueError("company_name is required")
 
     if not case.subject:
         raise ValueError("subject is empty")
@@ -58,7 +60,7 @@ def format_case_header(case: Case, company_name: str | None) -> str:
     hour_12 = dt.hour % 12 if (dt.hour % 12) else 12
     time_part = f"{hour_12:02d}:{dt.minute:02d}"
 
-    return f"{date_part} ({weekday}) {ampm} {time_part}【{company_name}】{clean_subject}"
+    return f"{date_part} ({weekday}) {ampm} {time_part} {clean_subject}"
 
 
 def _parse_sent_time(s: str) -> datetime | None:
