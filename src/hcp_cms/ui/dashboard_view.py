@@ -177,6 +177,38 @@ class DashboardView(QWidget):
             QMessageBox.information(self, "發送警示", "未勾選任何案件。")
             return
 
+        # 依 handler_email 分組（先算清楚要寄幾封給誰）
+        groups: dict[str, list[dict]] = {}
+        for c in selected:
+            email = c.get("handler_email")
+            if not email:
+                continue
+            groups.setdefault(email, []).append(c)
+
+        if not groups:
+            QMessageBox.warning(self, "發送警示", "勾選的案件都沒有 handler email，無法發送。")
+            return
+
+        # 二次確認 — 預覽收件人 + 件數，避免誤觸
+        preview_lines = [
+            f"  • {email}（{len(cases)} 件案件）"
+            for email, cases in groups.items()
+        ]
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle("確認發送警示通知")
+        msg_box.setIcon(QMessageBox.Icon.Warning)
+        msg_box.setText(
+            f"即將寄出 {len(groups)} 封 email 給以下收件人，涵蓋 {len(selected)} 件案件：\n\n"
+            + "\n".join(preview_lines)
+            + "\n\n確定要發送嗎？"
+        )
+        msg_box.setStandardButtons(
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        msg_box.setDefaultButton(QMessageBox.StandardButton.No)
+        if msg_box.exec() != QMessageBox.StandardButton.Yes:
+            return
+
         # 連線 Exchange（沿用既有 keyring 帳密）
         from hcp_cms.services.credential import CredentialManager
         from hcp_cms.services.mail.exchange import ExchangeProvider
@@ -201,14 +233,6 @@ class DashboardView(QWidget):
                 "無法連線 Exchange，請檢查設定與網路。"
             )
             return
-
-        # 依 handler_email 分組，每組一封 email
-        groups: dict[str, list[dict]] = {}
-        for c in selected:
-            email = c.get("handler_email")
-            if not email:
-                continue
-            groups.setdefault(email, []).append(c)
 
         ok = 0
         fail = 0

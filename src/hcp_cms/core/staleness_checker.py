@@ -17,6 +17,7 @@ from datetime import datetime, timedelta
 from hcp_cms.data.repositories import (
     CaseLogRepository,
     CaseRepository,
+    CompanyRepository,
     StaffRepository,
 )
 
@@ -78,6 +79,7 @@ class StalenessChecker:
         self._case_repo = CaseRepository(conn)
         self._log_repo = CaseLogRepository(conn)
         self._staff_repo = StaffRepository(conn)
+        self._company_repo = CompanyRepository(conn)
         self._now = now or datetime.now()
 
     def find_stale_cases(self, threshold_hours: float = 48.0) -> list[dict]:
@@ -90,6 +92,8 @@ class StalenessChecker:
             list of {
                 "case_id": str,
                 "subject": str | None,
+                "company_id": str | None,
+                "company_name": str | None,
                 "handler": str | None,
                 "handler_email": str | None,
                 "last_hcp_reply": str,
@@ -102,6 +106,12 @@ class StalenessChecker:
         # 建 handler 名稱 → email 對照（一次查 staff 表，避免每筆 case 重複查）
         all_staff = self._staff_repo.list_all() if hasattr(self._staff_repo, "list_all") else []
         name_to_email: dict[str, str] = {s.name: s.email for s in all_staff}
+
+        # 建 company_id → name 對照（一次查 companies 表）
+        all_companies = (
+            self._company_repo.list_all() if hasattr(self._company_repo, "list_all") else []
+        )
+        company_id_to_name: dict[str, str] = {c.company_id: c.name for c in all_companies}
 
         for case in cases:
             last_hcp = self._find_latest_hcp_reply(case.case_id)
@@ -119,9 +129,14 @@ class StalenessChecker:
             handler_email = (
                 name_to_email.get(case.handler) if case.handler else None
             )
+            company_name = (
+                company_id_to_name.get(case.company_id) if case.company_id else None
+            )
             results.append({
                 "case_id": case.case_id,
                 "subject": case.subject,
+                "company_id": case.company_id,
+                "company_name": company_name,
                 "handler": case.handler,
                 "handler_email": handler_email,
                 "last_hcp_reply": last_hcp.logged_at,

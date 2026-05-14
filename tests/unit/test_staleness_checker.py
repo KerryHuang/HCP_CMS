@@ -9,10 +9,11 @@ from hcp_cms.core.staleness_checker import (
     business_hours_between,
 )
 from hcp_cms.data.database import DatabaseManager
-from hcp_cms.data.models import Case, CaseLog, Staff
+from hcp_cms.data.models import Case, CaseLog, Company, Staff
 from hcp_cms.data.repositories import (
     CaseLogRepository,
     CaseRepository,
+    CompanyRepository,
     StaffRepository,
 )
 
@@ -80,14 +81,20 @@ def db(tmp_path: Path):
     StaffRepository(db.connection).insert(
         Staff(staff_id="S-JILL", name="JILL", email="jill@test.com", role="cs")
     )
+    CompanyRepository(db.connection).insert(
+        Company(company_id="CO-ASE", name="日月光", domain="aseglobal.com")
+    )
     yield db
     db.close()
 
 
-def _insert_case(conn, case_id: str, status: str, handler: str, sent_time: str) -> None:
+def _insert_case(
+    conn, case_id: str, status: str, handler: str, sent_time: str,
+    company_id: str | None = None,
+) -> None:
     CaseRepository(conn).insert(Case(
         case_id=case_id, subject=f"案件 {case_id}", status=status,
-        handler=handler, sent_time=sent_time,
+        handler=handler, sent_time=sent_time, company_id=company_id,
     ))
 
 
@@ -199,3 +206,32 @@ def test_case_without_handler_excluded_from_email_target(db) -> None:
     assert len(results) == 1
     assert results[0]["handler"] is None
     assert results[0]["handler_email"] is None
+
+
+def test_result_includes_company_info(db) -> None:
+    """超時案件結果應含 company_id 與 company_name（公司資訊欄）。"""
+    _insert_case(
+        db.connection, "C-WITH-CO", "處理中", "YOGA", "2026/05/01 09:00:00",
+        company_id="CO-ASE",
+    )
+    _insert_log(db.connection, "C-WITH-CO", "HCP 信件回覆", "2026/05/01 09:00:00")
+    now = datetime(2026, 5, 14, 9, 0)
+    checker = StalenessChecker(db.connection, now=now)
+    results = checker.find_stale_cases(threshold_hours=48)
+
+    assert len(results) == 1
+    assert results[0]["company_id"] == "CO-ASE"
+    assert results[0]["company_name"] == "日月光"
+
+
+def test_result_includes_company_none_when_unset(db) -> None:
+    """case.company_id 為 None → company_id/company_name 都是 None。"""
+    _insert_case(db.connection, "C-NOCO", "處理中", "YOGA", "2026/05/01 09:00:00")
+    _insert_log(db.connection, "C-NOCO", "HCP 信件回覆", "2026/05/01 09:00:00")
+    now = datetime(2026, 5, 14, 9, 0)
+    checker = StalenessChecker(db.connection, now=now)
+    results = checker.find_stale_cases(threshold_hours=48)
+
+    assert len(results) == 1
+    assert results[0]["company_id"] is None
+    assert results[0]["company_name"] is None
