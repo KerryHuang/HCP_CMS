@@ -28,20 +28,13 @@ _UNIMICRON_DISCLAIMER = re.compile(
     re.IGNORECASE,
 )
 
-# 通用 Email Confidentiality Notice（Kinsus/Phoenix Silicon 等）：
-# 起始 ***** Email Confidentiality Notice *****，結束於 Copyright ... All Rights Reserved
+# 通用 Email Confidentiality Notice（Kinsus / Phoenix Silicon 等）：
+# header 允許前後各 0+ 顆星號（實際資料三種變體都見過：前後皆有、僅後有、皆無）
+# 結束於 Copyright ... All Rights Reserved（再選擇性吃掉尾巴的星號）
 _EMAIL_DISCLAIMER = re.compile(
-    r"\*{3,}\s*Email\s+Confidentiality\s+Notice\s*\*+"
+    r"\**\s*Email\s+Confidentiality\s+Notice\s*\**"
     r"[\s\S]*?"
     r"Copyright[^\n]*All\s+Rights\s+Reserved\.?\s*\**",
-    re.IGNORECASE,
-)
-
-# 通用 Email Confidentiality Notice — 無前後星號的退階版本（使用者實際樣本）
-_EMAIL_DISCLAIMER_NO_STARS = re.compile(
-    r"Email\s+Confidentiality\s+Notice\s*\n"
-    r"[\s\S]*?"
-    r"Copyright[^\n]*All\s+Rights\s+Reserved\.?",
     re.IGNORECASE,
 )
 
@@ -55,7 +48,6 @@ _PATTERNS = (
     _ASE_DISCLAIMER,
     _UNIMICRON_DISCLAIMER,
     _EMAIL_DISCLAIMER,
-    _EMAIL_DISCLAIMER_NO_STARS,
     _ATTACHMENT_DELETED,
 )
 

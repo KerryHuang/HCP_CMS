@@ -215,3 +215,39 @@ def test_real_world_sample_kinsus_with_attachment_marker() -> None:
     assert "Confidentiality" not in cleaned
     assert "Copyright" not in cleaned
     assert "[附件檔" not in cleaned
+
+
+def test_email_disclaimer_stars_after_only() -> None:
+    """變體：header `Email Confidentiality Notice *****`（stars 只在後面）。
+
+    使用者實際資料的常見格式，前面沒有 stars。
+    """
+    body = (
+        "客戶來信內文\n"
+        "\n"
+        "Email Confidentiality Notice *****\n"
+        "This electronic message and any attachments are confidential and may be\n"
+        "legally privileged or otherwise protected from disclosure.\n"
+        "Copyright Kinsus Interconnect Technology Corp. 2017 - All Rights Reserved.\n"
+    )
+    cleaned = clean_email_body(body)
+    assert "客戶來信內文" in cleaned
+    assert "Confidentiality" not in cleaned
+    assert "Copyright" not in cleaned
+
+
+def test_email_disclaimer_three_consecutive_copies_with_stars_after() -> None:
+    """使用者實測樣本：3 段連續 disclaimer（轉寄鏈累積）→ 全部移除。"""
+    block = (
+        "Email Confidentiality Notice *****\n"
+        "This electronic message and any attachments are confidential and may be\n"
+        "legally privileged or otherwise protected from disclosure.\n"
+        "We greatly appreciate your cooperation.\n"
+        "Copyright Kinsus Interconnect Technology Corp. 2017 - All Rights Reserved.\n"
+    )
+    body = "正文\n\n" + block + "\n" + block + "\n" + block
+    cleaned = clean_email_body(body)
+    assert "正文" in cleaned
+    assert "Confidentiality" not in cleaned
+    assert "Copyright" not in cleaned
+    assert cleaned.count("Email") == 0  # 3 段都清掉
