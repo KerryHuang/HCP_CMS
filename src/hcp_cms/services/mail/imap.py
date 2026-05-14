@@ -306,6 +306,10 @@ class IMAPProvider(MailProvider):
         raw_to = msg.get("To", "")
         to_recipients = [addr for _, addr in getaddresses([raw_to]) if addr]
 
+        # 解析副本 Cc（同集團多 domain 客戶常出現在 Cc）
+        raw_cc = msg.get("Cc", "")
+        cc_recipients = [addr for _, addr in getaddresses([raw_cc]) if addr]
+
         # 日期格式化為 yyyy/mm/dd HH:MM:SS
         raw_date = msg.get("Date", "")
         date_str = raw_date
@@ -327,4 +331,5 @@ class IMAPProvider(MailProvider):
             in_reply_to=msg.get("In-Reply-To"),
             references=msg.get("References"),
             to_recipients=to_recipients,
+            cc_recipients=cc_recipients,
         )

@@ -45,6 +45,33 @@ class TestCaseManager:
         assert case.error_type == "薪資獎金計算"
         assert case.company_id == "C-ASE"
 
+    def test_create_case_resolves_company_from_cc(self, seeded_db):
+        """我方寄出、to 為未登記 domain，但 cc 是已登記公司 → 應自動帶入公司。"""
+        mgr = CaseManager(seeded_db.connection)
+        case = mgr.create_case(
+            subject="RE: 問題",
+            body="已處理",
+            sender_email="hcpservice@ares.com.tw",
+            to_recipients=["unknown@unregistered-domain.com"],
+            cc_recipients=["partner@aseglobal.com"],
+            sent_time="2026/03/20 09:00",
+        )
+        assert case.company_id == "C-ASE"
+
+    def test_import_email_resolves_company_from_cc(self, seeded_db):
+        """import_email：我方寄出、to 未登記、cc 已登記 → 應抓到公司並建案。"""
+        mgr = CaseManager(seeded_db.connection)
+        case, action = mgr.import_email(
+            subject="RE: 問題 from cc",
+            body="本文",
+            sender_email="hcpservice@ares.com.tw",
+            to_recipients=["x@unregistered.com"],
+            cc_recipients=["partner@aseglobal.com"],
+            sent_time="2026/03/20 09:00",
+        )
+        assert case is not None
+        assert case.company_id == "C-ASE"
+
     def test_mark_replied(self, seeded_db):
         mgr = CaseManager(seeded_db.connection)
         case = mgr.create_case(subject="Test", body="body")

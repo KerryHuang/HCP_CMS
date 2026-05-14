@@ -53,13 +53,16 @@ class EmailJob:
             subject=msg.subject,
             body=msg.body,
             sender_email=msg.sender,
-            to_recipients=[],
+            to_recipients=msg.to_recipients,
+            cc_recipients=msg.cc_recipients,
         )
 
         case = self._case_mgr.create_case(
             subject=msg.subject,
             body=msg.body,
             sender_email=msg.sender,
+            to_recipients=msg.to_recipients,
+            cc_recipients=msg.cc_recipients,
             sent_time=msg.date,
             message_id=msg.message_id,
             in_reply_to=msg.in_reply_to,

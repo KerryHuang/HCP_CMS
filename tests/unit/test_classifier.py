@@ -281,3 +281,95 @@ class TestClassifierOurSideSender:
             to_recipients=["hcpservice@ares.com.tw"],
         )
         assert result["company_id"] == "C-ASE"
+
+
+class TestClassifierCcFallback:
+    """to_recipients 找不到已登記公司時，回退到 cc_recipients 中尋找。"""
+
+    def test_our_side_to_unknown_cc_known_uses_cc(self, seeded_db):
+        """我方寄件，to 是未登記 domain，cc 是已登記公司 → 用 cc 找到公司。"""
+        c = Classifier(seeded_db.connection)
+        result = c.classify(
+            "RE: 問題",
+            "body",
+            sender_email="hcpservice@ares.com.tw",
+            to_recipients=["customer@unregistered-domain.com"],
+            cc_recipients=["someone@aseglobal.com"],
+        )
+        assert result["company_id"] == "C-ASE"
+        assert result["company_display"] == "日月光集團"
+
+    def test_our_side_to_known_cc_other_uses_to(self, seeded_db):
+        """我方寄件，to 已找到已登記公司時，cc 不應覆寫 to 的結果。"""
+        c = Classifier(seeded_db.connection)
+        result = c.classify(
+            "RE: 問題",
+            "body",
+            sender_email="hcpservice@ares.com.tw",
+            to_recipients=["user@aseglobal.com"],
+            cc_recipients=["other@unimicron.com"],
+        )
+        assert result["company_id"] == "C-ASE"
+
+    def test_our_side_to_empty_cc_known_uses_cc(self, seeded_db):
+        """我方寄件，to 為空、cc 是已登記公司 → 用 cc。"""
+        c = Classifier(seeded_db.connection)
+        result = c.classify(
+            "RE: 問題",
+            "body",
+            sender_email="hcpservice@ares.com.tw",
+            to_recipients=[],
+            cc_recipients=["someone@aseglobal.com"],
+        )
+        assert result["company_id"] == "C-ASE"
+
+    def test_our_side_to_and_cc_unknown_returns_none(self, seeded_db):
+        """我方寄件，to/cc 都不是已登記公司 → company_id 為 None。"""
+        c = Classifier(seeded_db.connection)
+        result = c.classify(
+            "RE: 問題",
+            "body",
+            sender_email="hcpservice@ares.com.tw",
+            to_recipients=["x@unknown-a.com"],
+            cc_recipients=["y@unknown-b.com"],
+        )
+        assert result["company_id"] is None
+
+    def test_external_sender_unknown_cc_known_uses_cc(self, seeded_db):
+        """外部寄件人 domain 未登記，但 cc 有已登記公司 → 用 cc。
+
+        典型情境：同集團多 domain，主要聯絡人從未登記 domain 寄信，
+        Cc 上另一位同事是已登記 domain。
+        """
+        c = Classifier(seeded_db.connection)
+        result = c.classify(
+            "問題",
+            "body",
+            sender_email="user@unregistered-domain.com",
+            to_recipients=["hcpservice@ares.com.tw"],
+            cc_recipients=["colleague@aseglobal.com"],
+        )
+        assert result["company_id"] == "C-ASE"
+
+    def test_external_sender_known_cc_other_uses_sender(self, seeded_db):
+        """外部寄件人已是已登記公司時，cc 不應覆寫 sender 的結果。"""
+        c = Classifier(seeded_db.connection)
+        result = c.classify(
+            "問題",
+            "body",
+            sender_email="user@aseglobal.com",
+            to_recipients=["hcpservice@ares.com.tw"],
+            cc_recipients=["other@unimicron.com"],
+        )
+        assert result["company_id"] == "C-ASE"
+
+    def test_cc_recipients_default_none_is_safe(self, seeded_db):
+        """未傳入 cc_recipients 時（None 或省略），行為與修改前一致。"""
+        c = Classifier(seeded_db.connection)
+        result = c.classify(
+            "問題",
+            "body",
+            sender_email="user@aseglobal.com",
+            to_recipients=["hcpservice@ares.com.tw"],
+        )
+        assert result["company_id"] == "C-ASE"
