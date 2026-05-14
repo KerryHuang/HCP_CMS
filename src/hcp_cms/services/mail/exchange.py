@@ -123,3 +123,34 @@ class ExchangeProvider(MailProvider):
             return True
         except Exception:
             return False
+
+    def send_email(
+        self,
+        to: list[str],
+        subject: str,
+        body: str,
+        cc: list[str] | None = None,
+    ) -> bool:
+        """直接寄送 email（不存草稿）。寄件者為當前認證帳號。
+
+        Returns:
+            True 寄送成功；False 寄送失敗（自我提醒/通知用，不做重試）。
+        """
+        if not self._account:
+            return False
+        try:
+            from exchangelib import Mailbox, Message
+            msg = Message(
+                account=self._account,
+                subject=subject,
+                body=body,
+                to_recipients=[Mailbox(email_address=addr) for addr in to],
+                cc_recipients=(
+                    [Mailbox(email_address=addr) for addr in cc] if cc else None
+                ),
+            )
+            # send_and_save 寄送同時保存於 Sent Items
+            msg.send_and_save()
+            return True
+        except Exception:
+            return False

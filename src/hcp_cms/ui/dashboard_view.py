@@ -8,7 +8,10 @@ from datetime import datetime
 from PySide6.QtWidgets import (
     QFrame,
     QGridLayout,
+    QHBoxLayout,
     QLabel,
+    QMessageBox,
+    QPushButton,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -16,6 +19,7 @@ from PySide6.QtWidgets import (
 )
 
 from hcp_cms.core.case_manager import CaseManager
+from hcp_cms.core.staleness_checker import StalenessChecker
 from hcp_cms.data.repositories import CaseRepository
 from hcp_cms.ui.theme import ColorPalette, ThemeManager
 
@@ -91,6 +95,18 @@ class DashboardView(QWidget):
         kpi_layout.addWidget(self._kpi_frt, 0, 3)
         layout.addLayout(kpi_layout)
 
+        # Action 區
+        action_row = QHBoxLayout()
+        self._staleness_btn = QPushButton("⏰ 檢查超時案件（>48 工時無 HCP 回覆）")
+        self._staleness_btn.setToolTip(
+            "找出處理中、超過 48 工作小時無 HCP 回覆的案件，"
+            "並透過 Exchange 寄送提醒給 handler。"
+        )
+        self._staleness_btn.clicked.connect(self._on_check_staleness)
+        action_row.addWidget(self._staleness_btn)
+        action_row.addStretch()
+        layout.addLayout(action_row)
+
         # Recent cases table
         self._recent_label = QLabel("最近案件")
         layout.addWidget(self._recent_label)
@@ -129,6 +145,102 @@ class DashboardView(QWidget):
                 self._table.setItem(i, 4, QTableWidgetItem(case.sent_time or ""))
         except Exception:
             pass
+
+    _STALENESS_THRESHOLD_HOURS = 48.0
+
+    def _on_check_staleness(self) -> None:
+        """檢查超時案件 → 顯示確認對話框 → 發送 email 提醒。"""
+        if not self._conn:
+            return
+
+        checker = StalenessChecker(self._conn)
+        stale = checker.find_stale_cases(threshold_hours=self._STALENESS_THRESHOLD_HOURS)
+
+        if not stale:
+            QMessageBox.information(
+                self, "檢查超時案件",
+                f"目前沒有超過 {int(self._STALENESS_THRESHOLD_HOURS)} 工作小時無 HCP 回覆的案件。"
+            )
+            return
+
+        # 預覽對話框
+        from hcp_cms.ui.staleness_dialog import StalenessReminderDialog
+        palette = self._theme_mgr.current_palette() if self._theme_mgr else None
+        dlg = StalenessReminderDialog(
+            stale, self._STALENESS_THRESHOLD_HOURS, parent=self, palette=palette,
+        )
+        if dlg.exec() != StalenessReminderDialog.DialogCode.Accepted:
+            return
+
+        selected = dlg.selected_cases()
+        if not selected:
+            QMessageBox.information(self, "發送提醒", "未勾選任何案件。")
+            return
+
+        # 連線 Exchange（沿用既有 keyring 帳密）
+        from hcp_cms.services.credential import CredentialManager
+        from hcp_cms.services.mail.exchange import ExchangeProvider
+
+        creds = CredentialManager()
+        server = creds.retrieve("mail_exchange_server") or ""
+        user = creds.retrieve("mail_exchange_user") or ""
+        pwd = creds.retrieve("mail_exchange_password") or ""
+        email_addr = creds.retrieve("mail_exchange_email") or user
+        if not all([user, pwd, email_addr]):
+            QMessageBox.warning(
+                self, "Exchange 設定不完整",
+                "請先到「系統設定」填寫 Exchange 帳號／密碼／信箱。"
+            )
+            return
+
+        provider = ExchangeProvider(server=server, email_address=email_addr)
+        provider.set_credentials(user, pwd)
+        if not provider.connect():
+            QMessageBox.critical(
+                self, "Exchange 連線失敗",
+                "無法連線 Exchange，請檢查設定與網路。"
+            )
+            return
+
+        # 依 handler_email 分組，每組一封 email
+        groups: dict[str, list[dict]] = {}
+        for c in selected:
+            email = c.get("handler_email")
+            if not email:
+                continue
+            groups.setdefault(email, []).append(c)
+
+        ok = 0
+        fail = 0
+        for handler_email, cases in groups.items():
+            subject, body = self._build_reminder_email(cases)
+            if provider.send_email(to=[handler_email], subject=subject, body=body):
+                ok += 1
+            else:
+                fail += 1
+
+        QMessageBox.information(
+            self, "發送提醒完成",
+            f"✓ 成功 {ok} 封 / ✗ 失敗 {fail} 封\n"
+            f"涵蓋 {len(selected)} 件案件"
+        )
+
+    @staticmethod
+    def _build_reminder_email(cases: list[dict]) -> tuple[str, str]:
+        """組裝提醒 email 的 subject 與 body。"""
+        subject = f"[HCP CMS] 超時案件提醒：{len(cases)} 件待追蹤"
+
+        lines = [
+            f"您有 {len(cases)} 件案件已超過 48 工作小時無 HCP 回覆，請追蹤：",
+            "",
+        ]
+        for i, c in enumerate(cases, 1):
+            lines.append(f"{i}. {c['case_id']}  {c.get('subject') or ''}")
+            lines.append(f"   最後 HCP 回覆：{c['last_hcp_reply']}")
+            lines.append(f"   距今工作時數：{c['hours_since_last_reply']:.1f} 小時")
+            lines.append("")
+        lines.append("—— 由 HCP CMS 自動產生（請勿直接回覆此信）")
+        return subject, "\n".join(lines)
 
     def _apply_theme(self, p: ColorPalette) -> None:
         """套用主題色彩。"""

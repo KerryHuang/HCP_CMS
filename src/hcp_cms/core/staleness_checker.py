@@ -1,0 +1,139 @@
+"""超時案件檢查 — 找處理中但 HCP 太久未回覆的案件。
+
+用途：避免 HCP 端忘記追蹤的客戶案件。
+規則：
+- 只看 status = '處理中' 的案件
+- 計時起點：最後一筆 direction in ('HCP 信件回覆', 'HCP 線上回覆') 的 case_log
+- 計時方式：工作時數（週一至週五全天，週六/週日不計）
+- 完全沒 HCP 回覆的案件不列入（屬「首次回應 SLA」範疇，另案處理）
+
+⚠ 已知限制：只排除週末，不排除國定假日。若有需要可後續加 holiday calendar。
+"""
+from __future__ import annotations
+
+import sqlite3
+from datetime import datetime, timedelta
+
+from hcp_cms.data.repositories import (
+    CaseLogRepository,
+    CaseRepository,
+    StaffRepository,
+)
+
+_HCP_DIRECTIONS = ("HCP 信件回覆", "HCP 線上回覆")
+_DT_FORMATS = ("%Y/%m/%d %H:%M:%S", "%Y/%m/%d %H:%M")
+
+
+def business_hours_between(start: datetime, end: datetime) -> float:
+    """計算兩個時間點之間的工作時數（週六/週日不計）。
+
+    週一至週五的時間都算（不限工作時間 9-18），週六/週日完全跳過。
+
+    Args:
+        start: 起始時間
+        end: 結束時間
+
+    Returns:
+        工作時數（float，可帶小數）；end <= start 時回傳 0.0
+    """
+    if start >= end:
+        return 0.0
+
+    total = 0.0
+    current = start
+    while current < end:
+        # 該日的隔天 00:00
+        next_day = (
+            current.replace(hour=0, minute=0, second=0, microsecond=0)
+            + timedelta(days=1)
+        )
+        period_end = min(next_day, end)
+        # weekday(): 0=Mon, ..., 4=Fri, 5=Sat, 6=Sun
+        if current.weekday() < 5:
+            total += (period_end - current).total_seconds() / 3600
+        current = period_end
+    return total
+
+
+def _parse_dt(s: str) -> datetime | None:
+    """寬鬆解析 YYYY/MM/DD HH:MM 或 YYYY/MM/DD HH:MM:SS。"""
+    if not s:
+        return None
+    for fmt in _DT_FORMATS:
+        try:
+            return datetime.strptime(s[:19], fmt)
+        except ValueError:
+            continue
+    return None
+
+
+class StalenessChecker:
+    """檢查處理中案件是否超過閾值未有 HCP 回覆。"""
+
+    def __init__(
+        self,
+        conn: sqlite3.Connection,
+        now: datetime | None = None,
+    ) -> None:
+        self._case_repo = CaseRepository(conn)
+        self._log_repo = CaseLogRepository(conn)
+        self._staff_repo = StaffRepository(conn)
+        self._now = now or datetime.now()
+
+    def find_stale_cases(self, threshold_hours: float = 48.0) -> list[dict]:
+        """找出超時案件清單。
+
+        Args:
+            threshold_hours: 工作時數閾值（預設 48 小時）
+
+        Returns:
+            list of {
+                "case_id": str,
+                "subject": str | None,
+                "handler": str | None,
+                "handler_email": str | None,
+                "last_hcp_reply": str,
+                "hours_since_last_reply": float,
+            }
+        """
+        results: list[dict] = []
+        cases = self._case_repo.list_by_status("處理中")
+
+        # 建 handler 名稱 → email 對照（一次查 staff 表，避免每筆 case 重複查）
+        all_staff = self._staff_repo.list_all() if hasattr(self._staff_repo, "list_all") else []
+        name_to_email: dict[str, str] = {s.name: s.email for s in all_staff}
+
+        for case in cases:
+            last_hcp = self._find_latest_hcp_reply(case.case_id)
+            if last_hcp is None:
+                continue  # 無 HCP 回覆 → 屬首次回應 SLA，跳過
+
+            last_dt = _parse_dt(last_hcp.logged_at)
+            if last_dt is None:
+                continue
+
+            hours = business_hours_between(last_dt, self._now)
+            if hours <= threshold_hours:
+                continue
+
+            handler_email = (
+                name_to_email.get(case.handler) if case.handler else None
+            )
+            results.append({
+                "case_id": case.case_id,
+                "subject": case.subject,
+                "handler": case.handler,
+                "handler_email": handler_email,
+                "last_hcp_reply": last_hcp.logged_at,
+                "hours_since_last_reply": hours,
+            })
+        return results
+
+    def _find_latest_hcp_reply(self, case_id: str):
+        """取案件最後一筆 HCP direction 的 case_log。"""
+        logs = self._log_repo.list_by_case(case_id)
+        hcp_logs = [lg for lg in logs if lg.direction in _HCP_DIRECTIONS]
+        if not hcp_logs:
+            return None
+        # list_by_case 為 logged_at ASC，取最後一筆即最新
+        return hcp_logs[-1]
