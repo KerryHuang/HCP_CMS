@@ -17,7 +17,6 @@ from hcp_cms.data.repositories import (
     CaseLogRepository,
     CaseMantisRepository,
     CaseRepository,
-    CompanyRepository,
     MantisRepository,
 )
 from hcp_cms.services.mantis.base import MantisClient
@@ -45,7 +44,6 @@ class MantisPushManager:
         self._link_repo = CaseMantisRepository(conn)
         self._log_repo = CaseLogRepository(conn)
         self._mantis_repo = MantisRepository(conn)
-        self._company_repo = CompanyRepository(conn)
         self._auditor = AuditLogger(conn)
 
     # ---- 模式 (a) 單筆建新 ticket ----
@@ -72,13 +70,9 @@ class MantisPushManager:
                 f"案件已連結 Mantis ticket #{existing_links[0].ticket_id}，請改用 push_as_bugnote",
             )
 
-        # 取公司名稱（format_case_header 需要）
-        company = self._company_repo.get_by_id(case.company_id) if case.company_id else None
-        company_name = company.name if company else None
-
         # 格式化 summary（缺漏會拋 ValueError）
         try:
-            summary = format_case_header(case, company_name)
+            summary = format_case_header(case)
         except ValueError as e:
             return False, f"案件格式不完整：{e}"
 
@@ -209,13 +203,9 @@ class MantisPushManager:
 
     def _build_bugnote_text(self, case: Case) -> str:
         """組裝 bugnote 文字：第一行用 format_case_header（失敗則 fallback 舊格式）。"""
-        # 取公司名稱
-        company = self._company_repo.get_by_id(case.company_id) if case.company_id else None
-        company_name = company.name if company else None
-
         # 嘗試新格式 header，失敗 fallback 舊格式（bugnote 容忍度高，已有 ticket）
         try:
-            header = format_case_header(case, company_name)
+            header = format_case_header(case)
         except ValueError:
             header = f"[HCP-CMS: {case.case_id}] 更新"
 
