@@ -733,3 +733,107 @@ class TestImportEmail:
         assert len(logs) == 2
         # Should be "2026/03/02 10:30:45" NOT "2026/03/02 10:30:45:00"
         assert logs[-1].logged_at == "2026/03/02 10:30:45"
+
+
+class TestManualLinkCases:
+    """手動串接案件（任選兩筆以上，最早當 root）。
+
+    主要用於 subjects_match 因主旨中段差異無法自動匹配的情境。
+    """
+
+    def test_link_two_cases_by_sent_time(self, seeded_db):
+        """兩筆案件：後建立者（sent_time 較晚）串接到先建立者。"""
+        mgr = CaseManager(seeded_db.connection)
+        repo = CaseRepository(seeded_db.connection)
+        early = mgr.create_case(subject="A", body="x", sent_time="2026/03/10 09:00")
+        late = mgr.create_case(subject="B", body="y", sent_time="2026/03/15 09:00")
+
+        result = mgr.manual_link_cases([late.case_id, early.case_id])
+
+        assert result == {"linked": 1, "skipped": 0}
+        assert repo.get_by_id(late.case_id).linked_case_id == early.case_id
+        assert repo.get_by_id(early.case_id).linked_case_id is None
+
+    def test_link_three_cases_all_point_to_earliest(self, seeded_db):
+        """三筆案件：全部串到最早，linked_case_id 都指向 root。"""
+        mgr = CaseManager(seeded_db.connection)
+        repo = CaseRepository(seeded_db.connection)
+        c1 = mgr.create_case(subject="A", body="x", sent_time="2026/03/10 09:00")
+        c2 = mgr.create_case(subject="B", body="y", sent_time="2026/03/12 09:00")
+        c3 = mgr.create_case(subject="C", body="z", sent_time="2026/03/15 09:00")
+
+        # 傳入順序刻意打亂，驗證內部會排序
+        result = mgr.manual_link_cases([c3.case_id, c1.case_id, c2.case_id])
+
+        assert result == {"linked": 2, "skipped": 0}
+        assert repo.get_by_id(c2.case_id).linked_case_id == c1.case_id
+        assert repo.get_by_id(c3.case_id).linked_case_id == c1.case_id
+
+    def test_skip_already_linked(self, seeded_db):
+        """已有 linked_case_id 的案件不重串，計入 skipped。"""
+        mgr = CaseManager(seeded_db.connection)
+        repo = CaseRepository(seeded_db.connection)
+        root = mgr.create_case(subject="Root", body="x", sent_time="2026/03/10 09:00")
+        child1 = mgr.create_case(subject="C1", body="y", sent_time="2026/03/12 09:00")
+        child2 = mgr.create_case(subject="C2", body="z", sent_time="2026/03/15 09:00")
+        # 預先把 child1 串到 root
+        mgr.manual_link_cases([child1.case_id, root.case_id])
+
+        # 重複呼叫應跳過 child1，僅串 child2
+        result = mgr.manual_link_cases([root.case_id, child1.case_id, child2.case_id])
+
+        assert result == {"linked": 1, "skipped": 1}
+        assert repo.get_by_id(child1.case_id).linked_case_id == root.case_id
+        assert repo.get_by_id(child2.case_id).linked_case_id == root.case_id
+
+    def test_increments_root_reply_count(self, seeded_db):
+        """串接後，root 的 reply_count 應依新串接的筆數累加。"""
+        mgr = CaseManager(seeded_db.connection)
+        repo = CaseRepository(seeded_db.connection)
+        root = mgr.create_case(subject="A", body="x", sent_time="2026/03/10 09:00")
+        c2 = mgr.create_case(subject="B", body="y", sent_time="2026/03/12 09:00")
+        c3 = mgr.create_case(subject="C", body="z", sent_time="2026/03/15 09:00")
+        # create_case 初始 reply_count=1
+        assert repo.get_by_id(root.case_id).reply_count == 1
+
+        mgr.manual_link_cases([root.case_id, c2.case_id, c3.case_id])
+
+        # root: 1 (初始) + 2 (兩筆串接) = 3
+        assert repo.get_by_id(root.case_id).reply_count == 3
+
+    def test_empty_or_single_case_is_noop(self, seeded_db):
+        """空 list 或單筆 → 安全回傳 0/0，不拋例外。"""
+        mgr = CaseManager(seeded_db.connection)
+        case = mgr.create_case(subject="A", body="x")
+
+        assert mgr.manual_link_cases([]) == {"linked": 0, "skipped": 0}
+        assert mgr.manual_link_cases([case.case_id]) == {"linked": 0, "skipped": 0}
+
+    def test_nonexistent_case_id_is_ignored(self, seeded_db):
+        """不存在的 case_id 安全略過，不影響其他案件串接。"""
+        mgr = CaseManager(seeded_db.connection)
+        repo = CaseRepository(seeded_db.connection)
+        early = mgr.create_case(subject="A", body="x", sent_time="2026/03/10 09:00")
+        late = mgr.create_case(subject="B", body="y", sent_time="2026/03/15 09:00")
+
+        result = mgr.manual_link_cases([early.case_id, late.case_id, "CS-9999-9999"])
+
+        assert result == {"linked": 1, "skipped": 0}
+        assert repo.get_by_id(late.case_id).linked_case_id == early.case_id
+
+    def test_link_to_existing_root_chain(self, seeded_db):
+        """若選的「最早」案件本身已串接到別人，應追溯到 root 而非當新 root。"""
+        mgr = CaseManager(seeded_db.connection)
+        repo = CaseRepository(seeded_db.connection)
+        real_root = mgr.create_case(subject="A", body="x", sent_time="2026/03/01 09:00")
+        mid = mgr.create_case(subject="B", body="y", sent_time="2026/03/10 09:00")
+        mgr.manual_link_cases([mid.case_id, real_root.case_id])
+        # 此時 mid.linked_case_id == real_root.case_id
+        new_case = mgr.create_case(subject="C", body="z", sent_time="2026/03/15 09:00")
+
+        # 選取 mid + new_case：mid 雖是兩者中較早，但已串到 real_root
+        # 應追溯 mid 的 root → real_root，把 new_case 串到 real_root
+        result = mgr.manual_link_cases([mid.case_id, new_case.case_id])
+
+        assert result["linked"] == 1
+        assert repo.get_by_id(new_case.case_id).linked_case_id == real_root.case_id

@@ -431,6 +431,35 @@ class CaseManager:
 
         return {"updated": updated, "merged": merged}
 
+    def manual_link_cases(self, case_ids: list[str]) -> dict[str, int]:
+        """手動串接多筆案件成一串 thread。
+
+        依 sent_time（再以 case_id）排序，最早當 root；若最早者本身已串到別人，
+        則追溯到實際 root。其餘案件以 link_to_parent 串接到 root。
+        已有 linked_case_id 的案件跳過（避免破壞既有串）。
+
+        Returns:
+            {"linked": 本次新建關聯數, "skipped": 已有關聯而跳過數}
+        """
+        cases = [c for c in (self._case_repo.get_by_id(cid) for cid in case_ids) if c]
+        if len(cases) < 2:
+            return {"linked": 0, "skipped": 0}
+
+        sorted_cases = sorted(cases, key=lambda c: (c.sent_time or "", c.case_id))
+        root = self._tracker._find_root(sorted_cases[0])
+
+        linked = 0
+        skipped = 0
+        for case in sorted_cases:
+            if case.case_id == root.case_id:
+                continue
+            if case.linked_case_id:
+                skipped += 1
+                continue
+            self._tracker.link_to_parent(case.case_id, root.case_id)
+            linked += 1
+        return {"linked": linked, "skipped": skipped}
+
     def reopen_case(self, case_id: str, reason: str = "") -> None:
         """Reopen a replied case back to processing.
 
