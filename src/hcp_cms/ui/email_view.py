@@ -808,6 +808,7 @@ class EmailView(QWidget):
                         body=email.body,
                         sender_email=email.sender,
                         to_recipients=email.to_recipients,
+                        cc_recipients=email.cc_recipients,
                         sent_time=str(email.date) if email.date else None,
                         source_filename=email.source_file,
                         progress_note=email.progress_note,

@@ -118,6 +118,7 @@ class CaseManager:
         body: str,
         sender_email: str = "",
         to_recipients: list[str] | None = None,
+        cc_recipients: list[str] | None = None,
         sent_time: str | None = None,
         source_filename: str | None = None,
         progress_note: str | None = None,
@@ -134,9 +135,10 @@ class CaseManager:
             (case, action) — action 為 'created' 或 'merged'
         """
         recipients = to_recipients or []
+        cc_list = cc_recipients or []
 
         # Find-or-Create：先以分類器取得 company_id
-        classification = self._classifier.classify(subject, body, sender_email, recipients)
+        classification = self._classifier.classify(subject, body, sender_email, recipients, cc_list)
         company_id = classification.get("company_id")
 
         # company_id 無法分類時，嘗試以 Mantis 票號找既有案件
@@ -223,6 +225,7 @@ class CaseManager:
             body=body,
             sender_email=sender_email,
             to_recipients=recipients,
+            cc_recipients=cc_list,
             sent_time=sent_time,
             source_filename=source_filename,
             progress_note=progress_note,
@@ -259,6 +262,7 @@ class CaseManager:
         body: str,
         sender_email: str = "",
         to_recipients: list[str] | None = None,
+        cc_recipients: list[str] | None = None,
         sent_time: str | None = None,
         contact_person: str | None = None,
         handler: str | None = None,
@@ -269,7 +273,9 @@ class CaseManager:
     ) -> Case:
         """Create a new case from email data, with auto-classification and thread detection."""
         # Classify
-        classification = self._classifier.classify(subject, body, sender_email, to_recipients or [])
+        classification = self._classifier.classify(
+            subject, body, sender_email, to_recipients or [], cc_recipients or []
+        )
 
         # 解析檔名標記（ISSUE#/RD handler/進度）優先於 email 主旨標記
         # 舊系統會將 ISSUE 前綴和 (RD_XXX)(進度) 加在 .msg 檔名中

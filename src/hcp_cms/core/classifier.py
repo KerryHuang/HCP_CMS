@@ -33,7 +33,14 @@ class Classifier:
         self._company_repo = CompanyRepository(conn)
         self._customer_mgr = CustomerManager(conn)
 
-    def classify(self, subject: str, body: str, sender_email: str = "", to_recipients: list[str] | None = None) -> dict:
+    def classify(
+        self,
+        subject: str,
+        body: str,
+        sender_email: str = "",
+        to_recipients: list[str] | None = None,
+        cc_recipients: list[str] | None = None,
+    ) -> dict:
         """
         Classify an email based on subject, body, and sender.
 
@@ -49,7 +56,9 @@ class Classifier:
 
         tags = self.parse_tags(subject)
 
-        company_id, company_display = self._resolve_company(sender_email, to_recipients or [])
+        company_id, company_display = self._resolve_company(
+            sender_email, to_recipients or [], cc_recipients or []
+        )
 
         # 解析 Mantis ISSUE 資訊（在 subject 中搜尋）
         mantis_ticket_id: str | None = None
@@ -186,18 +195,41 @@ class Classifier:
         return default
 
     def _resolve_company(
-        self, sender_email: str, to_recipients: list[str] | None = None
+        self,
+        sender_email: str,
+        to_recipients: list[str] | None = None,
+        cc_recipients: list[str] | None = None,
     ) -> tuple[str | None, str | None]:
-        """Resolve company from sender, or recipients if sender is our side."""
+        """Resolve company from sender, or recipients if sender is our side.
+
+        若主要來源（sender 或 to_recipients）查不到已登記公司，
+        會回退到 cc_recipients 中尋找已登記公司（同集團多 domain 情境）。
+        """
+        to_list = to_recipients or []
+        cc_list = cc_recipients or []
+
         # 判斷是否為我方寄件
         if sender_email and "@" in sender_email:
             _, addr = parseaddr(sender_email)
             sender_domain = addr.split("@")[1].lower() if "@" in addr else ""
             if sender_domain == OUR_DOMAIN or sender_domain.endswith(f".{OUR_DOMAIN}"):
-                # 我方寄件：委託公開方法從收件人解析公司
-                return self.resolve_external_company(to_recipients or [])
+                # 我方寄件：先看 to，沒找到已登記公司再看 cc
+                to_id, to_display = self.resolve_external_company(to_list)
+                if to_id:
+                    return to_id, to_display
+                cc_id, cc_display = self.resolve_external_company(cc_list)
+                if cc_id:
+                    return cc_id, cc_display
+                # 都查不到：保留 to 的 display fallback（既有行為）
+                return to_id, to_display
 
-        return self._lookup_by_email(sender_email)
+        # 外部寄件：先查 sender，無已登記公司再回退到 cc
+        sender_id, sender_display = self._lookup_by_email(sender_email)
+        if sender_id is None and cc_list:
+            cc_id, cc_display = self.resolve_external_company(cc_list)
+            if cc_id:
+                return cc_id, cc_display
+        return sender_id, sender_display
 
     def resolve_external_company(self, recipients: list[str]) -> tuple[str | None, str | None]:
         """從收件人列表中找第一個非我方地址，回傳其公司 (company_id, display)。

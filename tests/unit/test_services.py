@@ -33,6 +33,14 @@ class TestRawEmail:
         email = RawEmail()
         assert email.to_recipients == []
 
+    def test_raw_email_has_cc_recipients(self):
+        email = RawEmail(cc_recipients=["cc@foo.com", "cc2@bar.com"])
+        assert email.cc_recipients == ["cc@foo.com", "cc2@bar.com"]
+
+    def test_raw_email_cc_recipients_default_empty(self):
+        email = RawEmail()
+        assert email.cc_recipients == []
+
     def test_raw_email_has_html_body(self):
         email = RawEmail(html_body="<p>Hello</p>")
         assert email.html_body == "<p>Hello</p>"
@@ -125,6 +133,61 @@ class TestMSGReader:
         assert result is not None
         assert "user@customer.com" in result.to_recipients
         assert "other@customer.com" in result.to_recipients
+
+    def test_read_msg_file_parses_cc_recipients(self, tmp_path, monkeypatch):
+        """_read_msg_file 應解析 msg.cc 為 cc_recipients list。"""
+        import types
+
+        fake_msg = types.SimpleNamespace(
+            sender="hcpservice@ares.com.tw",
+            subject="回覆：問題",
+            body="已處理",
+            htmlBody=None,
+            date="2026/03/20 10:00",
+            attachments=[],
+            to="primary@customer.com",
+            cc="同事 <colleague@partner.com>; observer@partner.com",
+        )
+
+        def fake_message(path):
+            fake_msg.close = lambda: None
+            return fake_msg
+
+        import extract_msg
+
+        monkeypatch.setattr(extract_msg, "Message", fake_message)
+
+        result = MSGReader._read_msg_file(tmp_path / "test.msg")
+        assert result is not None
+        assert "colleague@partner.com" in result.cc_recipients
+        assert "observer@partner.com" in result.cc_recipients
+
+    def test_read_msg_file_cc_empty_when_missing(self, tmp_path, monkeypatch):
+        """msg.cc 屬性缺失時，cc_recipients 應為空 list（不應拋例外）。"""
+        import types
+
+        fake_msg = types.SimpleNamespace(
+            sender="user@customer.com",
+            subject="無 cc",
+            body="body",
+            htmlBody=None,
+            date=None,
+            attachments=[],
+            to="hcpservice@ares.com.tw",
+            # 無 cc 屬性
+        )
+
+        def fake_message(path):
+            fake_msg.close = lambda: None
+            return fake_msg
+
+        import extract_msg
+
+        monkeypatch.setattr(extract_msg, "Message", fake_message)
+
+        result = MSGReader._read_msg_file(tmp_path / "test.msg")
+        assert result is not None
+        assert result.cc_recipients == []
 
     def test_read_msg_file_parses_html_body(self, tmp_path, monkeypatch):
         """_read_msg_file 應將 msg.htmlBody bytes 解碼為 html_body str。"""
@@ -441,6 +504,40 @@ class TestIMAPProvider:
         assert "test@example.com" in result.sender
         # 應包含解碼後的中文名，不應保留 =?utf-8?B 格式
         assert "=?utf-8" not in result.sender
+
+    def test_parse_email_cc_recipients(self):
+        """Cc header 應解析為 cc_recipients list。"""
+        import email as email_mod
+
+        raw = (
+            "Subject: test\r\n"
+            "From: user@customer.com\r\n"
+            "To: hcpservice@ares.com.tw\r\n"
+            "Cc: \"GE Evergreen\" <cc1@partner.com>, cc2@partner.com\r\n"
+            "Date: Wed, 25 Mar 2026 09:30:00 +0800\r\n"
+            "\r\n"
+            "body"
+        )
+        msg = email_mod.message_from_string(raw)
+        result = IMAPProvider._parse_email(msg)
+        assert "cc1@partner.com" in result.cc_recipients
+        assert "cc2@partner.com" in result.cc_recipients
+
+    def test_parse_email_cc_missing_yields_empty(self):
+        """無 Cc header 時 cc_recipients 應為空 list。"""
+        import email as email_mod
+
+        raw = (
+            "Subject: test\r\n"
+            "From: user@customer.com\r\n"
+            "To: hcpservice@ares.com.tw\r\n"
+            "Date: Wed, 25 Mar 2026 09:30:00 +0800\r\n"
+            "\r\n"
+            "body"
+        )
+        msg = email_mod.message_from_string(raw)
+        result = IMAPProvider._parse_email(msg)
+        assert result.cc_recipients == []
 
 
 class TestExchangeProvider:

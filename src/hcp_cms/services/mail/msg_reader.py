@@ -293,6 +293,11 @@ class MSGReader(MailProvider):
             except (UnicodeDecodeError, UnicodeEncodeError, AttributeError):
                 pass
 
+        # ── 副本 Cc（同集團多 domain 客戶常出現在 Cc）──────────────────
+        raw_cc = MSGReader._safe_str(msg, "cc")
+        normalized_cc = raw_cc.replace(";", ",")
+        cc_recipients = [addr for _, addr in getaddresses([normalized_cc]) if addr]
+
         # ── HTML body（bytes → str，UTF-8 → cp950 fallback）───────────────
         html_body: str | None = None
         try:
@@ -352,6 +357,7 @@ class MSGReader(MailProvider):
             attachments=attachments,
             source_file=str(file_path),
             to_recipients=to_recipients,
+            cc_recipients=cc_recipients,
             html_body=html_body,
             thread_question=thread_question,
             thread_answer=thread_answer,

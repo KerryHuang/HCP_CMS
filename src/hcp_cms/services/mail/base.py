@@ -21,6 +21,7 @@ class RawEmail:
     attachments: list[str] = field(default_factory=list)
     source_file: str | None = None  # .msg filename if from file
     to_recipients: list[str] = field(default_factory=list)
+    cc_recipients: list[str] = field(default_factory=list)
     html_body: str | None = None
     thread_question: str | None = None  # 客戶問題段（清除 header 後，空字串轉 None）
     thread_answer: str | None = None  # HCPSERVICE 回覆段

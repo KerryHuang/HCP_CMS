@@ -7,6 +7,21 @@ from datetime import datetime
 from hcp_cms.services.mail.base import MailProvider, RawEmail
 
 
+def _mailboxes_to_addresses(mboxes) -> list[str]:
+    """將 exchangelib Mailbox 列表轉成 email 地址 list（不可用時返回空 list）。"""
+    if not mboxes:
+        return []
+    result: list[str] = []
+    for m in mboxes:
+        try:
+            addr = getattr(m, "email_address", None)
+            if addr:
+                result.append(str(addr))
+        except Exception:
+            continue
+    return result
+
+
 class ExchangeProvider(MailProvider):
     """Exchange Web Services mail connection via exchangelib."""
 
@@ -63,6 +78,8 @@ class ExchangeProvider(MailProvider):
                     date=str(item.datetime_received) if item.datetime_received else None,
                     message_id=item.message_id,
                     in_reply_to=item.in_reply_to,
+                    to_recipients=_mailboxes_to_addresses(getattr(item, "to_recipients", None)),
+                    cc_recipients=_mailboxes_to_addresses(getattr(item, "cc_recipients", None)),
                 ))
             return results
         except Exception:
@@ -82,6 +99,8 @@ class ExchangeProvider(MailProvider):
                     body=item.text_body or "",
                     date=str(item.datetime_received) if item.datetime_received else None,
                     message_id=item.message_id,
+                    to_recipients=_mailboxes_to_addresses(getattr(item, "to_recipients", None)),
+                    cc_recipients=_mailboxes_to_addresses(getattr(item, "cc_recipients", None)),
                 ))
             return results
         except Exception:
