@@ -146,6 +146,7 @@ class CaseView(QWidget):
             "🚨 超時 7 天以上",
             "🚨 超時 14 天以上",
             "🚨 超時 30 天以上",
+            "🚨 HCP 從未回覆",
             "❓ 未指派 handler",
             "📩 回覆 1 次（依客服分組）",
         ])
@@ -454,6 +455,8 @@ class CaseView(QWidget):
                 cases = repo.list_overdue(days=14)
             elif status_filter == "🚨 超時 30 天以上":
                 cases = repo.list_overdue(days=30)
+            elif status_filter == "🚨 HCP 從未回覆":
+                cases = repo.list_never_replied_by_hcp()
             elif status_filter == "❓ 未指派 handler":
                 cases = repo.list_unassigned()
             elif status_filter == "📩 回覆 1 次（依客服分組）":

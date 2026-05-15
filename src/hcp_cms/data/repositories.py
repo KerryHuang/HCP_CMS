@@ -478,6 +478,24 @@ class CaseRepository:
         ).fetchall()
         return [self._row_to_case(r) for r in rows]
 
+    def list_never_replied_by_hcp(self) -> list[Case]:
+        """查詢狀態為「處理中」且 case_logs 中沒有任何 HCP 回覆紀錄的案件。
+
+        HCP 回覆 = direction in ('HCP 信件回覆', 'HCP 線上回覆')。
+        用途：找出客戶來信但 HCP 從未回過的待處理案件，按 sent_time ASC（最舊在前）。
+        """
+        rows = self._conn.execute(
+            self._build_select()
+            + " WHERE status = '處理中'"
+            + " AND NOT EXISTS ("
+            + "   SELECT 1 FROM case_logs cl"
+            + "   WHERE cl.case_id = cs_cases.case_id"
+            + "   AND cl.direction IN ('HCP 信件回覆', 'HCP 線上回覆')"
+            + " )"
+            + " ORDER BY sent_time ASC, case_id ASC"
+        ).fetchall()
+        return [self._row_to_case(r) for r in rows]
+
     def list_by_handler(self, name: str) -> list[Case]:
         """大小寫不敏感比對 handler 欄位（容忍既有資料 jill / JILL / Jill 並存）。"""
         rows = self._conn.execute(

@@ -235,3 +235,133 @@ def test_result_includes_company_none_when_unset(db) -> None:
     assert len(results) == 1
     assert results[0]["company_id"] is None
     assert results[0]["company_name"] is None
+
+
+# ============= StalenessChecker.find_never_replied_cases =============
+
+
+def test_never_replied_finds_processing_case_without_any_hcp_reply(db) -> None:
+    """處理中 + 完全沒 HCP 回覆 + 超過閾值 → 應列出。"""
+    _insert_case(db.connection, "C-NR1", "處理中", "YOGA", "2026/05/01 09:00:00")
+    _insert_log(db.connection, "C-NR1", "客戶來信", "2026/05/01 09:00:00")
+    now = datetime(2026, 5, 14, 9, 0)  # 距 5/1 09:00 約 9 工作日
+    checker = StalenessChecker(db.connection, now=now)
+    results = checker.find_never_replied_cases(threshold_hours=48)
+
+    assert len(results) == 1
+    assert results[0]["case_id"] == "C-NR1"
+    assert results[0]["case_type"] == "no_reply"
+    assert results[0]["last_hcp_reply"] is None
+    assert results[0]["hours_since_last_reply"] > 48
+
+
+def test_never_replied_excludes_case_with_hcp_reply(db) -> None:
+    """處理中且**有**過 HCP 回覆 → 不算「從未回覆」，不列出。"""
+    _insert_case(db.connection, "C-HASREPLY", "處理中", "YOGA", "2026/05/01 09:00:00")
+    _insert_log(db.connection, "C-HASREPLY", "HCP 信件回覆", "2026/05/02 09:00:00")
+    now = datetime(2026, 5, 14, 9, 0)
+    checker = StalenessChecker(db.connection, now=now)
+
+    assert checker.find_never_replied_cases(threshold_hours=48) == []
+
+
+def test_never_replied_excludes_non_processing_status(db) -> None:
+    """status != 處理中 → 不列出。"""
+    for status in ("已回覆", "已完成", "Closed"):
+        cid = f"C-NR-{status}"
+        _insert_case(db.connection, cid, status, "YOGA", "2026/05/01 09:00:00")
+    now = datetime(2026, 5, 14, 9, 0)
+    checker = StalenessChecker(db.connection, now=now)
+
+    assert checker.find_never_replied_cases(threshold_hours=48) == []
+
+
+def test_never_replied_excludes_within_threshold(db) -> None:
+    """從未回覆但 sent_time 距今 < 閾值 → 不列出。"""
+    _insert_case(db.connection, "C-FRESH-NR", "處理中", "YOGA", "2026/05/13 09:00:00")
+    now = datetime(2026, 5, 14, 9, 0)  # 24h 後
+    checker = StalenessChecker(db.connection, now=now)
+
+    assert checker.find_never_replied_cases(threshold_hours=48) == []
+
+
+def test_never_replied_threshold_zero_lists_all(db) -> None:
+    """threshold=0 → 全部處理中且從未回覆都列出。"""
+    _insert_case(db.connection, "C-NR-A", "處理中", "YOGA", "2026/05/13 14:00:00")
+    _insert_case(db.connection, "C-NR-B", "處理中", "JILL", "2026/05/13 15:00:00")
+    now = datetime(2026, 5, 14, 9, 0)
+    checker = StalenessChecker(db.connection, now=now)
+    results = checker.find_never_replied_cases(threshold_hours=0)
+
+    case_ids = {r["case_id"] for r in results}
+    assert case_ids == {"C-NR-A", "C-NR-B"}
+
+
+def test_never_replied_skips_case_without_sent_time(db) -> None:
+    """sent_time 為 None → 無法計算工時，跳過。"""
+    _insert_case(db.connection, "C-NOTIME", "處理中", "YOGA", None)
+    now = datetime(2026, 5, 14, 9, 0)
+    checker = StalenessChecker(db.connection, now=now)
+
+    assert checker.find_never_replied_cases(threshold_hours=0) == []
+
+
+def test_stale_marked_overdue_type(db) -> None:
+    """find_stale_cases 結果的 case_type 為 'overdue'，與 no_reply 區分。"""
+    _insert_case(db.connection, "C-OVDU", "處理中", "YOGA", "2026/05/01 09:00:00")
+    _insert_log(db.connection, "C-OVDU", "HCP 信件回覆", "2026/05/05 09:00:00")
+    now = datetime(2026, 5, 14, 9, 0)
+    checker = StalenessChecker(db.connection, now=now)
+    results = checker.find_stale_cases(threshold_hours=48)
+
+    assert len(results) == 1
+    assert results[0]["case_type"] == "overdue"
+
+
+# ============= CaseRepository.list_never_replied_by_hcp =============
+
+
+def test_repo_list_never_replied_by_hcp_finds_processing_no_reply(db) -> None:
+    """處理中且完全沒 HCP 回覆 case_log → 列出。"""
+    _insert_case(db.connection, "C-R1", "處理中", "YOGA", "2026/05/01 09:00:00")
+    _insert_log(db.connection, "C-R1", "客戶來信", "2026/05/01 09:00:00")
+
+    repo = CaseRepository(db.connection)
+    cases = repo.list_never_replied_by_hcp()
+    case_ids = {c.case_id for c in cases}
+    assert "C-R1" in case_ids
+
+
+def test_repo_list_never_replied_by_hcp_excludes_with_hcp_log(db) -> None:
+    """有 HCP 信件回覆 / HCP 線上回覆 紀錄 → 不列入。"""
+    _insert_case(db.connection, "C-R2", "處理中", "YOGA", "2026/05/01 09:00:00")
+    _insert_log(db.connection, "C-R2", "HCP 信件回覆", "2026/05/02 09:00:00")
+    _insert_case(db.connection, "C-R3", "處理中", "YOGA", "2026/05/01 09:00:00")
+    _insert_log(db.connection, "C-R3", "HCP 線上回覆", "2026/05/02 09:00:00")
+
+    repo = CaseRepository(db.connection)
+    case_ids = {c.case_id for c in repo.list_never_replied_by_hcp()}
+    assert "C-R2" not in case_ids
+    assert "C-R3" not in case_ids
+
+
+def test_repo_list_never_replied_by_hcp_excludes_non_processing(db) -> None:
+    """status != 處理中 → 不列入。"""
+    for status in ("已回覆", "已完成", "Closed"):
+        _insert_case(db.connection, f"C-RX-{status}", status, "YOGA", "2026/05/01 09:00:00")
+
+    repo = CaseRepository(db.connection)
+    case_ids = {c.case_id for c in repo.list_never_replied_by_hcp()}
+    assert not any(cid.startswith("C-RX-") for cid in case_ids)
+
+
+def test_repo_list_never_replied_by_hcp_ordered_by_sent_time_asc(db) -> None:
+    """結果依 sent_time ASC（最舊在前），方便客服優先處理。"""
+    _insert_case(db.connection, "C-NEW", "處理中", "YOGA", "2026/05/10 09:00:00")
+    _insert_case(db.connection, "C-OLD", "處理中", "YOGA", "2026/05/01 09:00:00")
+    _insert_case(db.connection, "C-MID", "處理中", "YOGA", "2026/05/05 09:00:00")
+
+    repo = CaseRepository(db.connection)
+    cases = repo.list_never_replied_by_hcp()
+    ids = [c.case_id for c in cases]
+    assert ids == ["C-OLD", "C-MID", "C-NEW"]
