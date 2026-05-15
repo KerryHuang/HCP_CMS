@@ -68,6 +68,31 @@ def _parse_dt(s: str) -> datetime | None:
     return None
 
 
+_LOG_SUMMARY_MAX_LEN = 60
+
+
+def _extract_log_metadata(logs, fallback_inbound: str | None) -> tuple[str | None, str | None]:
+    """從 case_logs（依 logged_at ASC）取出兩個欄位給警示清單使用：
+
+    - last_customer_inbound_at：最近一筆「客戶來信」log 時間；無則用 fallback_inbound
+    - last_log_summary：最後一筆 log 的 "[方向] 內容前 60 字"；logs 為空則 None
+    """
+    customer_logs = [lg for lg in logs if lg.direction == "客戶來信"]
+    last_customer_inbound_at = (
+        customer_logs[-1].logged_at if customer_logs else fallback_inbound
+    )
+
+    if not logs:
+        return last_customer_inbound_at, None
+
+    last_log = logs[-1]
+    content = (last_log.content or "").strip().replace("\n", " ").replace("\r", " ")
+    if len(content) > _LOG_SUMMARY_MAX_LEN:
+        content = content[:_LOG_SUMMARY_MAX_LEN] + "…"
+    summary = f"[{last_log.direction}] {content}" if content else f"[{last_log.direction}]"
+    return last_customer_inbound_at, summary
+
+
 class StalenessChecker:
     """檢查處理中案件是否超過閾值未有 HCP 回覆。"""
 
@@ -89,16 +114,8 @@ class StalenessChecker:
             threshold_hours: 工作時數閾值（預設 48 小時）
 
         Returns:
-            list of {
-                "case_id": str,
-                "subject": str | None,
-                "company_id": str | None,
-                "company_name": str | None,
-                "handler": str | None,
-                "handler_email": str | None,
-                "last_hcp_reply": str,
-                "hours_since_last_reply": float,
-            }
+            list of dict（含 case_id / subject / company_* / handler* / case_type=overdue
+            / last_hcp_reply / hours_since_last_reply / last_customer_inbound_at / last_log_summary）
         """
         results: list[dict] = []
         cases = self._case_repo.list_by_status("處理中")
@@ -114,10 +131,12 @@ class StalenessChecker:
         company_id_to_name: dict[str, str] = {c.company_id: c.name for c in all_companies}
 
         for case in cases:
-            last_hcp = self._find_latest_hcp_reply(case.case_id)
-            if last_hcp is None:
+            # 一次取 logs，從同一份 list 找：最後 HCP 回覆、最後客戶來信、最後活動
+            logs = self._log_repo.list_by_case(case.case_id)  # logged_at ASC
+            hcp_logs = [lg for lg in logs if lg.direction in _HCP_DIRECTIONS]
+            if not hcp_logs:
                 continue  # 無 HCP 回覆 → 屬首次回應 SLA，跳過
-
+            last_hcp = hcp_logs[-1]
             last_dt = _parse_dt(last_hcp.logged_at)
             if last_dt is None:
                 continue
@@ -125,6 +144,10 @@ class StalenessChecker:
             hours = business_hours_between(last_dt, self._now)
             if hours <= threshold_hours:
                 continue
+
+            last_customer_inbound_at, last_log_summary = _extract_log_metadata(
+                logs, fallback_inbound=case.sent_time,
+            )
 
             handler_email = (
                 name_to_email.get(case.handler) if case.handler else None
@@ -142,6 +165,8 @@ class StalenessChecker:
                 "last_hcp_reply": last_hcp.logged_at,
                 "hours_since_last_reply": hours,
                 "case_type": "overdue",
+                "last_customer_inbound_at": last_customer_inbound_at,
+                "last_log_summary": last_log_summary,
             })
         return results
 
@@ -179,6 +204,11 @@ class StalenessChecker:
             if hours <= threshold_hours:
                 continue
 
+            logs = self._log_repo.list_by_case(case.case_id)
+            last_customer_inbound_at, last_log_summary = _extract_log_metadata(
+                logs, fallback_inbound=case.sent_time,
+            )
+
             handler_email = (
                 name_to_email.get(case.handler) if case.handler else None
             )
@@ -196,6 +226,8 @@ class StalenessChecker:
                 "hours_since_last_reply": hours,
                 "case_type": "no_reply",
                 "first_inbound_at": case.sent_time,
+                "last_customer_inbound_at": last_customer_inbound_at,
+                "last_log_summary": last_log_summary,
             })
         return results
 

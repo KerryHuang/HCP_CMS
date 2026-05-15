@@ -343,7 +343,12 @@ class DashboardView(QWidget):
                 lines.append(f"   ⚠ HCP 從未回覆（客戶來信：{first_in}）")
             else:
                 lines.append(f"   最後 HCP 回覆：{c.get('last_hcp_reply') or '—'}")
+            last_in = c.get("last_customer_inbound_at")
+            if last_in:
+                lines.append(f"   最近客戶寄件：{last_in}")
             lines.append(f"   距今工作時數：{c['hours_since_last_reply']:.1f} 小時")
+            if c.get("last_log_summary"):
+                lines.append(f"   最後處理狀況：{c['last_log_summary']}")
             lines.append("")
         lines.append("—— 由 HCP CMS 自動產生（請勿直接回覆此信）")
         return subject, "\n".join(lines)

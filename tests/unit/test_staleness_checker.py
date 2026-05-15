@@ -365,3 +365,88 @@ def test_repo_list_never_replied_by_hcp_ordered_by_sent_time_asc(db) -> None:
     cases = repo.list_never_replied_by_hcp()
     ids = [c.case_id for c in cases]
     assert ids == ["C-OLD", "C-MID", "C-NEW"]
+
+
+# ============= 客戶寄件時間 + 最後處理狀況（避免誤發） =============
+
+
+def test_stale_result_includes_last_customer_inbound_at(db) -> None:
+    """超時案件回傳：last_customer_inbound_at = 最後一筆「客戶來信」log 時間。"""
+    _insert_case(db.connection, "C-LCI", "處理中", "YOGA", "2026/05/01 09:00:00")
+    _insert_log(db.connection, "C-LCI", "客戶來信", "2026/05/01 09:00:00")
+    _insert_log(db.connection, "C-LCI", "HCP 信件回覆", "2026/05/05 09:00:00")
+    _insert_log(db.connection, "C-LCI", "客戶來信", "2026/05/08 09:00:00")  # 最近客戶催
+    now = datetime(2026, 5, 14, 9, 0)
+    checker = StalenessChecker(db.connection, now=now)
+    results = checker.find_stale_cases(threshold_hours=48)
+
+    assert len(results) == 1
+    assert results[0]["last_customer_inbound_at"] == "2026/05/08 09:00:00"
+
+
+def test_stale_last_customer_inbound_falls_back_to_sent_time(db) -> None:
+    """無「客戶來信」log → last_customer_inbound_at fallback 為 case.sent_time。"""
+    _insert_case(db.connection, "C-FB", "處理中", "YOGA", "2026/05/01 09:00:00")
+    _insert_log(db.connection, "C-FB", "HCP 信件回覆", "2026/05/05 09:00:00")  # 只有 HCP log
+    now = datetime(2026, 5, 14, 9, 0)
+    checker = StalenessChecker(db.connection, now=now)
+    results = checker.find_stale_cases(threshold_hours=48)
+
+    assert len(results) == 1
+    assert results[0]["last_customer_inbound_at"] == "2026/05/01 09:00:00"
+
+
+def test_stale_result_includes_last_log_summary(db) -> None:
+    """超時案件回傳：last_log_summary = 最近一筆 case_log 的「方向：內容摘要」。"""
+    _insert_case(db.connection, "C-LLS", "處理中", "YOGA", "2026/05/01 09:00:00")
+    _insert_log(db.connection, "C-LLS", "HCP 信件回覆", "2026/05/05 09:00:00")
+    # 最新一筆是內部討論（方便 handler 知道有人在跟）
+    _insert_log(db.connection, "C-LLS", "內部討論", "2026/05/12 14:00:00")
+    now = datetime(2026, 5, 14, 9, 0)
+    checker = StalenessChecker(db.connection, now=now)
+    results = checker.find_stale_cases(threshold_hours=48)
+
+    assert len(results) == 1
+    summary = results[0]["last_log_summary"]
+    assert summary is not None
+    assert "內部討論" in summary
+
+
+def test_never_replied_result_includes_last_customer_inbound_at(db) -> None:
+    """從未回覆案件：last_customer_inbound_at = 最近客戶來信 log 或 sent_time。"""
+    _insert_case(db.connection, "C-NR-LCI", "處理中", "YOGA", "2026/05/01 09:00:00")
+    _insert_log(db.connection, "C-NR-LCI", "客戶來信", "2026/05/01 09:00:00")
+    _insert_log(db.connection, "C-NR-LCI", "客戶來信", "2026/05/10 09:00:00")  # 再次催
+    now = datetime(2026, 5, 14, 9, 0)
+    checker = StalenessChecker(db.connection, now=now)
+    results = checker.find_never_replied_cases(threshold_hours=48)
+
+    assert len(results) == 1
+    assert results[0]["last_customer_inbound_at"] == "2026/05/10 09:00:00"
+
+
+def test_never_replied_result_includes_last_log_summary(db) -> None:
+    """從未回覆案件：last_log_summary 也應提供（雖無 HCP 回覆但可能有內部討論等）。"""
+    _insert_case(db.connection, "C-NR-LLS", "處理中", "YOGA", "2026/05/01 09:00:00")
+    _insert_log(db.connection, "C-NR-LLS", "客戶來信", "2026/05/01 09:00:00")
+    _insert_log(db.connection, "C-NR-LLS", "內部討論", "2026/05/03 09:00:00")
+    now = datetime(2026, 5, 14, 9, 0)
+    checker = StalenessChecker(db.connection, now=now)
+    results = checker.find_never_replied_cases(threshold_hours=48)
+
+    assert len(results) == 1
+    summary = results[0]["last_log_summary"]
+    assert summary is not None
+    assert "內部討論" in summary
+
+
+def test_never_replied_last_log_summary_none_when_no_logs(db) -> None:
+    """完全沒任何 log 的案件 → last_log_summary 為 None（不拋例外）。"""
+    _insert_case(db.connection, "C-NOLOG", "處理中", "YOGA", "2026/05/01 09:00:00")
+    now = datetime(2026, 5, 14, 9, 0)
+    checker = StalenessChecker(db.connection, now=now)
+    results = checker.find_never_replied_cases(threshold_hours=48)
+
+    assert len(results) == 1
+    assert results[0]["last_log_summary"] is None
+    assert results[0]["last_customer_inbound_at"] == "2026/05/01 09:00:00"

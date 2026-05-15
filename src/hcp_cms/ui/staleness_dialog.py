@@ -33,14 +33,18 @@ class StalenessReminderDialog(QDialog):
 
     case_subject_clicked = Signal(str)
 
-    # 欄位 index 常數（順序：發送 / 公司 / 主旨 / Handler / 超時 / Email / 案件編號）
+    # 欄位 index 常數
+    # 順序：發送 / 公司 / 主旨 / Handler / 客戶寄件時間 / 超時 / 最後處理狀況 / Email / 案件編號
     COL_CHECK = 0
     COL_COMPANY = 1
     COL_SUBJECT = 2
     COL_HANDLER = 3
-    COL_HOURS = 4
-    COL_EMAIL = 5
-    COL_CASE_ID = 6
+    COL_CUSTOMER_TIME = 4
+    COL_HOURS = 5
+    COL_LAST_STATUS = 6
+    COL_EMAIL = 7
+    COL_CASE_ID = 8
+    _COL_COUNT = 9
 
     def __init__(
         self,
@@ -61,7 +65,7 @@ class StalenessReminderDialog(QDialog):
         self._stale_table: QTableWidget | None = None
         self._no_reply_table: QTableWidget | None = None
         self.setWindowTitle("警示未結清單")
-        self.setMinimumWidth(1000)
+        self.setMinimumWidth(1280)
         self._setup_ui()
 
     @staticmethod
@@ -148,14 +152,19 @@ class StalenessReminderDialog(QDialog):
         cases: list[dict],
         checkbox_store: list[QCheckBox],
     ) -> QTableWidget:
-        """建立一個 case 表格（順序：發送 / 公司 / 主旨 / Handler / 超時 / Email / 案件編號）。
+        """建立一個 case 表格。
+
+        欄位順序：發送 / 公司 / 主旨 / Handler / 客戶寄件時間 / 超時(工時) /
+        最後處理狀況 / 收件 email / 案件編號。
 
         checkbox_store 接收新建的 QCheckBox 物件（呼叫端用以取勾選結果）。
         """
-        table = QTableWidget(len(cases), 7)
-        table.setHorizontalHeaderLabels(
-            ["發送", "公司", "主旨", "Handler", "超時(工時)", "收件 email", "案件編號"]
-        )
+        table = QTableWidget(len(cases), self._COL_COUNT)
+        table.setHorizontalHeaderLabels([
+            "發送", "公司", "主旨", "Handler",
+            "客戶寄件時間", "超時(工時)", "最後處理狀況",
+            "收件 email", "案件編號",
+        ])
         header = table.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         header.setStretchLastSection(False)
@@ -184,15 +193,26 @@ class StalenessReminderDialog(QDialog):
             table.setItem(i, self.COL_SUBJECT, subject_item)
             table.setItem(i, self.COL_HANDLER, QTableWidgetItem(c.get("handler") or "—"))
             table.setItem(
+                i, self.COL_CUSTOMER_TIME,
+                QTableWidgetItem(c.get("last_customer_inbound_at") or "—"),
+            )
+            table.setItem(
                 i, self.COL_HOURS,
                 QTableWidgetItem(f"{c['hours_since_last_reply']:.1f}"),
             )
+            status_text = c.get("last_log_summary") or "—"
+            status_item = QTableWidgetItem(status_text)
+            status_item.setToolTip(status_text)  # 完整內容（含截斷）顯示在 tooltip
+            table.setItem(i, self.COL_LAST_STATUS, status_item)
             table.setItem(i, self.COL_EMAIL, QTableWidgetItem(c.get("handler_email") or "（無）"))
             table.setItem(i, self.COL_CASE_ID, QTableWidgetItem(c["case_id"]))
 
         table.resizeColumnsToContents()
-        if table.columnWidth(self.COL_SUBJECT) < 360:
-            table.setColumnWidth(self.COL_SUBJECT, 360)
+        # 主旨與最後處理狀況通常較長，加寬一些
+        if table.columnWidth(self.COL_SUBJECT) < 320:
+            table.setColumnWidth(self.COL_SUBJECT, 320)
+        if table.columnWidth(self.COL_LAST_STATUS) < 280:
+            table.setColumnWidth(self.COL_LAST_STATUS, 280)
         table.setMinimumHeight(320)
         return table
 
