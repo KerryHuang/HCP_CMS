@@ -141,6 +141,61 @@ class StalenessChecker:
                 "handler_email": handler_email,
                 "last_hcp_reply": last_hcp.logged_at,
                 "hours_since_last_reply": hours,
+                "case_type": "overdue",
+            })
+        return results
+
+    def find_never_replied_cases(self, threshold_hours: float = 0.0) -> list[dict]:
+        """找出「處理中 + HCP 從未回覆 + 自客戶來信至今 > 閾值工時」的案件。
+
+        與 find_stale_cases 互補（後者要求曾有 HCP 回覆）。
+        計時起點為 case.sent_time；sent_time 為 None 的案件因無法計算工時故跳過。
+
+        Args:
+            threshold_hours: 工作時數閾值（預設 0 → 全列）
+
+        Returns:
+            list of dict（結構同 find_stale_cases，但 last_hcp_reply=None、
+            case_type="no_reply"，hours_since_last_reply 代表「自 sent_time 至今工時」）
+        """
+        results: list[dict] = []
+        cases = self._case_repo.list_never_replied_by_hcp()
+
+        all_staff = self._staff_repo.list_all() if hasattr(self._staff_repo, "list_all") else []
+        name_to_email: dict[str, str] = {s.name: s.email for s in all_staff}
+        all_companies = (
+            self._company_repo.list_all() if hasattr(self._company_repo, "list_all") else []
+        )
+        company_id_to_name: dict[str, str] = {c.company_id: c.name for c in all_companies}
+
+        for case in cases:
+            if not case.sent_time:
+                continue
+            sent_dt = _parse_dt(case.sent_time)
+            if sent_dt is None:
+                continue
+
+            hours = business_hours_between(sent_dt, self._now)
+            if hours <= threshold_hours:
+                continue
+
+            handler_email = (
+                name_to_email.get(case.handler) if case.handler else None
+            )
+            company_name = (
+                company_id_to_name.get(case.company_id) if case.company_id else None
+            )
+            results.append({
+                "case_id": case.case_id,
+                "subject": case.subject,
+                "company_id": case.company_id,
+                "company_name": company_name,
+                "handler": case.handler,
+                "handler_email": handler_email,
+                "last_hcp_reply": None,
+                "hours_since_last_reply": hours,
+                "case_type": "no_reply",
+                "first_inbound_at": case.sent_time,
             })
         return results
 

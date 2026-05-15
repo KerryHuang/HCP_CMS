@@ -209,19 +209,26 @@ class DashboardView(QWidget):
 
         checker = StalenessChecker(self._conn)
         stale = checker.find_stale_cases(threshold_hours=self._STALENESS_THRESHOLD_HOURS)
+        never_replied = checker.find_never_replied_cases(
+            threshold_hours=self._STALENESS_THRESHOLD_HOURS
+        )
 
-        if not stale:
+        if not stale and not never_replied:
             QMessageBox.information(
                 self, "警示未結清單",
-                f"目前沒有需警示的未結案件（>{int(self._STALENESS_THRESHOLD_HOURS)} 工作小時無 HCP 回覆）。"
+                f"目前沒有需警示的未結案件（>{int(self._STALENESS_THRESHOLD_HOURS)} 工作小時）。"
             )
             return
 
-        # 預覽對話框
+        # 預覽對話框（兩 tab：超時未回覆 / 從未回覆）
         from hcp_cms.ui.staleness_dialog import StalenessReminderDialog
         palette = self._theme_mgr.current_palette() if self._theme_mgr else None
         dlg = StalenessReminderDialog(
-            stale, self._STALENESS_THRESHOLD_HOURS, parent=self, palette=palette,
+            stale, never_replied, self._STALENESS_THRESHOLD_HOURS,
+            parent=self, palette=palette,
+        )
+        dlg.case_subject_clicked.connect(
+            lambda cid: self._open_case_detail_dialog(cid, palette)
         )
         if dlg.exec() != StalenessReminderDialog.DialogCode.Accepted:
             return
@@ -303,18 +310,39 @@ class DashboardView(QWidget):
             f"涵蓋 {len(selected)} 件未結案件"
         )
 
+    def _open_case_detail_dialog(self, case_id: str, palette: ColorPalette | None) -> None:
+        """從警示未結清單點主旨 → 開案件詳情 dialog（modal 疊上現有 dialog）。"""
+        if not self._conn:
+            return
+        try:
+            from hcp_cms.ui.case_detail_dialog import CaseDetailDialog
+
+            dlg = CaseDetailDialog(self._conn, case_id, parent=self.window(), palette=palette)
+            dlg.exec()
+        except Exception as e:
+            QMessageBox.critical(self, "開啟案件失敗", str(e))
+
     @staticmethod
     def _build_reminder_email(cases: list[dict]) -> tuple[str, str]:
-        """組裝警示通知 email 的 subject 與 body。"""
+        """組裝警示通知 email 的 subject 與 body。
+
+        依 case_type 區分兩種顯示：
+        - overdue：顯示最後 HCP 回覆時間
+        - no_reply：顯示「HCP 從未回覆」與最早客戶來信時間
+        """
         subject = f"[HCP CMS] 警示未結清單：{len(cases)} 件待追蹤"
 
         lines = [
-            f"以下 {len(cases)} 件未結案件已超過 48 工作小時無 HCP 回覆，請追蹤：",
+            f"以下 {len(cases)} 件未結案件已超過 48 工作小時，請追蹤：",
             "",
         ]
         for i, c in enumerate(cases, 1):
             lines.append(f"{i}. {c['case_id']}  {c.get('subject') or ''}")
-            lines.append(f"   最後 HCP 回覆：{c['last_hcp_reply']}")
+            if c.get("case_type") == "no_reply":
+                first_in = c.get("first_inbound_at") or "—"
+                lines.append(f"   ⚠ HCP 從未回覆（客戶來信：{first_in}）")
+            else:
+                lines.append(f"   最後 HCP 回覆：{c.get('last_hcp_reply') or '—'}")
             lines.append(f"   距今工作時數：{c['hours_since_last_reply']:.1f} 小時")
             lines.append("")
         lines.append("—— 由 HCP CMS 自動產生（請勿直接回覆此信）")
